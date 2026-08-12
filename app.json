@@ -1,24 +1,31 @@
 {
   "expo": {
-    "name": "CrmProjectsApp",
+    "name": "CRM Projects",
     "slug": "CrmProjectsApp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+        "backgroundColor": "#1565C0",
+        "foregroundImage": "./assets/android-icon-foreground.png"
+      },
+      "package": "com.m.gamel.CrmProjectsApp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b7f82206-bc3a-4086-982e-0173cfe8735f"
+      }
     }
   }
 }

@@ -7,47 +7,61 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../context/LangContext';
 import {
-  getMyPerformanceProcess, getMyPerformanceTasks,
+  getProcessStatics, getTasksStatics,
   getPlanItemsSummary, getPlanItemsTotals,
+  getMyPerformanceProcess, getMyPerformanceTasks,
   getTeamPerformanceProcess, getTeamPerformanceTasks,
   getProjectDashboardStats,
+  getSmartUserSummary, getSmartPlanItemsSummary,
 } from '../api/reports';
-import { extractData, extractList } from '../utils/helpers';
 import ProgressBar from '../components/ProgressBar';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function num(v) { return typeof v === 'number' ? v : (Number(v) || 0); }
 
+function safe(res) {
+  if (!res) return null;
+  const d = res?.data;
+  if (!d) return null;
+  if (d.data && !Array.isArray(d.data)) return d.data;
+  if (!Array.isArray(d)) return d;
+  return null;
+}
+
+function safeList(res) {
+  if (!res) return [];
+  const d = res?.data;
+  if (!d) return [];
+  if (Array.isArray(d)) return d;
+  if (Array.isArray(d.data)) return d.data;
+  if (Array.isArray(d.items)) return d.items;
+  return [];
+}
+
 function getPeriodDates(period) {
   const now   = new Date();
   const today = now.toISOString().split('T')[0];
   if (period === 'week') {
-    const d = new Date(now);
-    d.setDate(d.getDate() - 7);
+    const d = new Date(now); d.setDate(d.getDate() - 7);
     return { from: d.toISOString().split('T')[0], to: today };
   }
   if (period === 'month') {
     return { from: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`, to: today };
   }
-  // quarter
-  const q  = Math.floor(now.getMonth() / 3);
-  const qm = q * 3;
+  const qm = Math.floor(now.getMonth() / 3) * 3;
   return { from: `${now.getFullYear()}-${String(qm+1).padStart(2,'0')}-01`, to: today };
 }
 
 // ─── sub-components ─────────────────────────────────────────────────────────
 
-function StatRow({ icon, label, value, color = '#1565C0', sub }) {
+function StatRow({ icon, label, value, color = '#1565C0' }) {
   return (
     <View style={styles.statRow}>
       <View style={[styles.statIcon, { backgroundColor: color + '18' }]}>
         <Ionicons name={icon} size={20} color={color} />
       </View>
-      <View style={styles.statInfo}>
-        <Text style={styles.statLabel}>{label}</Text>
-        {sub ? <Text style={styles.statSub}>{sub}</Text> : null}
-      </View>
+      <Text style={styles.statLabel}>{label}</Text>
       <Text style={[styles.statValue, { color }]}>{value ?? '—'}</Text>
     </View>
   );
@@ -89,10 +103,12 @@ function PeriodFilter({ value, onChange, lang }) {
 }
 
 function TeamUserRow({ item }) {
-  const name     = item.fullName || item.FullName || item.userName || item.name || '—';
-  const done     = num(item.doneCount  || item.completedCount || item.done);
-  const total    = num(item.totalCount || item.total);
-  const pct      = total > 0 ? Math.round((done / total) * 100) : num(item.percentage || item.progress);
+  const name  = item.fullName || item.FullName || item.userName || item.name || '—';
+  const done  = num(item.doneCount || item.completedCount || item.done);
+  const total = num(item.totalCount || item.total);
+  const pct   = total > 0
+    ? Math.round((done / total) * 100)
+    : num(item.percentage || item.progress || item.pct);
   return (
     <View style={styles.teamRow}>
       <View style={styles.teamAvatar}>
@@ -118,44 +134,53 @@ export default function ReportsScreen() {
       (profile?.roleName || '').toLowerCase().includes(r)
     );
 
-  const [period,      setPeriod]      = useState('month');
-  const [refreshing,  setRefreshing]  = useState(false);
-  const [loading,     setLoading]     = useState(true);
+  const [period,     setPeriod]     = useState('month');
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading,    setLoading]    = useState(true);
 
-  const [myProcess,   setMyProcess]   = useState(null);
-  const [myTasks,     setMyTasks]     = useState(null);
-  const [planSummary, setPlanSummary] = useState(null);
-  const [planTotals,  setPlanTotals]  = useState(null);
-  const [projStats,   setProjStats]   = useState(null);
-  const [teamProc,    setTeamProc]    = useState([]);
-  const [teamTasks,   setTeamTasks]   = useState([]);
+  const [procStatics,  setProcStatics]  = useState(null);
+  const [taskStatics,  setTaskStatics]  = useState(null);
+  const [planSummary,  setPlanSummary]  = useState(null);
+  const [planTotals,   setPlanTotals]   = useState(null);
+  const [myProc,       setMyProc]       = useState(null);
+  const [myTasks,      setMyTasks]      = useState(null);
+  const [projStats,    setProjStats]    = useState(null);
+  const [teamProc,     setTeamProc]     = useState([]);
+  const [teamTasks,    setTeamTasks]    = useState([]);
+  const [smartSummary, setSmartSummary] = useState(null);
 
   const load = useCallback(async () => {
     const { from, to } = getPeriodDates(period);
-    const params = { dateFrom: from, dateTo: to, fromDate: from, toDate: to,
-                     startDate: from, endDate: to, from, to };
+    const body = { dateFrom: from, dateTo: to, fromDate: from, toDate: to };
 
     const calls = [
-      getMyPerformanceProcess(params).catch(() => null),
-      getMyPerformanceTasks(params).catch(() => null),
-      getPlanItemsSummary(params).catch(() => null),
-      getPlanItemsTotals(params).catch(() => null),
-      getProjectDashboardStats().catch(() => null),
+      getProcessStatics().catch(() => null),           // 0 GET
+      getTasksStatics().catch(() => null),             // 1 GET
+      getPlanItemsSummary().catch(() => null),         // 2 GET
+      getPlanItemsTotals().catch(() => null),          // 3 GET
+      getMyPerformanceProcess(body).catch(() => null), // 4 POST
+      getMyPerformanceTasks(body).catch(() => null),   // 5 POST
+      getProjectDashboardStats().catch(() => null),    // 6 GET
+      getSmartUserSummary().catch(() => null),         // 7 GET
+      getSmartPlanItemsSummary().catch(() => null),    // 8 GET
     ];
     if (isManager) {
-      calls.push(getTeamPerformanceProcess(params).catch(() => null));
-      calls.push(getTeamPerformanceTasks(params).catch(() => null));
+      calls.push(getTeamPerformanceProcess(body).catch(() => null)); // 9
+      calls.push(getTeamPerformanceTasks(body).catch(() => null));   // 10
     }
 
-    const results = await Promise.all(calls);
-    setMyProcess  (extractData(results[0]));
-    setMyTasks    (extractData(results[1]));
-    setPlanSummary(extractData(results[2]));
-    setPlanTotals (extractData(results[3]));
-    setProjStats  (extractData(results[4]));
+    const r = await Promise.all(calls);
+    setProcStatics (safe(r[0]));
+    setTaskStatics (safe(r[1]));
+    setPlanSummary (safe(r[2]));
+    setPlanTotals  (safe(r[3]));
+    setMyProc      (safe(r[4]));
+    setMyTasks     (safe(r[5]));
+    setProjStats   (safe(r[6]));
+    setSmartSummary(safe(r[7]) || safe(r[8]));
     if (isManager) {
-      setTeamProc (extractList(results[5]) || []);
-      setTeamTasks(extractList(results[6]) || []);
+      setTeamProc (safeList(r[9]));
+      setTeamTasks(safeList(r[10]));
     }
 
     setLoading(false);
@@ -166,32 +191,41 @@ export default function ReportsScreen() {
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
-  // Normalise my-performance object (handles various field name styles)
-  const p = myProcess || {};
-  const t = myTasks   || {};
-  const s = planSummary || {};
-  const tot = planTotals || {};
-  const ps  = projStats  || {};
+  // ── derived numbers ──────────────────────────────────────────────────────
+  const ps = procStatics || {};
+  const ts = taskStatics || {};
+  const pl = planSummary || planTotals || {};
+  const pd = projStats   || {};
+  const mp = myProc      || {};
+  const mt = myTasks     || {};
+  const ss = smartSummary || {};
 
-  const myDone      = num(p.doneCount    || p.completedCount || p.done    || p.completed);
-  const myPending   = num(p.pendingCount || p.inProgressCount|| p.pending || p.inProgress);
-  const myTotal     = num(p.totalCount   || p.total)         || (myDone + myPending);
-  const myPct       = myTotal > 0 ? Math.round((myDone/myTotal)*100) : num(p.percentage||p.progress||p.pct);
+  function pctOf(done, total) {
+    return num(total) > 0 ? Math.round((num(done) / num(total)) * 100) : 0;
+  }
 
-  const taskDone    = num(t.doneCount    || t.completedCount || t.done);
-  const taskPending = num(t.pendingCount || t.inProgressCount|| t.pending);
-  const taskTotal   = num(t.totalCount   || t.total)         || (taskDone + taskPending);
-  const taskPct     = taskTotal > 0 ? Math.round((taskDone/taskTotal)*100) : num(t.percentage||t.pct);
+  const mpDone    = num(mp.doneCount    || mp.completedCount || mp.done);
+  const mpPending = num(mp.pendingCount || mp.inProgressCount|| mp.pending);
+  const mpTotal   = num(mp.totalCount   || mp.total) || (mpDone + mpPending);
+  const mpPct     = mpTotal > 0 ? pctOf(mpDone, mpTotal) : num(mp.percentage || mp.pct);
 
-  const planDone    = num(s.doneCount    || s.completedItems || tot.doneCount   || tot.completed);
-  const planPending = num(s.pendingCount || s.pendingItems   || tot.pendingCount || tot.pending);
-  const planTotal   = num(s.totalCount   || s.totalItems     || tot.totalCount  || tot.total) || (planDone + planPending);
-  const planPct     = planTotal > 0 ? Math.round((planDone/planTotal)*100) : num(s.percentage||s.pct||tot.pct);
+  const mtDone    = num(mt.doneCount    || mt.completedCount || mt.done);
+  const mtPending = num(mt.pendingCount || mt.inProgressCount|| mt.pending);
+  const mtTotal   = num(mt.totalCount   || mt.total) || (mtDone + mtPending);
+  const mtPct     = mtTotal > 0 ? pctOf(mtDone, mtTotal) : num(mt.percentage || mt.pct);
+
+  const plDone    = num(pl.doneCount || pl.completedItems || pl.completed);
+  const plPending = num(pl.pendingCount || pl.pendingItems || pl.pending);
+  const plTotal   = num(pl.totalCount || pl.totalItems || pl.total) || (plDone + plPending);
+  const plPct     = plTotal > 0 ? pctOf(plDone, plTotal) : num(pl.percentage || pl.pct);
 
   if (loading && !refreshing) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#1565C0" />
+        <Text style={styles.loadingText}>
+          {lang === 'ar' ? 'جاري تحميل التقارير...' : 'Loading reports...'}
+        </Text>
       </View>
     );
   }
@@ -202,43 +236,68 @@ export default function ReportsScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1565C0']} />}
     >
-      {/* Period filter */}
       <PeriodFilter value={period} onChange={setPeriod} lang={lang} />
 
-      {/* ── Project stats (from existing dashboard) ── */}
-      {ps && (ps.totalProjects || ps.activeProjects) ? (
+      {/* ── Project overview ─────────────────────────────────────────── */}
+      {(pd.totalProjects != null || pd.activeProjects != null) && (
         <SectionCard
-          title={lang === 'ar' ? 'إحصائيات المشاريع' : 'Project Stats'}
+          title={lang === 'ar' ? 'إحصائيات المشاريع' : 'Project Overview'}
           icon="folder-open-outline"
           color="#1565C0"
         >
-          <StatRow icon="folder-outline"          label={lang==='ar'?'إجمالي المشاريع':'Total Projects'}    value={ps.totalProjects}     color="#1565C0" />
-          <StatRow icon="play-circle-outline"     label={lang==='ar'?'المشاريع النشطة':'Active Projects'}   value={ps.activeProjects}    color="#F57C00" />
-          <StatRow icon="checkmark-circle-outline"label={lang==='ar'?'المشاريع المنتهية':'Completed'}       value={ps.completedProjects} color="#388E3C" />
-          <StatRow icon="time-outline"            label={lang==='ar'?'انتظار الموافقة':'Pending Approvals'} value={ps.pendingApprovals}  color="#9C27B0" />
-          {ps.overallProgress !== undefined && (
+          <StatRow icon="folder-outline"           label={lang==='ar'?'إجمالي المشاريع':'Total'}     value={pd.totalProjects}     color="#1565C0" />
+          <StatRow icon="play-circle-outline"      label={lang==='ar'?'نشطة':'Active'}               value={pd.activeProjects}    color="#F57C00" />
+          <StatRow icon="checkmark-circle-outline" label={lang==='ar'?'مكتملة':'Completed'}          value={pd.completedProjects} color="#388E3C" />
+          <StatRow icon="time-outline"             label={lang==='ar'?'بانتظار الموافقة':'Pending'}  value={pd.pendingApprovals}  color="#9C27B0" />
+          {pd.overallProgress != null && (
             <View style={styles.progressWrap}>
-              <Text style={styles.progressLabel}>{lang==='ar'?'التقدم العام':'Overall Progress'}</Text>
-              <ProgressBar value={num(ps.overallProgress)} color="#1565C0" />
+              <Text style={styles.progressLabel}>{lang==='ar'?'التقدم العام':'Overall'} — {num(pd.overallProgress)}%</Text>
+              <ProgressBar value={num(pd.overallProgress)} color="#1565C0" />
             </View>
           )}
         </SectionCard>
-      ) : null}
+      )}
 
-      {/* ── My process performance ── */}
+      {/* ── Global process statics (no period) ───────────────────────── */}
+      {(ps.totalCount != null || ps.total != null) && (
+        <SectionCard
+          title={lang === 'ar' ? 'المعالجات' : 'Processes'}
+          icon="bar-chart-outline"
+          color="#1565C0"
+        >
+          <StatRow icon="list-outline"           label={lang==='ar'?'الإجمالي':'Total'}        value={ps.totalCount ?? ps.total}    color="#607D8B" />
+          <StatRow icon="checkmark-done-outline" label={lang==='ar'?'منجزة':'Done'}            value={ps.doneCount  ?? ps.done}     color="#388E3C" />
+          <StatRow icon="hourglass-outline"      label={lang==='ar'?'قيد التنفيذ':'In Progress'} value={ps.pendingCount ?? ps.pending} color="#F57C00" />
+        </SectionCard>
+      )}
+
+      {/* ── Global task statics (no period) ──────────────────────────── */}
+      {(ts.totalCount != null || ts.total != null) && (
+        <SectionCard
+          title={lang === 'ar' ? 'المهام' : 'Tasks'}
+          icon="checkbox-outline"
+          color="#9C27B0"
+        >
+          <StatRow icon="list-outline"           label={lang==='ar'?'الإجمالي':'Total'}        value={ts.totalCount ?? ts.total}    color="#607D8B" />
+          <StatRow icon="checkmark-done-outline" label={lang==='ar'?'منجزة':'Done'}            value={ts.doneCount  ?? ts.done}     color="#388E3C" />
+          <StatRow icon="hourglass-outline"      label={lang==='ar'?'قيد التنفيذ':'In Progress'} value={ts.pendingCount ?? ts.pending} color="#F57C00" />
+        </SectionCard>
+      )}
+
+      {/* ── My process performance (period) ──────────────────────────── */}
       <SectionCard
         title={lang === 'ar' ? 'أدائي — المعالجات' : 'My Performance — Processes'}
-        icon="bar-chart-outline"
+        icon="person-circle-outline"
         color="#1565C0"
       >
-        {myTotal > 0 || myPct > 0 ? (
+        {(mpTotal > 0 || mpPct > 0) ? (
           <>
-            <StatRow icon="checkmark-done-outline" label={lang==='ar'?'منجز':'Completed'} value={myDone}    color="#388E3C" />
-            <StatRow icon="hourglass-outline"      label={lang==='ar'?'قيد التنفيذ':'In Progress'} value={myPending} color="#F57C00" />
-            <StatRow icon="list-outline"           label={lang==='ar'?'الإجمالي':'Total'}     value={myTotal}   color="#607D8B" />
+            <StatRow icon="checkmark-done-outline" label={lang==='ar'?'منجزة':'Completed'}        value={mpDone}    color="#388E3C" />
+            <StatRow icon="hourglass-outline"      label={lang==='ar'?'قيد التنفيذ':'In Progress'} value={mpPending} color="#F57C00" />
+            <StatRow icon="list-outline"           label={lang==='ar'?'الإجمالي':'Total'}         value={mpTotal}   color="#607D8B" />
             <View style={styles.progressWrap}>
-              <Text style={styles.progressLabel}>{myPct}%</Text>
-              <ProgressBar value={myPct} color="#1565C0" />
+              <Text style={styles.progressLabel}>{mpPct}%</Text>
+              <ProgressBar value={mpPct} color="#1565C0" />
             </View>
           </>
         ) : (
@@ -246,20 +305,20 @@ export default function ReportsScreen() {
         )}
       </SectionCard>
 
-      {/* ── My tasks performance ── */}
+      {/* ── My task performance (period) ──────────────────────────────── */}
       <SectionCard
         title={lang === 'ar' ? 'أدائي — المهام' : 'My Performance — Tasks'}
         icon="checkbox-outline"
         color="#9C27B0"
       >
-        {taskTotal > 0 || taskPct > 0 ? (
+        {(mtTotal > 0 || mtPct > 0) ? (
           <>
-            <StatRow icon="checkmark-done-outline" label={lang==='ar'?'منجز':'Completed'} value={taskDone}    color="#388E3C" />
-            <StatRow icon="hourglass-outline"      label={lang==='ar'?'قيد التنفيذ':'Pending'}     value={taskPending} color="#F57C00" />
-            <StatRow icon="list-outline"           label={lang==='ar'?'الإجمالي':'Total'}     value={taskTotal}   color="#607D8B" />
+            <StatRow icon="checkmark-done-outline" label={lang==='ar'?'منجزة':'Completed'}   value={mtDone}    color="#388E3C" />
+            <StatRow icon="hourglass-outline"      label={lang==='ar'?'معلقة':'Pending'}      value={mtPending} color="#F57C00" />
+            <StatRow icon="list-outline"           label={lang==='ar'?'الإجمالي':'Total'}    value={mtTotal}   color="#607D8B" />
             <View style={styles.progressWrap}>
-              <Text style={styles.progressLabel}>{taskPct}%</Text>
-              <ProgressBar value={taskPct} color="#9C27B0" />
+              <Text style={styles.progressLabel}>{mtPct}%</Text>
+              <ProgressBar value={mtPct} color="#9C27B0" />
             </View>
           </>
         ) : (
@@ -267,52 +326,63 @@ export default function ReportsScreen() {
         )}
       </SectionCard>
 
-      {/* ── Plan items summary ── */}
+      {/* ── Plan items ────────────────────────────────────────────────── */}
       <SectionCard
         title={lang === 'ar' ? 'بنود الخطط' : 'Plan Items'}
         icon="document-text-outline"
         color="#F57C00"
       >
-        {planTotal > 0 || planPct > 0 ? (
+        {(plTotal > 0 || plPct > 0) ? (
           <>
-            <StatRow icon="checkmark-done-outline" label={lang==='ar'?'منجز':'Done'}    value={planDone}    color="#388E3C" />
-            <StatRow icon="hourglass-outline"      label={lang==='ar'?'معلق':'Pending'} value={planPending} color="#F57C00" />
-            <StatRow icon="list-outline"           label={lang==='ar'?'الإجمالي':'Total'} value={planTotal} color="#607D8B" />
+            <StatRow icon="checkmark-done-outline" label={lang==='ar'?'منجزة':'Done'}      value={plDone}    color="#388E3C" />
+            <StatRow icon="hourglass-outline"      label={lang==='ar'?'معلقة':'Pending'}   value={plPending} color="#F57C00" />
+            <StatRow icon="list-outline"           label={lang==='ar'?'الإجمالي':'Total'}  value={plTotal}   color="#607D8B" />
             <View style={styles.progressWrap}>
-              <Text style={styles.progressLabel}>{planPct}%</Text>
-              <ProgressBar value={planPct} color="#F57C00" />
+              <Text style={styles.progressLabel}>{plPct}%</Text>
+              <ProgressBar value={plPct} color="#F57C00" />
             </View>
           </>
         ) : (
-          <Text style={styles.noData}>{lang==='ar'?'لا توجد بيانات للفترة المحددة':'No data for this period'}</Text>
+          <Text style={styles.noData}>{lang==='ar'?'لا توجد بيانات':'No data'}</Text>
         )}
       </SectionCard>
 
-      {/* ── Manager: team performance ── */}
+      {/* ── Smart summary (bonus data if available) ───────────────────── */}
+      {ss && Object.keys(ss).length > 0 && (
+        <SectionCard
+          title={lang === 'ar' ? 'ملخص النشاط' : 'Activity Summary'}
+          icon="analytics-outline"
+          color="#00796B"
+        >
+          {Object.entries(ss)
+            .filter(([, v]) => typeof v === 'number')
+            .map(([k, v]) => (
+              <StatRow key={k} icon="stats-chart-outline" label={k} value={v} color="#00796B" />
+            ))}
+        </SectionCard>
+      )}
+
+      {/* ── Manager: team performance ────────────────────────────────── */}
       {isManager && (
         <>
           <SectionCard
-            title={lang === 'ar' ? 'أداء الفريق — معالجات' : 'Team Performance — Processes'}
+            title={lang === 'ar' ? 'أداء الفريق — معالجات' : 'Team — Processes'}
             icon="people-outline"
             color="#388E3C"
           >
-            {teamProc.length > 0 ? (
-              teamProc.map((item, i) => <TeamUserRow key={i} item={item} />)
-            ) : (
-              <Text style={styles.noData}>{lang==='ar'?'لا توجد بيانات':'No data'}</Text>
-            )}
+            {teamProc.length > 0
+              ? teamProc.map((item, i) => <TeamUserRow key={i} item={item} />)
+              : <Text style={styles.noData}>{lang==='ar'?'لا توجد بيانات':'No data'}</Text>}
           </SectionCard>
 
           <SectionCard
-            title={lang === 'ar' ? 'أداء الفريق — مهام' : 'Team Performance — Tasks'}
+            title={lang === 'ar' ? 'أداء الفريق — مهام' : 'Team — Tasks'}
             icon="people-circle-outline"
             color="#D32F2F"
           >
-            {teamTasks.length > 0 ? (
-              teamTasks.map((item, i) => <TeamUserRow key={i} item={item} />)
-            ) : (
-              <Text style={styles.noData}>{lang==='ar'?'لا توجد بيانات':'No data'}</Text>
-            )}
+            {teamTasks.length > 0
+              ? teamTasks.map((item, i) => <TeamUserRow key={i} item={item} />)
+              : <Text style={styles.noData}>{lang==='ar'?'لا توجد بيانات':'No data'}</Text>}
           </SectionCard>
         </>
       )}
@@ -321,25 +391,24 @@ export default function ReportsScreen() {
 }
 
 const styles = StyleSheet.create({
-  root:    { flex: 1, backgroundColor: '#F5F7FA' },
-  content: { padding: 12, paddingBottom: 32 },
-  center:  { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  root:        { flex: 1, backgroundColor: '#F5F7FA' },
+  content:     { padding: 12, paddingBottom: 32 },
+  center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
+  loadingText: { color: '#666', fontSize: 14 },
 
   periodRow: {
     flexDirection: 'row', gap: 8, marginBottom: 14,
     backgroundColor: '#fff', borderRadius: 12, padding: 6,
-    elevation: 1, shadowColor: '#000', shadowOffset: { width:0,height:1 }, shadowOpacity: 0.05, shadowRadius: 3,
+    elevation: 1, shadowColor: '#000', shadowOffset: {width:0,height:1}, shadowOpacity: 0.05, shadowRadius: 3,
   },
-  periodBtn: {
-    flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center',
-  },
+  periodBtn:       { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
   periodBtnActive: { backgroundColor: '#1565C0' },
   periodText:      { fontSize: 13, color: '#666', fontWeight: '600' },
   periodTextActive:{ color: '#fff', fontWeight: '700' },
 
   card: {
     backgroundColor: '#fff', borderRadius: 14, marginBottom: 14, overflow: 'hidden',
-    elevation: 2, shadowColor: '#000', shadowOffset: { width:0,height:1 }, shadowOpacity: 0.07, shadowRadius: 4,
+    elevation: 2, shadowColor: '#000', shadowOffset: {width:0,height:1}, shadowOpacity: 0.07, shadowRadius: 4,
   },
   cardHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -353,11 +422,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 11,
     borderBottomWidth: 1, borderBottomColor: '#F8F8F8',
   },
-  statIcon: { width: 36, height: 36, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  statInfo: { flex: 1 },
-  statLabel:{ fontSize: 13, color: '#555', fontWeight: '500' },
-  statSub:  { fontSize: 11, color: '#aaa', marginTop: 1 },
-  statValue:{ fontSize: 20, fontWeight: '800' },
+  statIcon:  { width: 36, height: 36, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
+  statLabel: { flex: 1, fontSize: 13, color: '#555', fontWeight: '500' },
+  statValue: { fontSize: 20, fontWeight: '800' },
 
   progressWrap:  { paddingHorizontal: 16, paddingVertical: 12 },
   progressLabel: { fontSize: 13, color: '#666', fontWeight: '600', marginBottom: 6 },
