@@ -52,7 +52,7 @@ export default function ProjectsScreen({ navigation, route }) {
         statusId: statusFilter || undefined,
         includeClosed: true,
       });
-      setProjects(extractList(res));
+      setProjects(extractList(res) || []);
       setError(null);
     } catch (e) {
       setError(e?.response?.data?.message || t('networkError'));

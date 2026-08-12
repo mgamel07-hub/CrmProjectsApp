@@ -200,13 +200,23 @@ export default function CreateProjectScreen({ navigation }) {
       };
       console.log('CREATE_PAYLOAD', JSON.stringify(payload));
       const res = await createProject(payload);
-      console.log('CREATE_RES', JSON.stringify(res?.data)?.slice(0, 300));
+      console.log('CREATE_RES', JSON.stringify(res?.data)?.slice(0, 500));
+
+      // API may return HTTP 200 with isSuccess:false — treat that as an error
+      const body = res?.data;
+      if (body?.isSuccess === false) {
+        const msg = body?.message || body?.errors?.join('\n') || (lang === 'ar' ? 'فشل إنشاء المشروع' : 'Failed to create project');
+        Alert.alert(t('error'), msg);
+        return;
+      }
+
       Alert.alert(t('success'), lang === 'ar' ? 'تم إنشاء المشروع بنجاح' : 'Project created successfully', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (e) {
-      console.log('CREATE_ERR', e?.response?.status, JSON.stringify(e?.response?.data)?.slice(0, 300));
-      Alert.alert(t('error'), e?.response?.data?.message || e?.response?.data?.errors?.join('\n') || t('networkError'));
+      console.log('CREATE_ERR', e?.response?.status, JSON.stringify(e?.response?.data)?.slice(0, 500));
+      const errBody = e?.response?.data;
+      Alert.alert(t('error'), errBody?.message || errBody?.errors?.join('\n') || t('networkError'));
     } finally {
       setSaving(false);
     }
