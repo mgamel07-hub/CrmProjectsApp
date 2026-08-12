@@ -96,37 +96,50 @@ export default function CreateProjectScreen({ navigation }) {
           getAccountsDropdown().catch(() => null),
         ]);
         const data = extractData(relRes) || {};
-        const custData = extractData(custRes) || extractList(custRes) || [];
-        const custList = Array.isArray(custData) ? custData : [];
 
-        // Prefer full branch list from /Branch/GetAsDropDownList; fall back to relRes branches
+        // ── Branches ────────────────────────────────────────────────────────
         const rawBranches = (() => {
-          const full = extractData(branchRes);
-          if (Array.isArray(full) && full.length) return full;
-          const list = extractList(branchRes);
+          const list = extractList(branchRes) || extractData(branchRes);
           if (Array.isArray(list) && list.length) return list;
-          return data.branchesDDL || [];
+          return data.branchesDDL || data.branches || [];
         })();
 
-        // Deduplicate by branchTransId — same city can have multiple officeIds
+        // Normalise: API returns {key,value} OR {officeId,branchName} OR {id,name}
+        const normBranch = (b) => ({
+          value: b.key ?? b.officeId ?? b.branchTransId ?? b.id,
+          label: b.value || b.branchName || b.officeName || b.name || String(b.key ?? b.id ?? ''),
+          dedupeKey: b.branchTransId ?? b.key ?? b.officeId ?? b.id,
+        });
+
         const branchSeen = new Map();
         rawBranches.forEach((b) => {
-          const dedupeKey = b.branchTransId ?? b.officeId ?? b.id;
-          const value = b.officeId ?? b.id;
-          const label = b.branchName || b.officeName || b.name || String(value);
-          if (dedupeKey != null && value != null && !branchSeen.has(dedupeKey)) {
-            branchSeen.set(dedupeKey, { value, label });
+          const n = normBranch(b);
+          if (n.value != null && !branchSeen.has(n.dedupeKey)) {
+            branchSeen.set(n.dedupeKey, { value: n.value, label: n.label });
           }
         });
 
+        // ── Customers ───────────────────────────────────────────────────────
+        const rawCust = (() => {
+          const list = extractList(custRes) || extractData(custRes);
+          if (Array.isArray(list)) return list;
+          return data.customersDDL || data.accounts || [];
+        })();
+
+        // Normalise: {key,value} OR {id,fullName} OR {customerId,name}
+        const customers = rawCust
+          .map((c) => ({
+            value: c.key ?? c.id ?? c.customerId,
+            label: c.value || c.fullName || c.localName || c.name || String(c.key ?? c.id ?? ''),
+          }))
+          .filter((c) => c.value != null && c.label);
+
         setRelated({
           branches: Array.from(branchSeen.values()),
-          customers: custList
-            .filter((c) => c.id != null || c.customerId != null)
-            .map((c) => ({ value: c.id ?? c.customerId, label: c.fullName || c.localName || c.name || String(c.id ?? c.customerId) })),
-          flags: (data.projectTypeFlagsDDL || [])
-            .filter((f) => f.key != null)
-            .map((f) => ({ value: f.key, label: f.value || String(f.key) })),
+          customers,
+          flags: (data.projectTypeFlagsDDL || data.flags || [])
+            .map((f) => ({ value: f.key ?? f.id, label: f.value || f.name || String(f.key ?? f.id) }))
+            .filter((f) => f.value != null),
         });
       } catch (_) {}
     })();
