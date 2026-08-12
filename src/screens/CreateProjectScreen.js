@@ -92,9 +92,12 @@ export default function CreateProjectScreen({ navigation }) {
       try {
         const [relRes, branchRes, custRes] = await Promise.all([
           getProjectRelatedObjects(),
-          getBranches().catch(() => null),
-          getAccountsDropdown().catch(() => null),
+          getBranches().catch((e) => { console.log('BRANCH_ERR', e?.response?.status, e?.message); return null; }),
+          getAccountsDropdown().catch((e) => { console.log('CUST_ERR', e?.response?.status, e?.message); return null; }),
         ]);
+        console.log('REL_RAW', JSON.stringify(relRes?.data)?.slice(0, 300));
+        console.log('BRANCH_RAW', JSON.stringify(branchRes?.data)?.slice(0, 300));
+        console.log('CUST_RAW', JSON.stringify(custRes?.data)?.slice(0, 300));
         const data = extractData(relRes) || {};
 
         // ── Branches ────────────────────────────────────────────────────────
