@@ -110,6 +110,10 @@ export default function CreateProjectScreen({ navigation }) {
           return [...fromUser, ...fromAll].slice(0, 3);
         })();
         console.log('BRANCH_ITEMS_FULL', JSON.stringify(firstBranches));
+        // DEBUG: show first branch raw data in alert so we can see on mobile
+        if (firstBranches.length) {
+          Alert.alert('Branch Debug', JSON.stringify(firstBranches[0], null, 2));
+        }
         const data = extractData(relRes) || {};
 
         // ── Branches ────────────────────────────────────────────────────────
