@@ -105,12 +105,12 @@ export default function CreateProjectScreen({ navigation }) {
         const data = extractData(relRes) || {};
 
         // ── Branches ────────────────────────────────────────────────────────
-        // Try user-specific branches first (respects permissions), then all branches
+        // Merge both sources: all-branches + user-branches (dedup handled below)
         const rawBranches = (() => {
-          const fromUser = extractList(userBranchRes) || extractData(userBranchRes);
-          if (Array.isArray(fromUser) && fromUser.length) return fromUser;
-          const fromAll = extractList(branchRes) || extractData(branchRes);
-          if (Array.isArray(fromAll) && fromAll.length) return fromAll;
+          const fromAll  = extractList(branchRes)     || extractData(branchRes)     || [];
+          const fromUser = extractList(userBranchRes) || extractData(userBranchRes) || [];
+          const merged = [...(Array.isArray(fromAll) ? fromAll : []), ...(Array.isArray(fromUser) ? fromUser : [])];
+          if (merged.length) return merged;
           return data.branchesDDL || data.branches || [];
         })();
 
