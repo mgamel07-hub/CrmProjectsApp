@@ -64,6 +64,12 @@ export default function ProjectsScreen({ navigation, route }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Refresh when screen comes back into focus (e.g. after creating a project)
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', load);
+    return unsub;
+  }, [navigation, load]);
+
   useEffect(() => {
     navigation.setOptions({
       headerRight: canCreate ? () => (

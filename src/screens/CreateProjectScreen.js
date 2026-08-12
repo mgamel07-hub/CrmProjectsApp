@@ -177,23 +177,36 @@ export default function CreateProjectScreen({ navigation }) {
       return;
     }
 
+    // Convert YYYY-MM-DD to ISO date-time expected by API
+    const toISO = (d) => {
+      if (!d) return undefined;
+      // Already full ISO
+      if (d.includes('T')) return d;
+      // YYYY-MM-DD → YYYY-MM-DDT00:00:00
+      return `${d}T00:00:00`;
+    };
+
     setSaving(true);
     try {
-      await createProject({
+      const payload = {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
-        branchId: form.branchId,
-        customerId: form.customerId || undefined,
+        branchId: Number(form.branchId),           // must be integer
+        customerId: form.customerId ? Number(form.customerId) : undefined,
         projectTypeFlagId: form.projectTypeFlagId || undefined,
         allocatedUnits: Number(form.allocatedUnits),
-        dateStart: form.dateStart || undefined,
-        dateEnd: form.dateEnd || undefined,
-      });
+        dateStart: toISO(form.dateStart),
+        dateEnd: toISO(form.dateEnd),
+      };
+      console.log('CREATE_PAYLOAD', JSON.stringify(payload));
+      const res = await createProject(payload);
+      console.log('CREATE_RES', JSON.stringify(res?.data)?.slice(0, 300));
       Alert.alert(t('success'), lang === 'ar' ? 'تم إنشاء المشروع بنجاح' : 'Project created successfully', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (e) {
-      Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+      console.log('CREATE_ERR', e?.response?.status, JSON.stringify(e?.response?.data)?.slice(0, 300));
+      Alert.alert(t('error'), e?.response?.data?.message || e?.response?.data?.errors?.join('\n') || t('networkError'));
     } finally {
       setSaving(false);
     }
