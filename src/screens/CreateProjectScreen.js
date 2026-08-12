@@ -110,10 +110,6 @@ export default function CreateProjectScreen({ navigation }) {
           return [...fromUser, ...fromAll].slice(0, 3);
         })();
         console.log('BRANCH_ITEMS_FULL', JSON.stringify(firstBranches));
-        // DEBUG: show first branch raw data in alert so we can see on mobile
-        if (firstBranches.length) {
-          Alert.alert('Branch Debug', JSON.stringify(firstBranches[0], null, 2));
-        }
         const data = extractData(relRes) || {};
 
         // ── Branches ────────────────────────────────────────────────────────
@@ -126,13 +122,17 @@ export default function CreateProjectScreen({ navigation }) {
           return data.branchesDDL || data.branches || [];
         })();
 
-        // Normalise: API returns {key,value} OR {officeId,branchName} OR {id,name}
+        // Normalise branches:
+        // GetUserBranchesAsDropdownList → {officeId, locationId, officeName, branchName, ...}
+        //   locationId is the branch entity ID used in ProjectCreateDto.branchId
+        // GetAllAsDropDownList → standard {key, value} where key = branchId
         const normBranch = (b) => {
-          const rawKey = b.key ?? b.officeId ?? b.branchTransId ?? b.id;
+          const rawKey = b.key ?? b.locationId ?? b.officeId ?? b.id;
+          const label = b.value || b.officeName || b.branchName || b.name || String(rawKey ?? '');
           return {
             value: rawKey,
-            label: b.value || b.branchName || b.officeName || b.name || String(rawKey ?? ''),
-            dedupeKey: String(rawKey ?? ''), // always string so Map dedup works regardless of type
+            label,
+            dedupeKey: String(rawKey ?? ''),
           };
         };
 
@@ -218,8 +218,7 @@ export default function CreateProjectScreen({ navigation }) {
       const body = res?.data;
       if (body?.isSuccess === false) {
         const detail = [body?.message, ...(body?.errors || [])].filter(Boolean).join('\n');
-        // Show payload too so we can debug
-        const debugInfo = `\n\n[payload] branchId=${payload.branchId} units=${payload.allocatedUnits}`;
+        const debugInfo = `\n[branchId=${payload.branchId} units=${payload.allocatedUnits}]`;
         Alert.alert(t('error'), (detail || 'فشل') + debugInfo);
         return;
       }
