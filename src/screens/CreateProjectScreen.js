@@ -102,6 +102,14 @@ export default function CreateProjectScreen({ navigation }) {
         console.log('USER_BRANCH_RAW', JSON.stringify(userBranchRes?.data)?.slice(0, 400));
         console.log('CUST_RAW', JSON.stringify(custRes?.data)?.slice(0, 400));
         console.log('CUST_DYN_RAW', JSON.stringify(custDynRes?.data)?.slice(0, 400));
+
+        // Log first 2 raw branch items to see ALL their fields (key, parentKey, etc.)
+        const firstBranches = (() => {
+          const fromUser = extractList(userBranchRes) || extractData(userBranchRes) || [];
+          const fromAll  = extractList(branchRes)     || extractData(branchRes)     || [];
+          return [...fromUser, ...fromAll].slice(0, 3);
+        })();
+        console.log('BRANCH_ITEMS_FULL', JSON.stringify(firstBranches));
         const data = extractData(relRes) || {};
 
         // ── Branches ────────────────────────────────────────────────────────
