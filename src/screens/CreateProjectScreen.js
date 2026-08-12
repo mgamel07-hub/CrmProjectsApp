@@ -205,8 +205,10 @@ export default function CreateProjectScreen({ navigation }) {
       // API may return HTTP 200 with isSuccess:false — treat that as an error
       const body = res?.data;
       if (body?.isSuccess === false) {
-        const msg = body?.message || body?.errors?.join('\n') || (lang === 'ar' ? 'فشل إنشاء المشروع' : 'Failed to create project');
-        Alert.alert(t('error'), msg);
+        const detail = [body?.message, ...(body?.errors || [])].filter(Boolean).join('\n');
+        // Show payload too so we can debug
+        const debugInfo = `\n\n[payload] branchId=${payload.branchId} units=${payload.allocatedUnits}`;
+        Alert.alert(t('error'), (detail || 'فشل') + debugInfo);
         return;
       }
 
