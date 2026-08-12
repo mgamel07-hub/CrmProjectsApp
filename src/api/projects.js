@@ -70,9 +70,11 @@ export const updateUnitsRequestStatus = (data) => api.put('/ProjectAllocatedUnit
 
 // Accounts / Customers dropdown
 export const getAccountsDropdown = () => api.get('/Account/GetAsDropDownList');
+export const getAccountsDynamic = (search = '') => api.get('/Account/GetDynamicList', { params: { searchVal: search, pageNo: 1 } });
 
 // Related objects for dropdowns
 export const getBranches = () => api.get('/Branch/GetAllAsDropDownList');
+export const getUserBranches = () => api.get('/User/GetUserBranchesAsDropdownList');
 export const getCustomers = () => api.get('/Account/GetDynamicList');
 export const getFlags = (groupCode) => api.get('/Flag/GetAsDropDownList', { params: { groupCode } });
 export const getUsers = () => api.get('/User/GetAsDropDownList');

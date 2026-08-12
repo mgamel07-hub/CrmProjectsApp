@@ -4,7 +4,7 @@ import {
   TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { createProject, getProjectRelatedObjects, getAccountsDropdown, getBranches } from '../api/projects';
+import { createProject, getProjectRelatedObjects, getAccountsDropdown, getAccountsDynamic, getBranches, getUserBranches } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { extractData, extractList } from '../utils/helpers';
@@ -90,20 +90,27 @@ export default function CreateProjectScreen({ navigation }) {
   useEffect(() => {
     (async () => {
       try {
-        const [relRes, branchRes, custRes] = await Promise.all([
+        const [relRes, branchRes, userBranchRes, custRes, custDynRes] = await Promise.all([
           getProjectRelatedObjects(),
           getBranches().catch((e) => { console.log('BRANCH_ERR', e?.response?.status, e?.message); return null; }),
+          getUserBranches().catch((e) => { console.log('USER_BRANCH_ERR', e?.response?.status, e?.message); return null; }),
           getAccountsDropdown().catch((e) => { console.log('CUST_ERR', e?.response?.status, e?.message); return null; }),
+          getAccountsDynamic().catch((e) => { console.log('CUST_DYN_ERR', e?.response?.status, e?.message); return null; }),
         ]);
-        console.log('REL_RAW', JSON.stringify(relRes?.data)?.slice(0, 300));
-        console.log('BRANCH_RAW', JSON.stringify(branchRes?.data)?.slice(0, 300));
-        console.log('CUST_RAW', JSON.stringify(custRes?.data)?.slice(0, 300));
+        console.log('REL_RAW', JSON.stringify(relRes?.data)?.slice(0, 400));
+        console.log('BRANCH_RAW', JSON.stringify(branchRes?.data)?.slice(0, 400));
+        console.log('USER_BRANCH_RAW', JSON.stringify(userBranchRes?.data)?.slice(0, 400));
+        console.log('CUST_RAW', JSON.stringify(custRes?.data)?.slice(0, 400));
+        console.log('CUST_DYN_RAW', JSON.stringify(custDynRes?.data)?.slice(0, 400));
         const data = extractData(relRes) || {};
 
         // ── Branches ────────────────────────────────────────────────────────
+        // Try user-specific branches first (respects permissions), then all branches
         const rawBranches = (() => {
-          const list = extractList(branchRes) || extractData(branchRes);
-          if (Array.isArray(list) && list.length) return list;
+          const fromUser = extractList(userBranchRes) || extractData(userBranchRes);
+          if (Array.isArray(fromUser) && fromUser.length) return fromUser;
+          const fromAll = extractList(branchRes) || extractData(branchRes);
+          if (Array.isArray(fromAll) && fromAll.length) return fromAll;
           return data.branchesDDL || data.branches || [];
         })();
 
@@ -124,8 +131,11 @@ export default function CreateProjectScreen({ navigation }) {
 
         // ── Customers ───────────────────────────────────────────────────────
         const rawCust = (() => {
-          const list = extractList(custRes) || extractData(custRes);
-          if (Array.isArray(list)) return list;
+          // Try static dropdown first, then dynamic list
+          const fromStatic = extractList(custRes) || extractData(custRes);
+          if (Array.isArray(fromStatic) && fromStatic.length) return fromStatic;
+          const fromDynamic = extractList(custDynRes) || extractData(custDynRes);
+          if (Array.isArray(fromDynamic) && fromDynamic.length) return fromDynamic;
           return data.customersDDL || data.accounts || [];
         })();
 
