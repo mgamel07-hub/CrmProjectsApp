@@ -115,11 +115,14 @@ export default function CreateProjectScreen({ navigation }) {
         })();
 
         // Normalise: API returns {key,value} OR {officeId,branchName} OR {id,name}
-        const normBranch = (b) => ({
-          value: b.key ?? b.officeId ?? b.branchTransId ?? b.id,
-          label: b.value || b.branchName || b.officeName || b.name || String(b.key ?? b.id ?? ''),
-          dedupeKey: b.branchTransId ?? b.key ?? b.officeId ?? b.id,
-        });
+        const normBranch = (b) => {
+          const rawKey = b.key ?? b.officeId ?? b.branchTransId ?? b.id;
+          return {
+            value: rawKey,
+            label: b.value || b.branchName || b.officeName || b.name || String(rawKey ?? ''),
+            dedupeKey: String(rawKey ?? ''), // always string so Map dedup works regardless of type
+          };
+        };
 
         const branchSeen = new Map();
         rawBranches.forEach((b) => {
