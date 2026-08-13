@@ -239,7 +239,12 @@ export default function CreateProjectScreen({ navigation }) {
       };
       const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
       const fullToken = await AsyncStorage.getItem('token');
-      console.log('FULL_TOKEN', fullToken);
+      try {
+        const parts = fullToken.split('.');
+        const pad = (s) => s + '='.repeat((4 - s.length % 4) % 4);
+        const claims = JSON.parse(atob(pad(parts[1].replace(/-/g, '+').replace(/_/g, '/'))));
+        console.log('JWT_CLAIMS', JSON.stringify(claims));
+      } catch (e) { console.log('JWT_DECODE_ERR', e.message); }
       console.log('CREATE_PAYLOAD', JSON.stringify(payload));
 
       let res = await createProject(payload);
