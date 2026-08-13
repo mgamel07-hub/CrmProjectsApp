@@ -4,7 +4,7 @@ import {
   TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { createProject, createProjectV2, getProjectRelatedObjects, getAccountsDropdown, getAccountsDynamic, getBranches, getUserBranches } from '../api/projects';
+import { createProject, createProjectV2, getProjects, getProjectById, getProjectRelatedObjects, getAccountsDropdown, getAccountsDynamic, getBranches, getUserBranches } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { extractData, extractList } from '../utils/helpers';
@@ -207,7 +207,6 @@ export default function CreateProjectScreen({ navigation }) {
     try {
       // Peek at an existing project to see real field values
       try {
-        const { getProjects, getProjectById } = await import('../api/projects');
         const listRes = await getProjects({ pageNumber: 1, pageSize: 1, includeClosed: true });
         const items = listRes?.data?.data?.data || listRes?.data?.data || listRes?.data || [];
         if (Array.isArray(items) && items.length > 0) {
