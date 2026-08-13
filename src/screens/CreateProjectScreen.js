@@ -226,6 +226,15 @@ export default function CreateProjectScreen({ navigation }) {
         ? (String(rawFlag).includes('-') ? Number(String(rawFlag).split('-').pop()) : Number(rawFlag))
         : null;
 
+      // Decode JWT to get StructureId (may be required by server)
+      let structureId = null;
+      try {
+        const parts = fullToken.split('.');
+        const pad = (s) => s + '='.repeat((4 - s.length % 4) % 4);
+        const claims = JSON.parse(atob(pad(parts[1].replace(/-/g, '+').replace(/_/g, '/'))));
+        structureId = claims.StructureId ? Number(claims.StructureId) : null;
+      } catch (_) {}
+
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || null,
@@ -233,6 +242,7 @@ export default function CreateProjectScreen({ navigation }) {
         customerId: null,
         projectTypeFlagId: flagId || null,
         allocatedUnits: Number(form.allocatedUnits),
+        structureId,
         dateStart: toISO(form.dateStart) || null,
         dateEnd: toISO(form.dateEnd) || null,
         projectScope: [],
