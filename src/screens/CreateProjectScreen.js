@@ -237,6 +237,9 @@ export default function CreateProjectScreen({ navigation }) {
         dateEnd: toISO(form.dateEnd) || null,
         projectScope: [],
       };
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      const fullToken = await AsyncStorage.getItem('token');
+      console.log('FULL_TOKEN', fullToken);
       console.log('CREATE_PAYLOAD', JSON.stringify(payload));
 
       let res = await createProject(payload);
