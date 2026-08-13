@@ -231,14 +231,19 @@ export default function CreateProjectScreen({ navigation }) {
         console.log('PEEK_ERR', peekErr?.message);
       }
 
+      // projectTypeFlagId comes as "transId-flagId" e.g. "370-1" — API wants the flagId part only
+      const rawFlag = form.projectTypeFlagId;
+      const flagId = rawFlag
+        ? (String(rawFlag).includes('-') ? Number(String(rawFlag).split('-').pop()) : Number(rawFlag))
+        : null;
+
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || null,
         branchId: Number(form.branchId),
         customerId: form.customerId ? Number(form.customerId) : null,
-        projectTypeFlagId: form.projectTypeFlagId ?? null,
+        projectTypeFlagId: flagId || null,
         allocatedUnits: Number(form.allocatedUnits),
-        statusId: 1,
         dateStart: toISO(form.dateStart) || null,
         dateEnd: toISO(form.dateEnd) || null,
         projectScope: [],
