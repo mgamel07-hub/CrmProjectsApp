@@ -110,7 +110,24 @@ export default function CreateProjectScreen({ navigation }) {
           return [...fromUser, ...fromAll].slice(0, 3);
         })();
         console.log('BRANCH_ITEMS_FULL', JSON.stringify(firstBranches));
-        const data = extractData(relRes) || {};
+
+        // Show what GetRelatedObjectsForFilter returns — might have correct branch IDs
+        const relData = extractData(relRes);
+        console.log('REL_DATA_KEYS', JSON.stringify(Object.keys(relData || {})));
+        console.log('REL_BRANCHES', JSON.stringify((relData?.branches || relData?.branchesDDL || []).slice(0, 2)));
+
+        // Also show first branch from GetAllAsDropDownList specifically
+        const allBranchFirst = (extractList(branchRes) || extractData(branchRes) || []).slice(0, 1);
+        console.log('ALL_BRANCH_FIRST', JSON.stringify(allBranchFirst));
+
+        if (allBranchFirst.length) {
+          Alert.alert('AllBranch DDL', JSON.stringify(allBranchFirst[0], null, 2));
+        } else if (relData?.branches?.length || relData?.branchesDDL?.length) {
+          const rb = (relData?.branches || relData?.branchesDDL)[0];
+          Alert.alert('RelBranch', JSON.stringify(rb, null, 2));
+        }
+
+        const data = relData || {};
 
         // ── Branches ────────────────────────────────────────────────────────
         // Merge both sources: all-branches + user-branches (dedup handled below)
