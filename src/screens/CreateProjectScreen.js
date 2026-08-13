@@ -206,21 +206,18 @@ export default function CreateProjectScreen({ navigation }) {
     setSaving(true);
     try {
       // Peek at an existing project to see real field values
+      // Log actual server-side permissions for Project
       try {
-        const listRes = await getProjects({ pageNumber: 1, pageSize: 1, includeClosed: true });
-        const items = listRes?.data?.data?.data || listRes?.data?.data || listRes?.data || [];
-        if (Array.isArray(items) && items.length > 0) {
-          const sample = items[0];
-          const detailRes = await getProjectById(sample.id);
-          const det = detailRes?.data?.data || detailRes?.data;
-          // Log ALL fields to find hidden required fields (companyId, tenantId, etc.)
-          console.log('FULL_PROJECT_KEYS', JSON.stringify(Object.keys(det || {})));
-          console.log('FULL_PROJECT_DATA', JSON.stringify(det));
-        } else {
-          console.log('NO_EXISTING_PROJECTS', JSON.stringify(listRes?.data)?.slice(0, 300));
-        }
-      } catch (peekErr) {
-        console.log('PEEK_ERR', peekErr?.message);
+        const { getMyPermissions } = await import('../api/permissions');
+        const permsRes = await getMyPermissions();
+        const screens = permsRes?.data?.data?.screens || permsRes?.data?.screens || permsRes?.data?.data || permsRes?.data || [];
+        const projectPerm = Array.isArray(screens)
+          ? screens.find(s => (s.screenName || s.name || s.screenCode || '').toLowerCase().includes('project'))
+          : null;
+        console.log('PROJECT_PERM', JSON.stringify(projectPerm));
+        console.log('ALL_PERM_SCREENS', JSON.stringify(Array.isArray(screens) ? screens.map(s => s.screenName || s.name || s.screenCode) : screens));
+      } catch (permErr) {
+        console.log('PERM_ERR', permErr?.message);
       }
 
       // projectTypeFlagId comes as "transId-flagId" e.g. "370-1" — API wants the flagId part only
@@ -233,7 +230,7 @@ export default function CreateProjectScreen({ navigation }) {
         title: form.title.trim(),
         description: form.description.trim() || null,
         branchId: Number(form.branchId),
-        customerId: form.customerId ? Number(form.customerId) : null,
+        customerId: null,
         projectTypeFlagId: flagId || null,
         allocatedUnits: Number(form.allocatedUnits),
         dateStart: toISO(form.dateStart) || null,
