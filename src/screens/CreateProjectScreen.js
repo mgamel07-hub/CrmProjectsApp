@@ -205,56 +205,42 @@ export default function CreateProjectScreen({ navigation }) {
 
     setSaving(true);
     try {
-      // Peek at an existing project to see real field values
-      // Log actual server-side permissions for Project
+      // 1. Get token and decode JWT claims
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      const fullToken = await AsyncStorage.getItem('token');
+      let jwtClaims = {};
       try {
-        const { getMyPermissions } = await import('../api/permissions');
-        const permsRes = await getMyPermissions();
-        const screens = permsRes?.data?.data?.screens || permsRes?.data?.screens || permsRes?.data?.data || permsRes?.data || [];
-        const projectPerm = Array.isArray(screens)
-          ? screens.find(s => (s.screenName || s.name || s.screenCode || '').toLowerCase().includes('project'))
-          : null;
-        console.log('PROJECT_PERM', JSON.stringify(projectPerm));
-        console.log('ALL_PERM_SCREENS', JSON.stringify(Array.isArray(screens) ? screens.map(s => s.screenName || s.name || s.screenCode) : screens));
-      } catch (permErr) {
-        console.log('PERM_ERR', permErr?.message);
-      }
+        const pad = (s) => s + '='.repeat((4 - s.length % 4) % 4);
+        jwtClaims = JSON.parse(atob(pad(fullToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))));
+        console.log('JWT_CLAIMS', JSON.stringify(jwtClaims));
+      } catch (e) { console.log('JWT_DECODE_ERR', e.message); }
 
-      // projectTypeFlagId comes as "transId-flagId" e.g. "370-1" — API wants the flagId part only
+      // 2. projectTypeFlagId comes as "370-1" composite — API wants numeric flagId only
       const rawFlag = form.projectTypeFlagId;
       const flagId = rawFlag
         ? (String(rawFlag).includes('-') ? Number(String(rawFlag).split('-').pop()) : Number(rawFlag))
         : null;
 
-      // Decode JWT to get StructureId (may be required by server)
-      let structureId = null;
-      try {
-        const parts = fullToken.split('.');
-        const pad = (s) => s + '='.repeat((4 - s.length % 4) % 4);
-        const claims = JSON.parse(atob(pad(parts[1].replace(/-/g, '+').replace(/_/g, '/'))));
-        structureId = claims.StructureId ? Number(claims.StructureId) : null;
-      } catch (_) {}
+      const structureId = jwtClaims.StructureId ? Number(jwtClaims.StructureId) : null;
 
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || null,
         branchId: Number(form.branchId),
-        customerId: null,
+        customerId: form.customerId ? Number(form.customerId) : null,
         projectTypeFlagId: flagId || null,
         allocatedUnits: Number(form.allocatedUnits),
         structureId,
         dateStart: toISO(form.dateStart) || null,
         dateEnd: toISO(form.dateEnd) || null,
-        projectScope: [],
+        projectScope: [
+          {
+            title: form.title.trim(),
+            description: null,
+            allocatedUnits: Number(form.allocatedUnits),
+          },
+        ],
       };
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      const fullToken = await AsyncStorage.getItem('token');
-      try {
-        const parts = fullToken.split('.');
-        const pad = (s) => s + '='.repeat((4 - s.length % 4) % 4);
-        const claims = JSON.parse(atob(pad(parts[1].replace(/-/g, '+').replace(/_/g, '/'))));
-        console.log('JWT_CLAIMS', JSON.stringify(claims));
-      } catch (e) { console.log('JWT_DECODE_ERR', e.message); }
       console.log('CREATE_PAYLOAD', JSON.stringify(payload));
 
       let res = await createProject(payload);
