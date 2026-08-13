@@ -212,9 +212,18 @@ export default function CreateProjectScreen({ navigation }) {
         const items = listRes?.data?.data?.data || listRes?.data?.data || listRes?.data || [];
         if (Array.isArray(items) && items.length > 0) {
           const sample = items[0];
-          console.log('SAMPLE_PROJECT', JSON.stringify(sample));
+          console.log('SAMPLE_KEY_FIELDS', JSON.stringify({
+            id: sample.id, branchId: sample.branchId,
+            branch: sample.branch, statusId: sample.statusId,
+            allocatedUnits: sample.allocatedUnits, customerId: sample.customerId,
+          }));
           const detailRes = await getProjectById(sample.id);
-          console.log('SAMPLE_DETAIL', JSON.stringify(detailRes?.data?.data || detailRes?.data));
+          const det = detailRes?.data?.data || detailRes?.data;
+          console.log('DETAIL_KEY_FIELDS', JSON.stringify({
+            id: det?.id, branchId: det?.branchId,
+            branch: det?.branch, statusId: det?.statusId,
+            allocatedUnits: det?.allocatedUnits,
+          }));
         } else {
           console.log('NO_EXISTING_PROJECTS', JSON.stringify(listRes?.data)?.slice(0, 300));
         }
