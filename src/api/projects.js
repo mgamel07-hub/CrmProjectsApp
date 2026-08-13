@@ -1,4 +1,4 @@
-import api from './client';
+import api, { apiV2 } from './client';
 
 // Projects
 export const getProjects = (filter) => api.post('/Project/GetAll', filter);
@@ -9,6 +9,7 @@ export const getDashboardStats = () => api.get('/Project/GetMainDashboardStats')
 export const getProjectDashboard = (projectId) => api.get(`/Project/GetSingleProjectDashboardStats/${projectId}`);
 export const getProjectRelatedObjects = () => api.get('/Project/GetRelatedObjectsForFilter');
 export const createProject = (data) => api.post('/Project/Create', data);
+export const createProjectV2 = (data) => apiV2.post('/Project/Create', data);
 export const updateProject = (data) => api.put('/Project/Update', data);
 export const updateProjectStatus = (data) => api.put('/Project/UpdateStatus', data);
 export const deleteProject = (id) => api.delete(`/Project/Delete/${id}`);

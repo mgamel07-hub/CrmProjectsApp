@@ -4,7 +4,7 @@ import {
   TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { createProject, getProjectRelatedObjects, getAccountsDropdown, getAccountsDynamic, getBranches, getUserBranches } from '../api/projects';
+import { createProject, createProjectV2, getProjectRelatedObjects, getAccountsDropdown, getAccountsDynamic, getBranches, getUserBranches } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { extractData, extractList } from '../utils/helpers';
@@ -250,8 +250,15 @@ export default function CreateProjectScreen({ navigation }) {
       };
       console.log('CREATE_PAYLOAD', JSON.stringify(payload));
 
-      const res = await createProject(payload);
-      console.log('CREATE_RES', JSON.stringify(res?.data)?.slice(0, 500));
+      let res = await createProject(payload);
+      console.log('CREATE_V1_RES', JSON.stringify(res?.data)?.slice(0, 300));
+
+      // If v1 returns InvalidEntry, try v2 — some endpoints only work on v2
+      if (res?.data?.isSuccess === false && res?.data?.message === 'InvalidEntry') {
+        console.log('V1 failed, trying v2...');
+        res = await createProjectV2(payload);
+        console.log('CREATE_V2_RES', JSON.stringify(res?.data)?.slice(0, 300));
+      }
 
       // API may return HTTP 200 with isSuccess:false — treat that as an error
       const body = res?.data;
