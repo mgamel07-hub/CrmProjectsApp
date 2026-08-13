@@ -205,6 +205,23 @@ export default function CreateProjectScreen({ navigation }) {
 
     setSaving(true);
     try {
+      // Peek at an existing project to see real field values
+      try {
+        const { getProjects, getProjectById } = await import('../api/projects');
+        const listRes = await getProjects({ pageNumber: 1, pageSize: 1, includeClosed: true });
+        const items = listRes?.data?.data?.data || listRes?.data?.data || listRes?.data || [];
+        if (Array.isArray(items) && items.length > 0) {
+          const sample = items[0];
+          console.log('SAMPLE_PROJECT', JSON.stringify(sample));
+          const detailRes = await getProjectById(sample.id);
+          console.log('SAMPLE_DETAIL', JSON.stringify(detailRes?.data?.data || detailRes?.data));
+        } else {
+          console.log('NO_EXISTING_PROJECTS', JSON.stringify(listRes?.data)?.slice(0, 300));
+        }
+      } catch (peekErr) {
+        console.log('PEEK_ERR', peekErr?.message);
+      }
+
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || null,
