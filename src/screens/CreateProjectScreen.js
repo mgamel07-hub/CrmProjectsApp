@@ -205,37 +205,21 @@ export default function CreateProjectScreen({ navigation }) {
 
     setSaving(true);
     try {
-      // Parse projectTypeFlagId: "370-1" → the API likely wants just the numeric part
-      // "370-1" seems to be "transId-flagId" composite — try sending null for now to confirm
       const payload = {
         title: form.title.trim(),
-        description: form.description.trim() || undefined,
+        description: form.description.trim() || null,
         branchId: Number(form.branchId),
-        customerId: undefined, // disabled to isolate bug
-        projectTypeFlagId: undefined, // disabled to isolate bug
+        customerId: form.customerId ? Number(form.customerId) : null,
+        projectTypeFlagId: form.projectTypeFlagId ?? null,
         allocatedUnits: Number(form.allocatedUnits),
-        dateStart: toISO(form.dateStart),
-        dateEnd: toISO(form.dateEnd),
+        statusId: 1,
+        dateStart: toISO(form.dateStart) || null,
+        dateEnd: toISO(form.dateEnd) || null,
+        projectScope: [],
       };
       console.log('CREATE_PAYLOAD', JSON.stringify(payload));
 
-      // Log the full raw request using fetch directly to see headers too
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      const token = await AsyncStorage.getItem('token');
-      console.log('TOKEN_PREFIX', token?.slice(0, 30));
-      const rawRes = await fetch('https://crm.yemensoft.net:3346/api/v1/Project/Create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const rawBody = await rawRes.json();
-      console.log('RAW_STATUS', rawRes.status, 'RAW_BODY', JSON.stringify(rawBody));
-
-      // Use rawBody instead of axios response
-      const res = { data: rawBody };
+      const res = await createProject(payload);
       console.log('CREATE_RES', JSON.stringify(res?.data)?.slice(0, 500));
 
       // API may return HTTP 200 with isSuccess:false — treat that as an error
