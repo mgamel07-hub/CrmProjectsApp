@@ -205,12 +205,14 @@ export default function CreateProjectScreen({ navigation }) {
 
     setSaving(true);
     try {
+      // Parse projectTypeFlagId: "370-1" → the API likely wants just the numeric part
+      // "370-1" seems to be "transId-flagId" composite — try sending null for now to confirm
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
-        branchId: Number(form.branchId),           // must be integer
+        branchId: Number(form.branchId),
         customerId: form.customerId ? Number(form.customerId) : undefined,
-        projectTypeFlagId: form.projectTypeFlagId || undefined,
+        projectTypeFlagId: undefined, // disabled temporarily to isolate the bug
         allocatedUnits: Number(form.allocatedUnits),
         dateStart: toISO(form.dateStart),
         dateEnd: toISO(form.dateEnd),
