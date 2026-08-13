@@ -113,13 +113,8 @@ export default function CreateProjectScreen({ navigation }) {
 
         const relData = extractData(relRes);
 
-        // Show ALL branches from GetAllAsDropDownList to find correct key for each office
         const allBranches = extractList(branchRes) || extractData(branchRes) || [];
-        console.log('ALL_BRANCHES_FULL', JSON.stringify(allBranches));
-        Alert.alert(
-          'All Branches DDL',
-          JSON.stringify(allBranches.map(b => ({ key: b.key, val: b.value })), null, 1)
-        );
+        console.log('ALL_BRANCHES_COUNT', allBranches.length);
 
         const data = relData || {};
 
@@ -133,12 +128,11 @@ export default function CreateProjectScreen({ navigation }) {
           return data.branchesDDL || data.branches || [];
         })();
 
-        // Normalise branches:
-        // GetUserBranchesAsDropdownList → {officeId, locationId, officeName, branchName, ...}
-        //   locationId is the branch entity ID used in ProjectCreateDto.branchId
-        // GetAllAsDropDownList → standard {key, value} where key = branchId
+        // GetAllAsDropDownList → {key, value}  where key = actual branchId (e.g. 44)
+        // GetUserBranchesAsDropdownList → {officeId=44, locationId=41, officeName, ...}
+        // key from GetAllAsDropDownList === officeId from GetUserBranchesAsDropdownList
         const normBranch = (b) => {
-          const rawKey = b.key ?? b.locationId ?? b.officeId ?? b.id;
+          const rawKey = b.key ?? b.officeId ?? b.id; // NOT locationId — officeId matches key
           const label = b.value || b.officeName || b.branchName || b.name || String(rawKey ?? '');
           return {
             value: rawKey,
@@ -229,7 +223,8 @@ export default function CreateProjectScreen({ navigation }) {
       const body = res?.data;
       if (body?.isSuccess === false) {
         const detail = [body?.message, ...(body?.errors || [])].filter(Boolean).join('\n');
-        const debugInfo = `\n[branchId=${payload.branchId} units=${payload.allocatedUnits}]`;
+        // Show full payload for diagnosis
+        const debugInfo = '\n\n' + JSON.stringify(payload, null, 1);
         Alert.alert(t('error'), (detail || 'فشل') + debugInfo);
         return;
       }
