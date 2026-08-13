@@ -211,8 +211,8 @@ export default function CreateProjectScreen({ navigation }) {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         branchId: Number(form.branchId),
-        customerId: form.customerId ? Number(form.customerId) : undefined,
-        projectTypeFlagId: undefined, // disabled temporarily to isolate the bug
+        customerId: undefined, // disabled to isolate bug
+        projectTypeFlagId: undefined, // disabled to isolate bug
         allocatedUnits: Number(form.allocatedUnits),
         dateStart: toISO(form.dateStart),
         dateEnd: toISO(form.dateEnd),
