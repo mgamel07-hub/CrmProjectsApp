@@ -218,7 +218,24 @@ export default function CreateProjectScreen({ navigation }) {
         dateEnd: toISO(form.dateEnd),
       };
       console.log('CREATE_PAYLOAD', JSON.stringify(payload));
-      const res = await createProject(payload);
+
+      // Log the full raw request using fetch directly to see headers too
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      const token = await AsyncStorage.getItem('token');
+      console.log('TOKEN_PREFIX', token?.slice(0, 30));
+      const rawRes = await fetch('https://crm.yemensoft.net:3346/api/v1/Project/Create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const rawBody = await rawRes.json();
+      console.log('RAW_STATUS', rawRes.status, 'RAW_BODY', JSON.stringify(rawBody));
+
+      // Use rawBody instead of axios response
+      const res = { data: rawBody };
       console.log('CREATE_RES', JSON.stringify(res?.data)?.slice(0, 500));
 
       // API may return HTTP 200 with isSuccess:false — treat that as an error
