@@ -270,8 +270,19 @@ export default function CreateProjectScreen({ navigation }) {
         return;
       }
 
+      const newId = body?.data?.id ?? body?.data;
+      console.log('CREATED_ID', newId, 'FULL_BODY', JSON.stringify(body?.data));
       Alert.alert(t('success'), lang === 'ar' ? 'تم إنشاء المشروع بنجاح' : 'Project created successfully', [
-        { text: 'OK', onPress: () => navigation.goBack() },
+        {
+          text: 'OK',
+          onPress: () => {
+            if (newId && typeof newId === 'number') {
+              navigation.replace('ProjectDetail', { projectId: newId, title: form.title.trim() });
+            } else {
+              navigation.goBack();
+            }
+          },
+        },
       ]);
     } catch (e) {
       console.log('CREATE_ERR', e?.response?.status, JSON.stringify(e?.response?.data)?.slice(0, 500));
