@@ -212,18 +212,11 @@ export default function CreateProjectScreen({ navigation }) {
         const items = listRes?.data?.data?.data || listRes?.data?.data || listRes?.data || [];
         if (Array.isArray(items) && items.length > 0) {
           const sample = items[0];
-          console.log('SAMPLE_KEY_FIELDS', JSON.stringify({
-            id: sample.id, branchId: sample.branchId,
-            branch: sample.branch, statusId: sample.statusId,
-            allocatedUnits: sample.allocatedUnits, customerId: sample.customerId,
-          }));
           const detailRes = await getProjectById(sample.id);
           const det = detailRes?.data?.data || detailRes?.data;
-          console.log('DETAIL_KEY_FIELDS', JSON.stringify({
-            id: det?.id, branchId: det?.branchId,
-            branch: det?.branch, statusId: det?.statusId,
-            allocatedUnits: det?.allocatedUnits,
-          }));
+          // Log ALL fields to find hidden required fields (companyId, tenantId, etc.)
+          console.log('FULL_PROJECT_KEYS', JSON.stringify(Object.keys(det || {})));
+          console.log('FULL_PROJECT_DATA', JSON.stringify(det));
         } else {
           console.log('NO_EXISTING_PROJECTS', JSON.stringify(listRes?.data)?.slice(0, 300));
         }
