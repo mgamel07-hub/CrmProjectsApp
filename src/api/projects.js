@@ -81,3 +81,9 @@ export const getFlags = (groupCode) => api.get('/Flag/GetAsDropDownList', { para
 export const getUsers = () => api.get('/User/GetAsDropDownList');
 export const getProducts = (search = '', pageSize = 200) =>
   api.get('/Product/GetDynamicList', { params: { pageNo: 1, pageSize, searchVal: search } });
+
+// Client Team (فريق العميل) — contacts from the customer side on a project
+export const getClientContacts = (projectId) => api.get(`/ProjectClientUser/GetByProject/${projectId}`);
+export const addClientContact = (data) => api.post('/ProjectClientUser/Create', data);
+export const deleteClientContact = (id) => api.delete(`/ProjectClientUser/Delete/${id}`);
+export const getEligibleClientUsers = (projectId) => api.get(`/ProjectClientUser/GetEligibleUsers/${projectId}`);

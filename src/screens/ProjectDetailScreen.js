@@ -1,12 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  RefreshControl, Alert,
+  RefreshControl, Alert, Modal, FlatList, TextInput, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getProjectByIdForView, getProjectProgress,
   getScopesByProject, getProjectUsers,
+  getClientContacts, addClientContact, deleteClientContact,
+  getEligibleClientUsers, getProducts,
 } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
@@ -23,6 +25,16 @@ import StatusBadge from '../components/StatusBadge';
 import ProgressBar from '../components/ProgressBar';
 import Card from '../components/Card';
 
+function calcScopeProgress(scope) {
+  const stages = scope.stages || [];
+  if (stages.length === 0) return null;
+  const completed = stages.filter((s) => {
+    const key = String(s.statusId ?? '').toLowerCase().replace(/[_\s]/g, '');
+    return ['2', 'completed', 'finished'].includes(key);
+  }).length;
+  return Math.round((completed / stages.length) * 100);
+}
+
 export default function ProjectDetailScreen({ navigation, route }) {
   const { projectId, title } = route.params;
   const { lang } = useLang();
@@ -33,23 +45,52 @@ export default function ProjectDetailScreen({ navigation, route }) {
   const [scopes, setScopes] = useState([]);
   const [users, setUsers] = useState([]);
   const [progress, setProgress] = useState(null);
+  const [productMap, setProductMap] = useState({});
+  const [clientContacts, setClientContacts] = useState([]);
+  const [clientContactsErr, setClientContactsErr] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('scopes');
 
+  // Add contact modal state
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [eligibleUsers, setEligibleUsers] = useState([]);
+  const [eligibleSearch, setEligibleSearch] = useState('');
+  const [addingContact, setAddingContact] = useState(null);
+
   const load = useCallback(async () => {
     try {
-      const [projRes, scopesRes, usersRes, progressRes] = await Promise.allSettled([
+      const [projRes, scopesRes, usersRes, progressRes, prodRes, contactsRes] = await Promise.allSettled([
         getProjectByIdForView(projectId),
         getScopesByProject(projectId),
         getProjectUsers(projectId),
         getProjectProgress(projectId),
+        getProducts(),
+        getClientContacts(projectId),
       ]);
       if (projRes.status === 'fulfilled') setProject(extractData(projRes.value));
-      if (scopesRes.status === 'fulfilled') setScopes(extractList(scopesRes.value));
-      if (usersRes.status === 'fulfilled') setUsers(extractList(usersRes.value));
+      if (scopesRes.status === 'fulfilled') setScopes(extractList(scopesRes.value) || []);
+      if (usersRes.status === 'fulfilled') setUsers(extractList(usersRes.value) || []);
       if (progressRes.status === 'fulfilled') setProgress(extractData(progressRes.value));
+
+      if (prodRes.status === 'fulfilled') {
+        const rawProds = extractList(prodRes.value) || extractData(prodRes.value) || [];
+        const map = {};
+        (Array.isArray(rawProds) ? rawProds : []).forEach((p) => {
+          const key = p.key ?? p.id;
+          if (key != null) map[String(key)] = p.value || p.name || String(key);
+        });
+        setProductMap(map);
+      }
+
+      if (contactsRes.status === 'fulfilled') {
+        setClientContacts(extractList(contactsRes.value) || []);
+        setClientContactsErr(false);
+      } else {
+        setClientContactsErr(true);
+      }
+
       setError(null);
     } catch (e) {
       setError(e?.response?.data?.message || t('networkError'));
@@ -77,14 +118,69 @@ export default function ProjectDetailScreen({ navigation, route }) {
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
+  const getScopeName = (scope) => {
+    const byId = productMap[String(scope.productId ?? '')] || productMap[String(scope.product?.id ?? '')];
+    return byId || scope.product?.name || scope.product?.localName || scope.title || `Scope #${scope.id}`;
+  };
+
+  const openAddContactModal = async () => {
+    setAddModalVisible(true);
+    setEligibleSearch('');
+    try {
+      const res = await getEligibleClientUsers(projectId);
+      setEligibleUsers(extractList(res) || []);
+    } catch {
+      setEligibleUsers([]);
+    }
+  };
+
+  const handleAddContact = async (user) => {
+    setAddingContact(user.id ?? user.userId);
+    try {
+      await addClientContact({ projectId, userId: user.id ?? user.userId });
+      await load();
+      setAddModalVisible(false);
+    } catch (e) {
+      Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+    } finally {
+      setAddingContact(null);
+    }
+  };
+
+  const handleRemoveContact = (contact) => {
+    Alert.alert(
+      lang === 'ar' ? 'تأكيد الحذف' : 'Confirm Remove',
+      lang === 'ar' ? `حذف ${contact.user?.fullName || ''} من فريق العميل؟` : `Remove ${contact.user?.fullName || ''} from client team?`,
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('delete'), style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteClientContact(contact.id);
+              await load();
+            } catch (e) {
+              Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (loading) return <LoadingScreen />;
   if (error && !project) return <ErrorMessage message={error} onRetry={load} />;
 
   const tabs = [
-    { key: 'scopes', label: lang === 'ar' ? 'النطاقات' : 'Scopes', icon: 'layers-outline' },
-    { key: 'team', label: t('projectUsers'), icon: 'people-outline' },
-    { key: 'info', label: lang === 'ar' ? 'التفاصيل' : 'Details', icon: 'information-circle-outline' },
+    { key: 'scopes',  label: lang === 'ar' ? 'النطاقات' : 'Scopes',         icon: 'layers-outline' },
+    { key: 'team',    label: t('projectUsers'),                               icon: 'people-outline' },
+    { key: 'client',  label: t('clientTeam'),                                 icon: 'business-outline' },
+    { key: 'info',    label: lang === 'ar' ? 'التفاصيل' : 'Details',         icon: 'information-circle-outline' },
   ];
+
+  const filteredEligible = eligibleSearch
+    ? eligibleUsers.filter((u) => (u.fullName || u.userName || '').toLowerCase().includes(eligibleSearch.toLowerCase()))
+    : eligibleUsers;
 
   return (
     <ScrollView
@@ -148,13 +244,13 @@ export default function ProjectDetailScreen({ navigation, route }) {
             style={[styles.tab, activeTab === tab.key && styles.tabActive]}
             onPress={() => setActiveTab(tab.key)}
           >
-            <Ionicons name={tab.icon} size={16} color={activeTab === tab.key ? '#1565C0' : '#888'} />
+            <Ionicons name={tab.icon} size={14} color={activeTab === tab.key ? '#1565C0' : '#888'} />
             <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Scopes Tab */}
+      {/* ── Scopes Tab ── */}
       {activeTab === 'scopes' && (
         <View>
           <View style={styles.sectionHeader}>
@@ -175,42 +271,74 @@ export default function ProjectDetailScreen({ navigation, route }) {
               <Text style={styles.emptyText}>{t('noData')}</Text>
             </View>
           ) : (
-            scopes.map((scope) => (
-              <Card
-                key={scope.id}
-                onPress={() => navigation.navigate('ScopeDetail', { scopeId: scope.id, title: scope.title || scope.product?.name })}
-                style={styles.scopeCard}
-              >
-                <View style={styles.scopeHeader}>
-                  <Text style={styles.scopeTitle} numberOfLines={1}>
-                    {scope.title || scope.product?.name || `Scope #${scope.id}`}
+            scopes.map((scope) => {
+              const scopeProgress = calcScopeProgress(scope);
+              const scopeName = getScopeName(scope);
+              return (
+                <Card
+                  key={scope.id}
+                  onPress={() => navigation.navigate('ScopeDetail', {
+                    scopeId: scope.id,
+                    title: scopeName,
+                  })}
+                  style={styles.scopeCard}
+                >
+                  {/* System name header */}
+                  <View style={styles.scopeHeader}>
+                    <View style={styles.scopeIconWrap}>
+                      <Ionicons name="cube-outline" size={16} color="#1565C0" />
+                    </View>
+                    <Text style={styles.scopeProductName} numberOfLines={1}>{scopeName}</Text>
+                    <Text style={styles.scopeWeight}>{scope.weightPercent?.toFixed(0)}%</Text>
+                  </View>
+
+                  {/* Weight bar — share of total project */}
+                  <View style={styles.weightBarBg}>
+                    <View style={[styles.weightBarFill, { width: `${Math.min(scope.weightPercent || 0, 100)}%` }]} />
+                  </View>
+                  <Text style={styles.weightLabel}>
+                    {lang === 'ar' ? 'حصة من المشروع' : 'Share of project'} · {scope.allocatedUnits} {t('units')}
                   </Text>
-                  <Text style={styles.scopeWeight}>{scope.weightPercent?.toFixed(1)}%</Text>
-                </View>
-                <View style={styles.scopeMeta}>
-                  <Text style={styles.scopeMetaText}>{scope.allocatedUnits} {t('units')}</Text>
-                  {scope.stages?.length > 0 && (
-                    <Text style={styles.scopeMetaText}>
-                      {scope.stages.length} {lang === 'ar' ? 'مراحل' : 'stages'}
-                    </Text>
+
+                  {/* Stage completion progress */}
+                  {scopeProgress !== null && (
+                    <View style={styles.progressWrap}>
+                      <View style={styles.progressRow}>
+                        <Text style={styles.progressSubLabel}>
+                          {lang === 'ar' ? 'إنجاز المراحل' : 'Stage completion'}
+                        </Text>
+                        <Text style={styles.progressPct}>{scopeProgress}%</Text>
+                      </View>
+                      <View style={styles.thinBarBg}>
+                        <View style={[styles.thinBarFill, { width: `${scopeProgress}%` }]} />
+                      </View>
+                    </View>
                   )}
-                </View>
-                <View style={styles.stagesRow}>
-                  {(scope.stages || []).slice(0, 5).map((stage) => (
-                    <View
-                      key={stage.id}
-                      style={[styles.stageDot, { backgroundColor: getStageStatusColor(stage.statusId) }]}
-                    />
-                  ))}
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#bbb" style={styles.cardArrow} />
-              </Card>
-            ))
+
+                  {/* Stage dots */}
+                  {(scope.stages || []).length > 0 && (
+                    <View style={styles.stagesRow}>
+                      {(scope.stages || []).slice(0, 8).map((stage) => (
+                        <View
+                          key={stage.id}
+                          style={[styles.stageDot, { backgroundColor: getStageStatusColor(stage.statusId) }]}
+                        />
+                      ))}
+                      {(scope.stages || []).length > 8 && (
+                        <Text style={styles.moreStages}>+{(scope.stages || []).length - 8}</Text>
+                      )}
+                    </View>
+                  )}
+
+                  <Ionicons name="chevron-forward" size={18} color="#bbb" style={styles.cardArrow} />
+                </Card>
+              );
+            })
           )}
         </View>
       )}
 
-      {/* Team Tab */}
+      {/* ── Internal Team Tab ── */}
       {activeTab === 'team' && (
         <View>
           <Text style={styles.sectionTitle}>{t('projectUsers')}</Text>
@@ -236,7 +364,58 @@ export default function ProjectDetailScreen({ navigation, route }) {
         </View>
       )}
 
-      {/* Info Tab */}
+      {/* ── Client Team Tab ── */}
+      {activeTab === 'client' && (
+        <View>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t('clientTeam')}</Text>
+            {!clientContactsErr && (
+              <TouchableOpacity style={styles.addBtn} onPress={openAddContactModal}>
+                <Ionicons name="add" size={18} color="#fff" />
+                <Text style={styles.addBtnText}>{t('addContact')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {clientContactsErr ? (
+            <View style={styles.emptySection}>
+              <Ionicons name="alert-circle-outline" size={36} color="#ccc" />
+              <Text style={styles.emptyText}>
+                {lang === 'ar' ? 'هذه الخاصية غير متاحة حالياً' : 'Feature not available yet'}
+              </Text>
+            </View>
+          ) : clientContacts.length === 0 ? (
+            <View style={styles.emptySection}>
+              <Ionicons name="business-outline" size={36} color="#ccc" />
+              <Text style={styles.emptyText}>
+                {lang === 'ar' ? 'لا يوجد أعضاء من فريق العميل' : 'No client team members yet'}
+              </Text>
+            </View>
+          ) : (
+            clientContacts.map((c) => (
+              <Card key={c.id} style={styles.userCard}>
+                <View style={[styles.userAvatar, styles.clientAvatar]}>
+                  <Text style={styles.userInitial}>{(c.user?.fullName || c.fullName || c.name || '?')[0].toUpperCase()}</Text>
+                </View>
+                <View style={styles.userInfo}>
+                  <Text style={styles.userName}>{c.user?.fullName || c.fullName || c.name}</Text>
+                  {(c.user?.email || c.email) && (
+                    <Text style={styles.userRole}>{c.user?.email || c.email}</Text>
+                  )}
+                  {(c.user?.phone || c.phone || c.position) && (
+                    <Text style={styles.userRole}>{c.position || c.user?.phone || c.phone}</Text>
+                  )}
+                </View>
+                <TouchableOpacity onPress={() => handleRemoveContact(c)} style={styles.removeBtn}>
+                  <Ionicons name="remove-circle-outline" size={22} color="#D32F2F" />
+                </TouchableOpacity>
+              </Card>
+            ))
+          )}
+        </View>
+      )}
+
+      {/* ── Info Tab ── */}
       {activeTab === 'info' && (
         <Card>
           <View style={styles.infoRow}>
@@ -271,6 +450,59 @@ export default function ProjectDetailScreen({ navigation, route }) {
           )}
         </Card>
       )}
+
+      {/* ── Add Contact Modal ── */}
+      <Modal visible={addModalVisible} transparent animationType="slide" onRequestClose={() => setAddModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('addContact')}</Text>
+              <TouchableOpacity onPress={() => setAddModalVisible(false)}>
+                <Ionicons name="close" size={22} color="#444" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.searchRow}>
+              <Ionicons name="search-outline" size={16} color="#888" />
+              <TextInput
+                style={styles.searchInput}
+                value={eligibleSearch}
+                onChangeText={setEligibleSearch}
+                placeholder={lang === 'ar' ? 'بحث...' : 'Search...'}
+                placeholderTextColor="#aaa"
+                autoFocus
+              />
+            </View>
+            <FlatList
+              data={filteredEligible}
+              keyExtractor={(u, i) => String(u.id ?? u.userId ?? i)}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>{lang === 'ar' ? 'لا توجد نتائج' : 'No results'}</Text>
+              }
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.eligibleRow}
+                  onPress={() => handleAddContact(item)}
+                  disabled={addingContact === (item.id ?? item.userId)}
+                >
+                  <View style={[styles.userAvatar, styles.clientAvatar, { width: 32, height: 32, borderRadius: 16 }]}>
+                    <Text style={[styles.userInitial, { fontSize: 13 }]}>{(item.fullName || item.userName || '?')[0].toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.userName}>{item.fullName || item.userName}</Text>
+                    {item.email && <Text style={styles.userRole}>{item.email}</Text>}
+                  </View>
+                  {addingContact === (item.id ?? item.userId)
+                    ? <ActivityIndicator size="small" color="#1565C0" />
+                    : <Ionicons name="add-circle-outline" size={22} color="#1565C0" />
+                  }
+                </TouchableOpacity>
+              )}
+              style={{ maxHeight: 350 }}
+            />
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -295,35 +527,77 @@ const styles = StyleSheet.create({
     flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, marginBottom: 16, overflow: 'hidden',
     elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3,
   },
-  tab: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 12, gap: 4 },
+  tab: { flex: 1, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', paddingVertical: 10, gap: 2 },
   tabActive: { borderBottomWidth: 2, borderBottomColor: '#1565C0' },
-  tabText: { fontSize: 12, color: '#888', fontWeight: '500' },
+  tabText: { fontSize: 10, color: '#888', fontWeight: '500' },
   tabTextActive: { color: '#1565C0', fontWeight: '700' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', marginBottom: 10 },
   addBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1565C0', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, gap: 4 },
   addBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  scopeCard: { position: 'relative', paddingRight: 32 },
-  scopeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  scopeTitle: { fontSize: 14, fontWeight: '700', color: '#222', flex: 1 },
-  scopeWeight: { fontSize: 18, fontWeight: '800', color: '#1565C0' },
-  scopeMeta: { flexDirection: 'row', gap: 16, marginBottom: 8 },
-  scopeMetaText: { fontSize: 12, color: '#888' },
-  stagesRow: { flexDirection: 'row', gap: 6 },
+
+  // Scope cards
+  scopeCard: { position: 'relative', paddingRight: 32, marginBottom: 10 },
+  scopeHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  scopeIconWrap: {
+    width: 28, height: 28, borderRadius: 8, backgroundColor: '#E8EEF8',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  scopeProductName: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', flex: 1 },
+  scopeWeight: { fontSize: 20, fontWeight: '800', color: '#1565C0', minWidth: 46, textAlign: 'right' },
+  weightBarBg: { height: 6, backgroundColor: '#E8EEF8', borderRadius: 3, marginBottom: 4 },
+  weightBarFill: { height: 6, backgroundColor: '#1565C0', borderRadius: 3 },
+  weightLabel: { fontSize: 11, color: '#999', marginBottom: 10 },
+  progressWrap: { marginBottom: 8 },
+  progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  progressSubLabel: { fontSize: 11, color: '#666' },
+  progressPct: { fontSize: 11, fontWeight: '700', color: '#388E3C' },
+  thinBarBg: { height: 4, backgroundColor: '#E8F5E9', borderRadius: 2 },
+  thinBarFill: { height: 4, backgroundColor: '#388E3C', borderRadius: 2 },
+  stagesRow: { flexDirection: 'row', gap: 5, alignItems: 'center' },
   stageDot: { width: 10, height: 10, borderRadius: 5 },
-  cardArrow: { position: 'absolute', right: 12, top: '50%' },
+  moreStages: { fontSize: 11, color: '#888', marginLeft: 2 },
+  cardArrow: { position: 'absolute', right: 12, top: 16 },
+
+  // Users / contacts
   emptySection: { alignItems: 'center', paddingVertical: 32 },
-  emptyText: { color: '#aaa', marginTop: 8, fontSize: 14 },
-  userCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  emptyText: { color: '#aaa', marginTop: 8, fontSize: 14, textAlign: 'center' },
+  userCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
   userAvatar: {
     width: 40, height: 40, borderRadius: 20, backgroundColor: '#1565C0',
     justifyContent: 'center', alignItems: 'center',
   },
+  clientAvatar: { backgroundColor: '#E65100' },
   userInitial: { color: '#fff', fontWeight: '700', fontSize: 16 },
   userInfo: { flex: 1 },
   userName: { fontSize: 14, fontWeight: '600', color: '#222' },
-  userRole: { fontSize: 12, color: '#888' },
+  userRole: { fontSize: 12, color: '#888', marginTop: 1 },
+  removeBtn: { padding: 4 },
+
+  // Info tab
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   infoLabel: { fontSize: 13, color: '#666', fontWeight: '500' },
   infoValue: { fontSize: 13, color: '#222', fontWeight: '600', textAlign: 'right', flex: 1, marginLeft: 8 },
+
+  // Add contact modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalBox: {
+    backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingBottom: 32, maxHeight: '75%',
+  },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
+  },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginVertical: 10,
+    backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, gap: 8,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: '#222', height: 28 },
+  eligibleRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#F5F5F5',
+  },
 });

@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getScopeById, getStagesByScope, getScopeUsers } from '../api/projects';
+import { getScopeById, getStagesByScope, getScopeUsers, getProducts } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { extractData, extractList, getStageStatusLabel, getStageStatusColor, formatDate } from '../utils/helpers';
@@ -18,20 +18,31 @@ export default function ScopeDetailScreen({ navigation, route }) {
   const [scope, setScope] = useState(null);
   const [stages, setStages] = useState([]);
   const [users, setUsers] = useState([]);
+  const [productMap, setProductMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [scopeRes, stagesRes, usersRes] = await Promise.allSettled([
+      const [scopeRes, stagesRes, usersRes, prodRes] = await Promise.allSettled([
         getScopeById(scopeId),
         getStagesByScope(scopeId),
         getScopeUsers(scopeId),
+        getProducts(),
       ]);
       if (scopeRes.status === 'fulfilled') setScope(extractData(scopeRes.value));
-      if (stagesRes.status === 'fulfilled') setStages(extractList(stagesRes.value));
-      if (usersRes.status === 'fulfilled') setUsers(extractList(usersRes.value));
+      if (stagesRes.status === 'fulfilled') setStages(extractList(stagesRes.value) || []);
+      if (usersRes.status === 'fulfilled') setUsers(extractList(usersRes.value) || []);
+      if (prodRes.status === 'fulfilled') {
+        const rawProds = extractList(prodRes.value) || extractData(prodRes.value) || [];
+        const map = {};
+        (Array.isArray(rawProds) ? rawProds : []).forEach((p) => {
+          const key = p.key ?? p.id;
+          if (key != null) map[String(key)] = p.value || p.name || String(key);
+        });
+        setProductMap(map);
+      }
       setError(null);
     } catch (e) {
       setError(e?.response?.data?.message || t('networkError'));
@@ -41,8 +52,17 @@ export default function ScopeDetailScreen({ navigation, route }) {
     }
   }, [scopeId]);
 
+  const getScopeName = (s) => {
+    if (!s) return title || t('scopeDetails');
+    const byId = productMap[String(s.productId ?? '')] || productMap[String(s.product?.id ?? '')];
+    return byId || s.product?.name || s.product?.localName || s.title || title || t('scopeDetails');
+  };
+
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { navigation.setOptions({ title: title || t('scopeDetails') }); }, [navigation, title]);
+  useEffect(() => {
+    const name = getScopeName(scope);
+    navigation.setOptions({ title: name });
+  }, [navigation, scope, productMap, title]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -57,7 +77,12 @@ export default function ScopeDetailScreen({ navigation, route }) {
     >
       {/* Scope Info */}
       <Card style={styles.headerCard}>
-        <Text style={styles.scopeTitle}>{scope?.title || scope?.product?.name || `Scope #${scopeId}`}</Text>
+        <View style={styles.scopeNameRow}>
+          <View style={styles.scopeIconWrap}>
+            <Ionicons name="cube-outline" size={18} color="#1565C0" />
+          </View>
+          <Text style={styles.scopeTitle}>{getScopeName(scope)}</Text>
+        </View>
         <View style={styles.metaGrid}>
           <View style={styles.metaItem}>
             <Text style={styles.metaLabel}>{t('weight')}</Text>
@@ -152,7 +177,12 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F5F7FA' },
   content: { padding: 16, paddingBottom: 32 },
   headerCard: { marginBottom: 16 },
-  scopeTitle: { fontSize: 18, fontWeight: '800', color: '#1a1a1a', marginBottom: 12 },
+  scopeNameRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  scopeIconWrap: {
+    width: 34, height: 34, borderRadius: 10, backgroundColor: '#E8EEF8',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  scopeTitle: { fontSize: 17, fontWeight: '800', color: '#1a1a1a', flex: 1 },
   metaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   metaItem: {},
   metaLabel: { fontSize: 11, color: '#888', marginBottom: 2 },

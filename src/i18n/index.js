@@ -61,6 +61,10 @@ const translations = {
     editProject: 'تعديل المشروع',
     projectDetails: 'تفاصيل المشروع',
     projectUsers: 'فريق العمل',
+    clientTeam: 'فريق العميل',
+    addContact: 'إضافة جهة اتصال',
+    scopeProgress: 'تقدم النطاق',
+    systemName: 'اسم النظام',
 
     // Scope
     scope: 'النطاق',
@@ -181,6 +185,10 @@ const translations = {
     editProject: 'Edit Project',
     projectDetails: 'Project Details',
     projectUsers: 'Team Members',
+    clientTeam: 'Client Team',
+    addContact: 'Add Contact',
+    scopeProgress: 'Scope Progress',
+    systemName: 'System Name',
 
     // Scope
     scope: 'Scope',
