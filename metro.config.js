@@ -1,25 +1,20 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
+const fs = require('fs');
 
 const config = getDefaultConfig(__dirname);
 
-// @supabase/supabase-js uses .cjs files — Metro doesn't handle them by default
-config.resolver.sourceExts = [...config.resolver.sourceExts, 'cjs'];
+config.resolver.sourceExts = [...config.resolver.sourceExts, 'cjs', 'mjs'];
 
-// @supabase/auth-js internal relative imports fail with Metro's package-exports mode.
-// Manually redirect ./lib/fetch to the exact file on disk.
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (
-    moduleName === './lib/fetch' &&
-    context.originModulePath.includes(path.join('@supabase', 'auth-js'))
-  ) {
-    return {
-      filePath: path.resolve(
-        __dirname,
-        'node_modules/@supabase/auth-js/dist/main/lib/fetch.js'
-      ),
-      type: 'sourceFile',
-    };
+  // Fix: @supabase/auth-js imports ./lib/fetch relatively but Metro can't
+  // resolve it. Use fs.existsSync to locate the real file from the origin dir.
+  if (moduleName === './lib/fetch') {
+    const originDir = path.dirname(context.originModulePath);
+    const candidate = path.resolve(originDir, 'lib', 'fetch.js');
+    if (fs.existsSync(candidate)) {
+      return { filePath: candidate, type: 'sourceFile' };
+    }
   }
   return context.resolveRequest(context, moduleName, platform);
 };
