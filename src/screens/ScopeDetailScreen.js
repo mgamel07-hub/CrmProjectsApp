@@ -53,6 +53,12 @@ export default function ScopeDetailScreen({ navigation, route }) {
     }
   }, [scopeId]);
 
+  const getStageName = (stage, index) =>
+    stage.stageDef?.name || stage.stageDef?.localName ||
+    stage.name || stage.stageName || stage.title || stage.stageDefName ||
+    stage.stageDef?.title || stage.stageDef?.displayName ||
+    `Stage ${index + 1}`;
+
   const getScopeName = (s) => {
     if (!s) return title || t('scopeDetails');
     const byId = productMap[String(s.productId ?? '')] || productMap[String(s.product?.id ?? '')];
@@ -123,7 +129,7 @@ export default function ScopeDetailScreen({ navigation, route }) {
             key={stage.id}
             onPress={() => navigation.navigate('StageDetail', {
               stageId: stage.id,
-              title: stage.stageDef?.name || `Stage ${index + 1}`,
+              title: getStageName(stage, index),
               scopeId,
             })}
             style={styles.stageCard}
@@ -133,7 +139,7 @@ export default function ScopeDetailScreen({ navigation, route }) {
                 <Text style={styles.stageNum}>{index + 1}</Text>
               </View>
               <View style={styles.stageInfo}>
-                <Text style={styles.stageName}>{stage.stageDef?.name || `Stage ${index + 1}`}</Text>
+                <Text style={styles.stageName}>{getStageName(stage, index)}</Text>
                 <StatusBadge
                   label={getStageStatusLabel(stage.statusId)}
                   color={getStageStatusColor(stage.statusId)}
