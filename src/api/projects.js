@@ -79,4 +79,5 @@ export const getUserBranches = () => api.get('/User/GetUserBranchesAsDropdownLis
 export const getCustomers = () => api.get('/Account/GetDynamicList');
 export const getFlags = (groupCode) => api.get('/Flag/GetAsDropDownList', { params: { groupCode } });
 export const getUsers = () => api.get('/User/GetAsDropDownList');
-export const getProducts = () => api.get('/Product/GetAsDropDownList');
+export const getProducts = (search = '', pageSize = 200) =>
+  api.get('/Product/GetDynamicList', { params: { pageNo: 1, pageSize, searchVal: search } });
