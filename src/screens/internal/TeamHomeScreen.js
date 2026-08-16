@@ -54,6 +54,13 @@ export default function TeamHomeScreen({ navigation }) {
       color: '#00695C',
       onPress: () => navigation.navigate('TeamSchedule', { userId, allUsers }),
     },
+    {
+      title: 'إعداد الفريق',
+      subtitle: 'أسماء الأعضاء • الأدوار • الصلاحيات',
+      icon: 'settings-outline',
+      color: '#37474F',
+      onPress: () => navigation.navigate('TeamSetup'),
+    },
   ];
 
   return (

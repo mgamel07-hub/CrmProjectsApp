@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal,
-  TextInput, Alert, ActivityIndicator,
+  TextInput, Alert, ActivityIndicator, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getWeekSchedule, upsertScheduleEntry, deleteScheduleEntry } from '../../api/internal';
+import { getCustomersByUser } from '../../api/projects';
+import { extractList } from '../../utils/helpers';
 
 const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const TYPE_COLORS = { visit: '#1565C0', office: '#388E3C', vacation: '#E65100' };
@@ -12,7 +14,7 @@ const TYPE_LABELS = { visit: 'زيارة عميل', office: 'مكتب', vacation
 
 function getWeekDates(offset = 0) {
   const now = new Date();
-  const day = now.getDay(); // 0=Sun
+  const day = now.getDay();
   const sunday = new Date(now);
   sunday.setDate(now.getDate() - day + offset * 7);
   return Array.from({ length: 7 }, (_, i) => {
@@ -26,15 +28,40 @@ function fmt(date) {
   return date.toISOString().split('T')[0];
 }
 
+function getCustKey(c) {
+  return String(c.key ?? c.id ?? c.accountId ?? '');
+}
+function getCustName(c) {
+  return c.value || c.fullName || c.localName || c.name || getCustKey(c);
+}
+
 export default function WeeklyScheduleScreen({ route }) {
   const { userId } = route.params;
   const [weekOffset, setWeekOffset] = useState(0);
   const [days, setDays] = useState([]);
   const [entries, setEntries] = useState({});
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null); // { date, entry? }
+  const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ type: 'office', client_name: '', vacation_type: 'عارضة', notes: '' });
   const [saving, setSaving] = useState(false);
+
+  // Customer picker state
+  const [customers, setCustomers] = useState([]);
+  const [custLoading, setCustLoading] = useState(false);
+  const [custModal, setCustModal] = useState(false);
+  const [custSearch, setCustSearch] = useState('');
+
+  // Load customers once on mount
+  useEffect(() => {
+    setCustLoading(true);
+    getCustomersByUser(userId)
+      .then(res => {
+        const list = extractList(res) || [];
+        setCustomers(list);
+      })
+      .catch(() => {})
+      .finally(() => setCustLoading(false));
+  }, [userId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -63,6 +90,10 @@ export default function WeeklyScheduleScreen({ route }) {
   };
 
   const save = async () => {
+    if (form.type === 'visit' && !form.client_name.trim()) {
+      Alert.alert('', 'اختر أو اكتب اسم العميل');
+      return;
+    }
     setSaving(true);
     try {
       await upsertScheduleEntry({
@@ -70,7 +101,7 @@ export default function WeeklyScheduleScreen({ route }) {
         crm_user_id: userId,
         date: modal.date,
         type: form.type,
-        client_name: form.type === 'visit' ? form.client_name : null,
+        client_name: form.type === 'visit' ? form.client_name.trim() : null,
         vacation_type: form.type === 'vacation' ? form.vacation_type : null,
         notes: form.notes || null,
       });
@@ -86,11 +117,9 @@ export default function WeeklyScheduleScreen({ route }) {
   const del = async (entry) => {
     Alert.alert('حذف', 'حذف هذا اليوم من الجدول؟', [
       { text: 'إلغاء', style: 'cancel' },
-      {
-        text: 'حذف', style: 'destructive', onPress: async () => {
-          try { await deleteScheduleEntry(entry.id); load(); } catch (e) { Alert.alert('خطأ', e.message); }
-        }
-      },
+      { text: 'حذف', style: 'destructive', onPress: async () => {
+        try { await deleteScheduleEntry(entry.id); load(); } catch (e) { Alert.alert('خطأ', e.message); }
+      }},
     ]);
   };
 
@@ -100,6 +129,10 @@ export default function WeeklyScheduleScreen({ route }) {
     const e = days[6].toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
     return `${s} – ${e}`;
   };
+
+  const filteredCusts = custSearch.trim()
+    ? customers.filter(c => getCustName(c).toLowerCase().includes(custSearch.toLowerCase()))
+    : customers;
 
   return (
     <View style={styles.root}>
@@ -136,7 +169,7 @@ export default function WeeklyScheduleScreen({ route }) {
                     <View style={[styles.typePill, { backgroundColor: TYPE_COLORS[entry.type] }]}>
                       <Text style={styles.typeText}>{TYPE_LABELS[entry.type]}</Text>
                     </View>
-                    {entry.client_name ? <Text style={styles.clientName} numberOfLines={1}>{entry.client_name}</Text> : null}
+                    {entry.client_name ? <Text style={styles.clientName} numberOfLines={2}>{entry.client_name}</Text> : null}
                     {entry.vacation_type ? <Text style={styles.vacType}>{entry.vacation_type}</Text> : null}
                     <TouchableOpacity style={styles.delBtn} onPress={() => del(entry)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Ionicons name="trash-outline" size={14} color="#aaa" />
@@ -153,7 +186,7 @@ export default function WeeklyScheduleScreen({ route }) {
         </ScrollView>
       )}
 
-      {/* Modal */}
+      {/* Entry Modal */}
       <Modal visible={!!modal} transparent animationType="slide" onRequestClose={() => setModal(null)}>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
@@ -170,8 +203,31 @@ export default function WeeklyScheduleScreen({ route }) {
 
             {form.type === 'visit' && (
               <>
-                <Text style={styles.label}>اسم العميل</Text>
-                <TextInput style={styles.input} placeholder="اسم العميل..." value={form.client_name} onChangeText={v => setForm(f => ({ ...f, client_name: v }))} />
+                <Text style={styles.label}>العميل</Text>
+                {/* Customer picker button */}
+                <TouchableOpacity
+                  style={styles.custPickerBtn}
+                  onPress={() => { setCustSearch(''); setCustModal(true); }}
+                >
+                  <Ionicons name="business-outline" size={16} color={form.client_name ? '#1565C0' : '#aaa'} />
+                  <Text style={[styles.custPickerText, form.client_name && { color: '#1565C0' }]} numberOfLines={1}>
+                    {form.client_name || (custLoading ? 'جاري التحميل...' : 'اختر عميلاً...')}
+                  </Text>
+                  {form.client_name
+                    ? <TouchableOpacity onPress={() => setForm(f => ({ ...f, client_name: '' }))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="close-circle" size={16} color="#aaa" />
+                      </TouchableOpacity>
+                    : <Ionicons name="chevron-down" size={14} color="#aaa" />
+                  }
+                </TouchableOpacity>
+                {/* Manual override input */}
+                <TextInput
+                  style={styles.custManualInput}
+                  placeholder="أو اكتب الاسم يدوياً..."
+                  value={form.client_name}
+                  onChangeText={v => setForm(f => ({ ...f, client_name: v }))}
+                  placeholderTextColor="#ccc"
+                />
               </>
             )}
 
@@ -206,6 +262,60 @@ export default function WeeklyScheduleScreen({ route }) {
           </View>
         </View>
       </Modal>
+
+      {/* Customer Picker Modal */}
+      <Modal visible={custModal} transparent animationType="slide" onRequestClose={() => setCustModal(false)}>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { maxHeight: '80%' }]}>
+            <View style={styles.custPickerHeader}>
+              <Text style={styles.sheetTitle}>اختر العميل</Text>
+              <TouchableOpacity onPress={() => setCustModal(false)}>
+                <Ionicons name="close" size={22} color="#888" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.custSearchWrap}>
+              <Ionicons name="search-outline" size={15} color="#aaa" />
+              <TextInput
+                style={styles.custSearchInput}
+                placeholder="ابحث..."
+                value={custSearch}
+                onChangeText={setCustSearch}
+                autoFocus
+                placeholderTextColor="#bbb"
+              />
+            </View>
+            {customers.length === 0 ? (
+              <View style={styles.custEmpty}>
+                <Ionicons name="business-outline" size={36} color="#ddd" />
+                <Text style={styles.custEmptyText}>
+                  {custLoading ? 'جاري التحميل...' : 'لا يوجد عملاء مرتبطون بحسابك'}
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={filteredCusts}
+                keyExtractor={(c, i) => getCustKey(c) || String(i)}
+                renderItem={({ item: c }) => {
+                  const name = getCustName(c);
+                  const selected = form.client_name === name;
+                  return (
+                    <TouchableOpacity
+                      style={[styles.custItem, selected && styles.custItemSelected]}
+                      onPress={() => { setForm(f => ({ ...f, client_name: name })); setCustModal(false); }}
+                    >
+                      <Ionicons name="business-outline" size={16} color={selected ? '#1565C0' : '#888'} />
+                      <Text style={[styles.custItemText, selected && { color: '#1565C0', fontWeight: '700' }]}>{name}</Text>
+                      {selected && <Ionicons name="checkmark-circle" size={16} color="#1565C0" />}
+                    </TouchableOpacity>
+                  );
+                }}
+                ListEmptyComponent={<Text style={styles.custEmptyText}>لا نتائج</Text>}
+                contentContainerStyle={{ paddingBottom: 20 }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -231,11 +341,11 @@ const styles = StyleSheet.create({
   entryWrap: { flex: 1, position: 'relative' },
   typePill: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 4 },
   typeText: { fontSize: 10, color: '#fff', fontWeight: '700' },
-  clientName: { fontSize: 11, color: '#444', marginTop: 2 },
+  clientName: { fontSize: 11, color: '#444', marginTop: 2, lineHeight: 14 },
   vacType: { fontSize: 11, color: '#E65100', marginTop: 2 },
   delBtn: { position: 'absolute', bottom: 0, left: 0 },
   emptyDay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  // Modal
+  // Entry modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
   sheetTitle: { fontSize: 16, fontWeight: '800', color: '#1a1a1a', marginBottom: 16, textAlign: 'center' },
@@ -249,4 +359,26 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: 14, color: '#666', fontWeight: '600' },
   saveBtn: { flex: 2, paddingVertical: 12, borderRadius: 10, backgroundColor: '#1565C0', alignItems: 'center', justifyContent: 'center' },
   saveText: { fontSize: 14, color: '#fff', fontWeight: '700' },
+  // Customer picker
+  custPickerBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#f5f5f5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12,
+    marginBottom: 6,
+  },
+  custPickerText: { flex: 1, fontSize: 14, color: '#aaa' },
+  custManualInput: {
+    backgroundColor: '#fafafa', borderRadius: 10, borderWidth: 1, borderColor: '#eee',
+    paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: '#555', marginBottom: 14,
+  },
+  custPickerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  custSearchWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#f5f5f5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12,
+  },
+  custSearchInput: { flex: 1, fontSize: 13, color: '#333', padding: 0 },
+  custItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
+  custItemSelected: { backgroundColor: '#E3F2FD', borderRadius: 10, paddingHorizontal: 10, borderBottomColor: 'transparent' },
+  custItemText: { flex: 1, fontSize: 14, color: '#333' },
+  custEmpty: { alignItems: 'center', paddingVertical: 40, gap: 10 },
+  custEmptyText: { fontSize: 13, color: '#aaa', textAlign: 'center' },
 });

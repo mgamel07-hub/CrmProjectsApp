@@ -187,3 +187,51 @@ export async function getUnreadCount(userId) {
   if (error) return 0;
   return count || 0;
 }
+
+// ── Teams ─────────────────────────────────────────────────────────────────────
+
+export async function getTeams() {
+  const { data, error } = await supabase.from('teams').select('*').order('name');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createTeam(name) {
+  const { data, error } = await supabase.from('teams').insert({ name }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function renameTeam(id, name) {
+  const { error } = await supabase.from('teams').update({ name }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteTeam(id) {
+  const { error } = await supabase.from('teams').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── Team Members ──────────────────────────────────────────────────────────────
+
+export async function getTeamMembers() {
+  const { data, error } = await supabase
+    .from('team_members')
+    .select('*, teams(id, name)')
+    .order('display_name');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function upsertTeamMember({ crm_user_id, display_name, role, team_id }) {
+  const { error } = await supabase.from('team_members').upsert(
+    { crm_user_id: String(crm_user_id), display_name, role, team_id: team_id || null, updated_at: new Date().toISOString() },
+    { onConflict: 'crm_user_id' }
+  );
+  if (error) throw error;
+}
+
+export async function deleteTeamMember(crm_user_id) {
+  const { error } = await supabase.from('team_members').delete().eq('crm_user_id', String(crm_user_id));
+  if (error) throw error;
+}

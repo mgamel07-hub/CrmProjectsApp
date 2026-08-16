@@ -79,6 +79,10 @@ export const getAccountsDynamic = (search = '') => api.get('/Account/GetDynamicL
 export const getBranches = () => api.get('/Branch/GetAllAsDropDownList');
 export const getUserBranches = () => api.get('/User/GetUserBranchesAsDropdownList');
 export const getCustomers = () => api.get('/Account/GetDynamicList');
+export const getCustomersByUser = (userId) =>
+  api.get('/Account/GetAsDropDownListByUser', { params: { userId } }).catch(() =>
+    api.get('/Account/GetAsDropDownList')
+  );
 export const getFlags = (groupCode) => api.get('/Flag/GetAsDropDownList', { params: { groupCode } });
 export const getUsers = () => api.get('/User/GetAsDropDownList');
 export const getProducts = (search = '', pageSize = 200) =>

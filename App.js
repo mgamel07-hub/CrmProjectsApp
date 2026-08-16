@@ -36,6 +36,7 @@ import MyTasksScreen               from './src/screens/internal/MyTasksScreen';
 import ManageTasksScreen           from './src/screens/internal/ManageTasksScreen';
 import TeamScheduleScreen          from './src/screens/internal/TeamScheduleScreen';
 import InternalNotificationsScreen from './src/screens/internal/InternalNotificationsScreen';
+import TeamSetupScreen             from './src/screens/internal/TeamSetupScreen';
 
 I18nManager.forceRTL(true);
 
@@ -201,6 +202,11 @@ function AppNavigator() {
               name="InternalNotifications"
               component={InternalNotificationsScreen}
               options={{ title: 'إشعارات الفريق' }}
+            />
+            <Stack.Screen
+              name="TeamSetup"
+              component={TeamSetupScreen}
+              options={{ title: 'إعداد الفريق' }}
             />
           </>
         )}
