@@ -23,10 +23,13 @@ const ROLES = [
 ];
 
 function getCrmId(u) {
-  return String(u.key ?? u.userId ?? u.id ?? '');
+  // Try every plausible field name the CRM API might use
+  const v = u.key ?? u.Key ?? u.userId ?? u.UserId ?? u.user_id
+         ?? u.id ?? u.Id ?? u.ID ?? u.accountId ?? null;
+  return v != null ? String(v) : '';
 }
 function getCrmName(u) {
-  return u.value || u.fullName || u.name || getCrmId(u);
+  return u.value || u.Value || u.fullName || u.FullName || u.name || u.Name || u.userName || getCrmId(u);
 }
 
 export default function TeamSetupScreen() {
@@ -60,6 +63,9 @@ export default function TeamSetupScreen() {
         getTeams(),
       ]);
       const raw = (userRes ? extractList(userRes) : null) || [];
+      if (raw.length > 0) {
+        Alert.alert('DEBUG – first user', JSON.stringify(raw[0], null, 2));
+      }
       setCrmUsers(raw);
       setMembers(membersData);
       setTeams(teamsData);
