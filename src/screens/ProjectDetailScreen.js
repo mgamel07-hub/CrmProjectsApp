@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import UserAvatar from '../components/UserAvatar';
 import {
   getProjectByIdForView, getProjectProgress,
   getScopesByProject, getProjectUsers, addProjectUser, deleteProjectUser,
@@ -701,9 +702,11 @@ export default function ProjectDetailScreen({ navigation, route }) {
           ) : (
             users.map((u) => (
               <Card key={u.id} style={styles.userCard}>
-                <View style={styles.userAvatar}>
-                  <Text style={styles.userInitial}>{(u.user?.fullName || u.user?.userName || '?')[0].toUpperCase()}</Text>
-                </View>
+                <UserAvatar
+                  photo={u.user?.photo || u.user?.Photo || u.user?.avatar || u.user?.profileImage}
+                  name={u.user?.fullName || u.user?.userName}
+                  size={40}
+                />
                 <View style={styles.userInfo}>
                   <Text style={styles.userName}>{u.user?.fullName || u.user?.userName}</Text>
                   <Text style={styles.userRole}>{u.isAdmin ? (lang === 'ar' ? 'مسؤول' : 'Admin') : (lang === 'ar' ? 'عضو' : 'Member')}</Text>
@@ -748,9 +751,12 @@ export default function ProjectDetailScreen({ navigation, route }) {
           ) : (
             clientContacts.map((c) => (
               <Card key={c.id} style={styles.userCard}>
-                <View style={[styles.userAvatar, styles.clientAvatar]}>
-                  <Text style={styles.userInitial}>{(c.user?.fullName || c.fullName || c.name || '?')[0].toUpperCase()}</Text>
-                </View>
+                <UserAvatar
+                  photo={c.user?.photo || c.user?.Photo || c.user?.avatar || c.photo}
+                  name={c.user?.fullName || c.fullName || c.name}
+                  size={40}
+                  bgColor="#E65100"
+                />
                 <View style={styles.userInfo}>
                   <Text style={styles.userName}>{c.user?.fullName || c.fullName || c.name}</Text>
                   {(c.user?.email || c.email) && (
@@ -837,9 +843,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                   onPress={() => handleAddMember(item)}
                   disabled={addingMember === item.id}
                 >
-                  <View style={[styles.userAvatar, { width: 32, height: 32, borderRadius: 16 }]}>
-                    <Text style={[styles.userInitial, { fontSize: 13 }]}>{(item.name || '?')[0].toUpperCase()}</Text>
-                  </View>
+                  <UserAvatar photo={item.photo || item.Photo} name={item.name} size={32} />
                   <Text style={[styles.userName, { flex: 1 }]}>{item.name}</Text>
                   {addingMember === item.id
                     ? <ActivityIndicator size="small" color="#1565C0" />
@@ -1069,9 +1073,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                   onPress={() => handleAddContact(item)}
                   disabled={addingContact === (item.id ?? item.userId)}
                 >
-                  <View style={[styles.userAvatar, styles.clientAvatar, { width: 32, height: 32, borderRadius: 16 }]}>
-                    <Text style={[styles.userInitial, { fontSize: 13 }]}>{(item.fullName || item.userName || '?')[0].toUpperCase()}</Text>
-                  </View>
+                  <UserAvatar photo={item.photo || item.Photo || item.avatar} name={item.fullName || item.userName} size={32} bgColor="#E65100" />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.userName}>{item.fullName || item.userName}</Text>
                     {item.email && <Text style={styles.userRole}>{item.email}</Text>}

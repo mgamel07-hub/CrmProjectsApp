@@ -11,6 +11,7 @@ import LoadingScreen from '../components/LoadingScreen';
 import ErrorMessage from '../components/ErrorMessage';
 import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
+import UserAvatar from '../components/UserAvatar';
 
 export default function ScopeDetailScreen({ navigation, route }) {
   const { scopeId, title } = route.params;
@@ -161,9 +162,7 @@ export default function ScopeDetailScreen({ navigation, route }) {
           <Text style={styles.sectionTitle}>{t('projectUsers')}</Text>
           {users.map((u) => (
             <Card key={u.id} style={styles.userCard}>
-              <View style={styles.userAvatar}>
-                <Text style={styles.userInitial}>{(u.user?.fullName || '?')[0].toUpperCase()}</Text>
-              </View>
+              <UserAvatar photo={u.user?.photo || u.user?.Photo} name={u.user?.fullName || u.user?.userName} size={36} />
               <Text style={styles.userName}>{u.user?.fullName || u.user?.userName}</Text>
             </Card>
           ))}
@@ -204,10 +203,5 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: 32 },
   emptyText: { color: '#aaa', marginTop: 8, fontSize: 14 },
   userCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  userAvatar: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: '#1565C0',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  userInitial: { color: '#fff', fontWeight: '700' },
   userName: { fontSize: 14, color: '#222', fontWeight: '500' },
 });

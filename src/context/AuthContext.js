@@ -40,7 +40,7 @@ function parseProfile(raw) {
     roleName:  d.roleName  || d.RoleName  || d.role       || d.Role      || '',
     isAdmin:   !!(d.isAdmin || d.IsAdmin  || d.isSuperAdmin || false),
     isManager: !!(d.isManager || d.IsManager || false),
-    avatar:    d.avatar    || d.Avatar    || d.profileImage || '',
+    avatar:    d.photo     || d.Photo     || d.avatar    || d.Avatar    || d.profileImage || d.profilePicture || '',
     userId:    d.userId    || d.UserId    || d.id          || '',
   };
 }
