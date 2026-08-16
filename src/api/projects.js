@@ -82,11 +82,11 @@ export const getUsers = () => api.get('/User/GetAsDropDownList');
 export const getProducts = (search = '', pageSize = 200) =>
   api.get('/Product/GetDynamicList', { params: { pageNo: 1, pageSize, searchVal: search } });
 
-// Plan Execution (تنفيذ الخطة)
-export const getProjectVisits = (projectId) => api.get(`/Activity/GetByProject/${projectId}`);
-export const createProjectVisit = (data) => api.post('/Activity/Create', data);
-export const deleteProjectVisit = (id) => api.delete(`/Activity/Delete/${id}`);
-export const getVisitAttachments = (visitId) => api.get(`/Activity/GetAttachments/${visitId}`);
+// Plan Execution (تنفيذ الخطة) — endpoint name TBD, trying candidates
+export const getProjectVisits = (projectId) => api.get(`/ProjectPlanExecution/GetByProject/${projectId}`);
+export const createProjectVisit = (data) => api.post('/ProjectPlanExecution/Create', data);
+export const deleteProjectVisit = (id) => api.delete(`/ProjectPlanExecution/Delete/${id}`);
+export const getVisitAttachments = (visitId) => api.get(`/ProjectPlanExecution/GetAttachments/${visitId}`);
 
 // Client Team (فريق العميل) — contacts from the customer side on a project
 export const getClientContacts = (projectId) => api.get(`/ProjectClientUser/GetByProject/${projectId}`);
