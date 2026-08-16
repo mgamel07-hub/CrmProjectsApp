@@ -229,6 +229,15 @@ export default function CreateProjectScreen({ navigation }) {
         }],
       };
 
+      // TEMP DEBUG — remove after diagnosis
+      await new Promise((resolve) => {
+        Alert.alert(
+          'DEBUG PAYLOAD',
+          `branchId: ${payload.branchId}\nstructureId: ${payload.structureId}\nproductId: ${payload.projectScope[0]?.productId}\ncustomerId: ${payload.customerId}\nflagId: ${payload.projectTypeFlagId}`,
+          [{ text: 'Send', onPress: resolve }]
+        );
+      });
+
       const res = await createProject(payload);
       const body = res?.data;
 
