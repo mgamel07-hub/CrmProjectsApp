@@ -11,7 +11,7 @@ import {
   getClientContacts, addClientContact, deleteClientContact,
   getEligibleClientUsers, getProducts, getUsers,
   getProjectVisits, createProjectVisit, deleteProjectVisit,
-  getStagesByScope, getPlansByScope,
+  getStagesDropdown, getPlansByScope,
 } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
@@ -215,7 +215,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
     setVisitStages([]);
     setVisitPlans([]);
     try {
-      const res = await getStagesByScope(scopeId);
+      const res = await getStagesDropdown(scopeId);
       setVisitStages(extractList(res) || []);
     } catch { setVisitStages([]); }
   };
@@ -849,7 +849,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 onSelect={(id) => { setVisitForm((f) => ({ ...f, stageId: id })); onVisitStageSelect(id); }}
                 open={visitStageOpen}
                 setOpen={setVisitStageOpen}
-                getLabel={(s) => s.stageDef?.name || s.stageDef?.nameAr || s.stageDef?.localName || s.stageDef?.title || s.name || s.title || s.nameAr || s.localName || `Stage #${s.id}`}
+                getLabel={(s) => s.value || s.stageDef?.name || s.stageDef?.nameAr || s.name || s.title || `Stage #${s.id ?? s.key}`}
               />
 
               {/* Plan */}

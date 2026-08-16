@@ -83,10 +83,10 @@ export const getProducts = (search = '', pageSize = 200) =>
   api.get('/Product/GetDynamicList', { params: { pageNo: 1, pageSize, searchVal: search } });
 
 // Plan Execution (تنفيذ الخطة)
-export const getProjectVisits = (projectId) => api.get(`/ProjectActivity/GetByProject/${projectId}`);
-export const createProjectVisit = (data) => api.post('/ProjectActivity/Create', data);
-export const deleteProjectVisit = (id) => api.delete(`/ProjectActivity/Delete/${id}`);
-export const getVisitAttachments = (visitId) => api.get(`/ProjectActivity/GetAttachments/${visitId}`);
+export const getProjectVisits = (projectId) => api.get(`/Activity/GetByProject/${projectId}`);
+export const createProjectVisit = (data) => api.post('/Activity/Create', data);
+export const deleteProjectVisit = (id) => api.delete(`/Activity/Delete/${id}`);
+export const getVisitAttachments = (visitId) => api.get(`/Activity/GetAttachments/${visitId}`);
 
 // Client Team (فريق العميل) — contacts from the customer side on a project
 export const getClientContacts = (projectId) => api.get(`/ProjectClientUser/GetByProject/${projectId}`);
