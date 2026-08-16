@@ -54,7 +54,7 @@ export const rejectPlan = (id, data) => api.put(`/ProjectPlan/Reject/${id}`, dat
 export const revertPlanStep = (id) => api.put(`/ProjectPlan/RevertStep/${id}`);
 export const deletePlan = (id) => api.delete(`/ProjectPlan/Delete/${id}`);
 export const getAvailableStageDefItems = (planId) => api.get(`/ProjectPlan/GetAvailableStageDefItems/${planId}`);
-export const getPendingPlans = (params) => api.get('/ProjectPlan/GetAll', { params });
+export const getPendingPlans = (params) => api.get('/ProjectPlan/GetByFilter', { params });
 
 // Plan Items
 export const getPlanItems = (projectPlanId) => api.get(`/ProjectPlanItem/GetByPlan/${projectPlanId}`);

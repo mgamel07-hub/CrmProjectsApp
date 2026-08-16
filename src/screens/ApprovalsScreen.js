@@ -184,7 +184,14 @@ function PlansTab({ lang, navigation }) {
       setPlans(Array.isArray(list) ? list : []);
       setError(null);
     } catch (e) {
-      setError(e?.response?.data?.message || t('networkError'));
+      const status = e?.response?.status;
+      if (status === 404 || status === 405) {
+        // endpoint doesn't exist — show empty with hint
+        setPlans([]);
+        setError(null);
+      } else {
+        setError(e?.response?.data?.message || t('networkError'));
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -242,7 +249,14 @@ function PlansTab({ lang, navigation }) {
       ListEmptyComponent={
         <View style={styles.empty}>
           <Ionicons name="document-text-outline" size={48} color="#ccc" />
-          <Text style={styles.emptyText}>{lang === 'ar' ? 'لا توجد خطط بانتظار الاعتماد' : 'No plans pending approval'}</Text>
+          <Text style={styles.emptyText}>
+            {lang === 'ar' ? 'لا توجد خطط بانتظار الاعتماد' : 'No plans pending approval'}
+          </Text>
+          <Text style={[styles.emptyText, { fontSize: 12, marginTop: 8 }]}>
+            {lang === 'ar'
+              ? 'يمكنك اعتماد الخطط من: المشاريع ← النطاق ← المرحلة ← الخطة'
+              : 'You can approve plans from: Projects → Scope → Stage → Plan'}
+          </Text>
         </View>
       }
       renderItem={({ item }) => (
