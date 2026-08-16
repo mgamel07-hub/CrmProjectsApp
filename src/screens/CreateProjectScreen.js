@@ -4,7 +4,11 @@ import {
   TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { createProject, createProjectV2, getProjects, getProjectById, getProjectRelatedObjects, getAccountsDropdown, getAccountsDynamic, getBranches, getUserBranches } from '../api/projects';
+import {
+  createProject, getProjectRelatedObjects,
+  getAccountsDropdown, getAccountsDynamic,
+  getBranches, getUserBranches, getProducts,
+} from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { extractData, extractList } from '../utils/helpers';
@@ -80,92 +84,73 @@ function Select({ options, value, onSelect, placeholder, lang }) {
 export default function CreateProjectScreen({ navigation }) {
   const { lang } = useLang();
   const [saving, setSaving] = useState(false);
-  const [related, setRelated] = useState({ branches: [], customers: [], flags: [] });
+  const [related, setRelated] = useState({ branches: [], customers: [], flags: [], products: [] });
   const [form, setForm] = useState({
     title: '', description: '', branchId: null,
     customerId: null, projectTypeFlagId: null,
+    productId: null,
     allocatedUnits: '', dateStart: '', dateEnd: '',
   });
+
+  const set = (key, val) => setForm((prev) => ({ ...prev, [key]: val }));
 
   useEffect(() => {
     (async () => {
       try {
-        const [relRes, branchRes, userBranchRes, custRes, custDynRes] = await Promise.all([
+        // Decode JWT to get user's default branch
+        let jwtBranchId = null;
+        try {
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          const tok = await AsyncStorage.getItem('token');
+          const pad = (s) => s + '='.repeat((4 - s.length % 4) % 4);
+          const claims = JSON.parse(atob(pad(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))));
+          jwtBranchId = claims.BranchId ? Number(claims.BranchId) : null;
+        } catch (_) {}
+
+        const [relRes, branchRes, userBranchRes, custRes, custDynRes, prodRes] = await Promise.all([
           getProjectRelatedObjects(),
-          getBranches().catch((e) => { console.log('BRANCH_ERR', e?.response?.status, e?.message); return null; }),
-          getUserBranches().catch((e) => { console.log('USER_BRANCH_ERR', e?.response?.status, e?.message); return null; }),
-          getAccountsDropdown().catch((e) => { console.log('CUST_ERR', e?.response?.status, e?.message); return null; }),
-          getAccountsDynamic().catch((e) => { console.log('CUST_DYN_ERR', e?.response?.status, e?.message); return null; }),
+          getBranches().catch(() => null),
+          getUserBranches().catch(() => null),
+          getAccountsDropdown().catch(() => null),
+          getAccountsDynamic().catch(() => null),
+          getProducts().catch(() => null),
         ]);
-        console.log('REL_RAW', JSON.stringify(relRes?.data)?.slice(0, 400));
-        console.log('BRANCH_RAW', JSON.stringify(branchRes?.data)?.slice(0, 400));
-        console.log('USER_BRANCH_RAW', JSON.stringify(userBranchRes?.data)?.slice(0, 400));
-        console.log('CUST_RAW', JSON.stringify(custRes?.data)?.slice(0, 400));
-        console.log('CUST_DYN_RAW', JSON.stringify(custDynRes?.data)?.slice(0, 400));
 
-        // Log first 2 raw branch items to see ALL their fields (key, parentKey, etc.)
-        const firstBranches = (() => {
-          const fromUser = extractList(userBranchRes) || extractData(userBranchRes) || [];
-          const fromAll  = extractList(branchRes)     || extractData(branchRes)     || [];
-          return [...fromUser, ...fromAll].slice(0, 3);
-        })();
-        console.log('BRANCH_ITEMS_FULL', JSON.stringify(firstBranches));
+        const data = extractData(relRes) || {};
 
-        const relData = extractData(relRes);
-
-        const allBranches = extractList(branchRes) || extractData(branchRes) || [];
-        console.log('ALL_BRANCHES_COUNT', allBranches.length);
-
-        const data = relData || {};
-
-        // ── Branches ────────────────────────────────────────────────────────
-        // Merge both sources: all-branches + user-branches (dedup handled below)
+        // Branches: merge all-branches + user-branches, dedup by id
         const rawBranches = (() => {
           const fromAll  = extractList(branchRes)     || extractData(branchRes)     || [];
           const fromUser = extractList(userBranchRes) || extractData(userBranchRes) || [];
           const merged = [...(Array.isArray(fromAll) ? fromAll : []), ...(Array.isArray(fromUser) ? fromUser : [])];
-          if (merged.length) return merged;
-          return data.branchesDDL || data.branches || [];
+          return merged.length ? merged : (data.branchesDDL || data.branches || []);
         })();
-
-        // GetAllAsDropDownList → {key, value}  where key = actual branchId (e.g. 44)
-        // GetUserBranchesAsDropdownList → {officeId=44, locationId=41, officeName, ...}
-        // key from GetAllAsDropDownList === officeId from GetUserBranchesAsDropdownList
-        const normBranch = (b) => {
-          const rawKey = b.key ?? b.officeId ?? b.id; // NOT locationId — officeId matches key
-          const label = b.value || b.officeName || b.branchName || b.name || String(rawKey ?? '');
-          return {
-            value: rawKey,
-            label,
-            dedupeKey: String(rawKey ?? ''),
-          };
-        };
 
         const branchSeen = new Map();
         rawBranches.forEach((b) => {
-          const n = normBranch(b);
-          if (n.value != null && !branchSeen.has(n.dedupeKey)) {
-            branchSeen.set(n.dedupeKey, { value: n.value, label: n.label });
-          }
+          const rawKey = b.key ?? b.officeId ?? b.id;
+          const label = b.value || b.officeName || b.branchName || b.name || String(rawKey ?? '');
+          const dk = String(rawKey ?? '');
+          if (rawKey != null && !branchSeen.has(dk)) branchSeen.set(dk, { value: rawKey, label });
         });
 
-        // ── Customers ───────────────────────────────────────────────────────
+        // Customers
         const rawCust = (() => {
-          // Try static dropdown first, then dynamic list
-          const fromStatic = extractList(custRes) || extractData(custRes);
-          if (Array.isArray(fromStatic) && fromStatic.length) return fromStatic;
-          const fromDynamic = extractList(custDynRes) || extractData(custDynRes);
-          if (Array.isArray(fromDynamic) && fromDynamic.length) return fromDynamic;
+          const s = extractList(custRes) || extractData(custRes);
+          if (Array.isArray(s) && s.length) return s;
+          const d = extractList(custDynRes) || extractData(custDynRes);
+          if (Array.isArray(d) && d.length) return d;
           return data.customersDDL || data.accounts || [];
         })();
-
-        // Normalise: {key,value} OR {id,fullName} OR {customerId,name}
         const customers = rawCust
-          .map((c) => ({
-            value: c.key ?? c.id ?? c.customerId,
-            label: c.value || c.fullName || c.localName || c.name || String(c.key ?? c.id ?? ''),
-          }))
+          .map((c) => ({ value: c.key ?? c.id ?? c.customerId, label: c.value || c.fullName || c.localName || c.name || '' }))
           .filter((c) => c.value != null && c.label);
+
+        // Products for scope
+        const rawProds = extractList(prodRes) || extractData(prodRes) || [];
+        const products = Array.isArray(rawProds)
+          ? rawProds.map((p) => ({ value: p.key ?? p.id, label: p.value || p.name || String(p.key ?? p.id) })).filter((p) => p.value != null)
+          : [];
 
         setRelated({
           branches: Array.from(branchSeen.values()),
@@ -173,12 +158,16 @@ export default function CreateProjectScreen({ navigation }) {
           flags: (data.projectTypeFlagsDDL || data.flags || [])
             .map((f) => ({ value: f.key ?? f.id, label: f.value || f.name || String(f.key ?? f.id) }))
             .filter((f) => f.value != null),
+          products,
         });
+
+        // Pre-select user's own branch and first available product
+        if (jwtBranchId) setForm((prev) => ({ ...prev, branchId: jwtBranchId }));
+        if (products.length > 0) setForm((prev) => ({ ...prev, productId: products[0].value }));
+
       } catch (_) {}
     })();
   }, []);
-
-  const set = (key, val) => setForm((prev) => ({ ...prev, [key]: val }));
 
   const handleSave = async () => {
     if (!form.title.trim()) {
@@ -194,45 +183,31 @@ export default function CreateProjectScreen({ navigation }) {
       return;
     }
 
-    // Convert YYYY-MM-DD to ISO date-time expected by API
     const toISO = (d) => {
-      if (!d) return undefined;
-      // Already full ISO
-      if (d.includes('T')) return d;
-      // YYYY-MM-DD → YYYY-MM-DDT00:00:00
-      return `${d}T00:00:00`;
+      if (!d) return null;
+      return d.includes('T') ? d : `${d}T00:00:00`;
     };
 
     setSaving(true);
     try {
-      // 1. Get token and decode JWT claims
+      // Decode JWT for structureId
       const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      const fullToken = await AsyncStorage.getItem('token');
-      let jwtClaims = {};
+      const tok = await AsyncStorage.getItem('token');
+      let structureId = null;
       try {
         const pad = (s) => s + '='.repeat((4 - s.length % 4) % 4);
-        jwtClaims = JSON.parse(atob(pad(fullToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))));
-        console.log('JWT_CLAIMS', JSON.stringify(jwtClaims));
-      } catch (e) { console.log('JWT_DECODE_ERR', e.message); }
+        const claims = JSON.parse(atob(pad(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))));
+        structureId = claims.StructureId ? Number(claims.StructureId) : null;
+      } catch (_) {}
 
-      // 2. projectTypeFlagId comes as "370-1" composite — API wants numeric flagId only
+      // flagId may arrive as composite "370-1" — API wants only the numeric part after the dash
       const rawFlag = form.projectTypeFlagId;
       const flagId = rawFlag
         ? (String(rawFlag).includes('-') ? Number(String(rawFlag).split('-').pop()) : Number(rawFlag))
         : null;
 
-      const structureId = jwtClaims.StructureId ? Number(jwtClaims.StructureId) : null;
-
-      // Fetch products for scope; fall back to known product from existing scope
-      let firstProductId = 203; // fallback: productId from existing project scope
-      try {
-        const { getProducts } = await import('../api/projects');
-        const prodRes = await getProducts();
-        const prods = prodRes?.data?.data || prodRes?.data || [];
-        const first = Array.isArray(prods) ? prods[0] : null;
-        if (first?.key ?? first?.id) firstProductId = first.key ?? first.id;
-        console.log('FIRST_PRODUCT', JSON.stringify(first));
-      } catch (e) { console.log('PROD_ERR_USING_FALLBACK', e?.message); }
+      // productId: user selection, or fallback to known-valid product 203
+      const productId = form.productId ?? 203;
 
       const payload = {
         title: form.title.trim(),
@@ -242,45 +217,32 @@ export default function CreateProjectScreen({ navigation }) {
         projectTypeFlagId: flagId || null,
         allocatedUnits: Number(form.allocatedUnits),
         structureId,
-        dateStart: toISO(form.dateStart) || null,
-        dateEnd: toISO(form.dateEnd) || null,
-        projectScope: firstProductId ? [
-          {
-            productId: firstProductId,
-            weightPercent: 100,
-            allocatedUnits: Number(form.allocatedUnits),
-            propertyId: null,
-            dateStart: null,
-            dateEnd: null,
-          },
-        ] : [],
+        dateStart: toISO(form.dateStart),
+        dateEnd: toISO(form.dateEnd),
+        projectScope: [{
+          productId,
+          weightPercent: 100,
+          allocatedUnits: Number(form.allocatedUnits),
+          propertyId: null,
+          dateStart: null,
+          dateEnd: null,
+        }],
       };
-      console.log('CREATE_PAYLOAD', JSON.stringify(payload));
 
-      let res = await createProject(payload);
-      console.log('CREATE_V1_RES', JSON.stringify(res?.data)?.slice(0, 300));
-
-      // If v1 returns InvalidEntry, try v2 — some endpoints only work on v2
-      if (res?.data?.isSuccess === false && res?.data?.message === 'InvalidEntry') {
-        console.log('V1 failed, trying v2...');
-        res = await createProjectV2(payload);
-        console.log('CREATE_V2_RES', JSON.stringify(res?.data)?.slice(0, 300));
-      }
-
-      // API may return HTTP 200 with isSuccess:false — treat that as an error
+      const res = await createProject(payload);
       const body = res?.data;
+
       if (body?.isSuccess === false) {
         const detail = [body?.message, ...(body?.errors || [])].filter(Boolean).join('\n');
-        // Show full payload for diagnosis
-        const debugInfo = '\n\n' + JSON.stringify(payload, null, 1);
-        Alert.alert(t('error'), (detail || 'فشل') + debugInfo);
+        Alert.alert(t('error'), detail || (lang === 'ar' ? 'فشل إنشاء المشروع' : 'Failed to create project'));
         return;
       }
 
       const newId = body?.data?.id ?? body?.data;
-      console.log('CREATED_ID', newId, 'FULL_BODY', JSON.stringify(body?.data));
-      Alert.alert(t('success'), lang === 'ar' ? 'تم إنشاء المشروع بنجاح' : 'Project created successfully', [
-        {
+      Alert.alert(
+        t('success'),
+        lang === 'ar' ? 'تم إنشاء المشروع بنجاح' : 'Project created successfully',
+        [{
           text: 'OK',
           onPress: () => {
             if (newId && typeof newId === 'number') {
@@ -289,10 +251,9 @@ export default function CreateProjectScreen({ navigation }) {
               navigation.goBack();
             }
           },
-        },
-      ]);
+        }]
+      );
     } catch (e) {
-      console.log('CREATE_ERR', e?.response?.status, JSON.stringify(e?.response?.data)?.slice(0, 500));
       const errBody = e?.response?.data;
       Alert.alert(t('error'), errBody?.message || errBody?.errors?.join('\n') || t('networkError'));
     } finally {
@@ -353,6 +314,16 @@ export default function CreateProjectScreen({ navigation }) {
           value={form.projectTypeFlagId}
           onSelect={(v) => set('projectTypeFlagId', v)}
           placeholder={lang === 'ar' ? 'اختر نوع المشروع' : 'Select project type'}
+          lang={lang}
+        />
+      </Field>
+
+      <Field label={lang === 'ar' ? 'المنتج / النظام' : 'Product / System'} required>
+        <Select
+          options={related.products.length > 0 ? related.products : [{ value: 203, label: lang === 'ar' ? 'المنتج الافتراضي' : 'Default product' }]}
+          value={form.productId ?? 203}
+          onSelect={(v) => set('productId', v)}
+          placeholder={lang === 'ar' ? 'اختر المنتج' : 'Select product'}
           lang={lang}
         />
       </Field>
