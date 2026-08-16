@@ -229,12 +229,14 @@ export default function CreateProjectScreen({ navigation }) {
         }],
       };
 
-      // Try combinations to isolate what's causing InvalidEntry
+      // Minimal payloads to isolate the broken field
+      const minBase = { title: payload.title, allocatedUnits: payload.allocatedUnits };
       const variants = [
-        { label: 'noScope+noCustomer', p: { ...payload, projectScope: [], customerId: null } },
-        { label: 'noScope+customer',   p: { ...payload, projectScope: [] } },
-        { label: 'scope203+noCustomer',p: { ...payload, customerId: null } },
-        { label: 'scope203+customer',  p: { ...payload } },
+        { label: 'branch3+str1',  p: { ...minBase, branchId: 3,  structureId: 1  } },
+        { label: 'branch3+str0',  p: { ...minBase, branchId: 3,  structureId: null } },
+        { label: 'branch44+str1', p: { ...minBase, branchId: 44, structureId: 1  } },
+        { label: 'branch44+str24',p: { ...minBase, branchId: 44, structureId: 24 } },
+        { label: 'branch44+str0', p: { ...minBase, branchId: 44, structureId: null } },
       ];
 
       let body = null;
@@ -242,18 +244,14 @@ export default function CreateProjectScreen({ navigation }) {
       for (const { label, p } of variants) {
         try {
           const r = await createProject(p);
-          if (r?.data?.isSuccess !== false) {
-            body = r?.data;
-            successLabel = label;
-            break;
-          }
           body = r?.data;
+          if (r?.data?.isSuccess !== false) { successLabel = label; break; }
         } catch (_) {}
       }
 
       if (body?.isSuccess === false) {
         const detail = [body?.message, ...(body?.errors || [])].filter(Boolean).join('\n');
-        Alert.alert(t('error'), `Tried: noScope+noCustomer, noScope+customer, scope203+noCustomer, scope203+customer\nAll failed: ${detail || 'InvalidEntry'}`);
+        Alert.alert(t('error'), `branch3+str1, branch3+str0, branch44+str1, branch44+str24, branch44+str0\nAll failed: ${detail || 'InvalidEntry'}`);
         return;
       }
 
