@@ -88,11 +88,23 @@ export default function CreateProjectScreen({ navigation }) {
   const [form, setForm] = useState({
     title: '', description: '', branchId: null,
     customerId: null, projectTypeFlagId: null,
-    productId: null,
-    allocatedUnits: '', dateStart: '', dateEnd: '',
+    scopes: [{ productId: null, allocatedUnits: '' }],
+    dateStart: '', dateEnd: '',
   });
 
   const set = (key, val) => setForm((prev) => ({ ...prev, [key]: val }));
+
+  const addScope = () =>
+    setForm((prev) => ({ ...prev, scopes: [...prev.scopes, { productId: null, allocatedUnits: '' }] }));
+
+  const removeScope = (idx) =>
+    setForm((prev) => ({ ...prev, scopes: prev.scopes.filter((_, i) => i !== idx) }));
+
+  const updateScope = (idx, key, val) =>
+    setForm((prev) => {
+      const scopes = prev.scopes.map((s, i) => i === idx ? { ...s, [key]: val } : s);
+      return { ...prev, scopes };
+    });
 
   useEffect(() => {
     (async () => {
@@ -161,9 +173,12 @@ export default function CreateProjectScreen({ navigation }) {
           products,
         });
 
-        // Pre-select user's own branch and first available product
+        // Pre-select user's own branch and first available product in first scope
         if (jwtBranchId) setForm((prev) => ({ ...prev, branchId: jwtBranchId }));
-        if (products.length > 0) setForm((prev) => ({ ...prev, productId: products[0].value }));
+        if (products.length > 0) setForm((prev) => ({
+          ...prev,
+          scopes: [{ productId: products[0].value, allocatedUnits: '' }],
+        }));
 
       } catch (_) {}
     })();
@@ -178,9 +193,16 @@ export default function CreateProjectScreen({ navigation }) {
       Alert.alert(t('error'), lang === 'ar' ? 'الفرع مطلوب' : 'Branch is required');
       return;
     }
-    if (!form.allocatedUnits || isNaN(Number(form.allocatedUnits))) {
-      Alert.alert(t('error'), lang === 'ar' ? 'الوحدات المخصصة مطلوبة' : 'Allocated units required');
+    const validScopes = form.scopes.filter((s) => s.productId != null && s.allocatedUnits !== '');
+    if (validScopes.length === 0) {
+      Alert.alert(t('error'), lang === 'ar' ? 'أضف نظاماً واحداً على الأقل مع الوحدات' : 'Add at least one product with units');
       return;
+    }
+    for (const s of validScopes) {
+      if (isNaN(Number(s.allocatedUnits)) || Number(s.allocatedUnits) <= 0) {
+        Alert.alert(t('error'), lang === 'ar' ? 'الوحدات يجب أن تكون أرقاماً موجبة' : 'Units must be positive numbers');
+        return;
+      }
     }
 
     const toISO = (d) => {
@@ -193,8 +215,17 @@ export default function CreateProjectScreen({ navigation }) {
       // projectTypeFlagId: send raw composite string as-is ("370-1") — API rejects parsed numbers
       const flagId = form.projectTypeFlagId ? String(form.projectTypeFlagId) : null;
 
+      const totalUnits = validScopes.reduce((sum, s) => sum + Number(s.allocatedUnits), 0);
+
       // productId MUST be a string — API returns InvalidEntry when sent as number
-      const productId = String(form.productId ?? 203);
+      const projectScope = validScopes.map((s) => ({
+        productId: String(s.productId),
+        weightPercent: Math.round((Number(s.allocatedUnits) / totalUnits) * 100),
+        allocatedUnits: Number(s.allocatedUnits),
+        propertyId: null,
+        dateStart: null,
+        dateEnd: null,
+      }));
 
       const payload = {
         title: form.title.trim(),
@@ -202,17 +233,10 @@ export default function CreateProjectScreen({ navigation }) {
         branchId: Number(form.branchId),
         customerId: form.customerId ? Number(form.customerId) : null,
         projectTypeFlagId: flagId,
-        allocatedUnits: Number(form.allocatedUnits),
+        allocatedUnits: totalUnits,
         dateStart: toISO(form.dateStart),
         dateEnd: toISO(form.dateEnd),
-        projectScope: [{
-          productId,
-          weightPercent: 100,
-          allocatedUnits: Number(form.allocatedUnits),
-          propertyId: null,
-          dateStart: null,
-          dateEnd: null,
-        }],
+        projectScope,
       };
 
       const res = await createProject(payload);
@@ -298,27 +322,47 @@ export default function CreateProjectScreen({ navigation }) {
         />
       </Field>
 
-      <Field label={lang === 'ar' ? 'المنتج / النظام' : 'Product / System'} required>
-        <Select
-          options={related.products.length > 0 ? related.products : [{ value: 203, label: lang === 'ar' ? 'المنتج الافتراضي' : 'Default product' }]}
-          value={form.productId ?? 203}
-          onSelect={(v) => set('productId', v)}
-          placeholder={lang === 'ar' ? 'اختر المنتج' : 'Select product'}
-          lang={lang}
-        />
-      </Field>
+      <View style={styles.scopeSection}>
+        <View style={styles.scopeHeader}>
+          <Text style={styles.scopeTitle}>{lang === 'ar' ? 'الأنظمة / المنتجات *' : 'Products / Systems *'}</Text>
+          <TouchableOpacity style={styles.addScopeBtn} onPress={addScope}>
+            <Ionicons name="add-circle" size={22} color="#1565C0" />
+            <Text style={styles.addScopeTxt}>{lang === 'ar' ? 'إضافة' : 'Add'}</Text>
+          </TouchableOpacity>
+        </View>
 
-      <Field label={t('allocatedUnits')} required>
-        <TextInput
-          style={styles.input}
-          value={form.allocatedUnits}
-          onChangeText={(v) => set('allocatedUnits', v)}
-          keyboardType="numeric"
-          placeholder="0"
-          placeholderTextColor="#aaa"
-          textAlign={lang === 'ar' ? 'right' : 'left'}
-        />
-      </Field>
+        {form.scopes.map((scope, idx) => (
+          <View key={idx} style={styles.scopeRow}>
+            <View style={styles.scopeProductWrap}>
+              <Text style={styles.scopeSubLabel}>{lang === 'ar' ? 'النظام' : 'System'}</Text>
+              <Select
+                options={related.products.length > 0 ? related.products : [{ value: 203, label: lang === 'ar' ? 'المنتج الافتراضي' : 'Default product' }]}
+                value={scope.productId ?? (related.products[0]?.value ?? 203)}
+                onSelect={(v) => updateScope(idx, 'productId', v)}
+                placeholder={lang === 'ar' ? 'اختر النظام' : 'Select system'}
+                lang={lang}
+              />
+            </View>
+            <View style={styles.scopeUnitsWrap}>
+              <Text style={styles.scopeSubLabel}>{lang === 'ar' ? 'الوحدات' : 'Units'}</Text>
+              <TextInput
+                style={styles.input}
+                value={scope.allocatedUnits}
+                onChangeText={(v) => updateScope(idx, 'allocatedUnits', v)}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#aaa"
+                textAlign={lang === 'ar' ? 'right' : 'left'}
+              />
+            </View>
+            {form.scopes.length > 1 && (
+              <TouchableOpacity style={styles.removeScopeBtn} onPress={() => removeScope(idx)}>
+                <Ionicons name="remove-circle" size={22} color="#D32F2F" />
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
+      </View>
 
       <View style={styles.dateRow}>
         <View style={[styles.field, { flex: 1 }]}>
@@ -397,4 +441,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 8, elevation: 2,
   },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  scopeSection: { marginBottom: 16 },
+  scopeHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8,
+  },
+  scopeTitle: { fontSize: 13, fontWeight: '600', color: '#444' },
+  addScopeBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  addScopeTxt: { fontSize: 13, color: '#1565C0', fontWeight: '600' },
+  scopeRow: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 10,
+    backgroundColor: '#fff', borderRadius: 10, padding: 10,
+    borderWidth: 1.5, borderColor: '#E8E8E8',
+  },
+  scopeProductWrap: { flex: 3 },
+  scopeUnitsWrap: { flex: 1.5 },
+  scopeSubLabel: { fontSize: 11, color: '#888', marginBottom: 4 },
+  removeScopeBtn: { paddingBottom: 8, paddingLeft: 4 },
 });
