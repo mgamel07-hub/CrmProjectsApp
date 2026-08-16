@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getScopeById, getStagesByScope, getScopeUsers, getProducts } from '../api/projects';
+import { getScopeById, getStagesByScope, getScopeUsers, getProducts, getPlanExecutionStages } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { extractData, extractList, getStageStatusLabel, getStageStatusColor, formatDate } from '../utils/helpers';
@@ -20,20 +20,28 @@ export default function ScopeDetailScreen({ navigation, route }) {
   const [stages, setStages] = useState([]);
   const [users, setUsers] = useState([]);
   const [productMap, setProductMap] = useState({});
+  const [stageNameMap, setStageNameMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [scopeRes, stagesRes, usersRes, prodRes] = await Promise.allSettled([
+      const [scopeRes, stagesRes, usersRes, prodRes, stageNamesRes] = await Promise.allSettled([
         getScopeById(scopeId),
         getStagesByScope(scopeId),
         getScopeUsers(scopeId),
         getProducts(),
+        getPlanExecutionStages(scopeId),
       ]);
       if (scopeRes.status === 'fulfilled') setScope(extractData(scopeRes.value));
       if (stagesRes.status === 'fulfilled') setStages(extractList(stagesRes.value) || []);
+      if (stageNamesRes.status === 'fulfilled') {
+        const ddl = extractData(stageNamesRes.value)?.stagesDDL || [];
+        const map = {};
+        ddl.forEach((s) => { if (s.key != null) map[String(s.key)] = s.value; });
+        setStageNameMap(map);
+      }
       if (usersRes.status === 'fulfilled') setUsers(extractList(usersRes.value) || []);
       if (prodRes.status === 'fulfilled') {
         const rawProds = extractList(prodRes.value) || extractData(prodRes.value) || [];
@@ -54,9 +62,9 @@ export default function ScopeDetailScreen({ navigation, route }) {
   }, [scopeId]);
 
   const getStageName = (stage, index) =>
+    stageNameMap[String(stage.id)] ||
     stage.stageDef?.name || stage.stageDef?.localName ||
     stage.name || stage.stageName || stage.title || stage.stageDefName ||
-    stage.stageDef?.title || stage.stageDef?.displayName ||
     `Stage ${index + 1}`;
 
   const getScopeName = (s) => {
