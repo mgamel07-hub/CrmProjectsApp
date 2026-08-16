@@ -190,33 +190,19 @@ export default function CreateProjectScreen({ navigation }) {
 
     setSaving(true);
     try {
-      // Decode JWT for structureId
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-      const tok = await AsyncStorage.getItem('token');
-      let structureId = null;
-      try {
-        const pad = (s) => s + '='.repeat((4 - s.length % 4) % 4);
-        const claims = JSON.parse(atob(pad(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))));
-        structureId = claims.StructureId ? Number(claims.StructureId) : null;
-      } catch (_) {}
+      // projectTypeFlagId: send raw composite string as-is ("370-1") — API rejects parsed numbers
+      const flagId = form.projectTypeFlagId ? String(form.projectTypeFlagId) : null;
 
-      // flagId may arrive as composite "370-1" — API wants only the numeric part after the dash
-      const rawFlag = form.projectTypeFlagId;
-      const flagId = rawFlag
-        ? (String(rawFlag).includes('-') ? Number(String(rawFlag).split('-').pop()) : Number(rawFlag))
-        : null;
-
-      // productId: user selection, or fallback to known-valid product 203
-      const productId = form.productId ?? 203;
+      // productId MUST be a string — API returns InvalidEntry when sent as number
+      const productId = String(form.productId ?? 203);
 
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || null,
         branchId: Number(form.branchId),
         customerId: form.customerId ? Number(form.customerId) : null,
-        projectTypeFlagId: flagId || null,
+        projectTypeFlagId: flagId,
         allocatedUnits: Number(form.allocatedUnits),
-        structureId,
         dateStart: toISO(form.dateStart),
         dateEnd: toISO(form.dateEnd),
         projectScope: [{
@@ -229,31 +215,8 @@ export default function CreateProjectScreen({ navigation }) {
         }],
       };
 
-      // Minimal payloads to isolate the broken field
-      const minBase = { title: payload.title, allocatedUnits: payload.allocatedUnits };
-      const variants = [
-        { label: 'branch3+str1',  p: { ...minBase, branchId: 3,  structureId: 1  } },
-        { label: 'branch3+str0',  p: { ...minBase, branchId: 3,  structureId: null } },
-        { label: 'branch44+str1', p: { ...minBase, branchId: 44, structureId: 1  } },
-        { label: 'branch44+str24',p: { ...minBase, branchId: 44, structureId: 24 } },
-        { label: 'branch44+str0', p: { ...minBase, branchId: 44, structureId: null } },
-      ];
-
-      let body = null;
-      let successLabel = null;
-      for (const { label, p } of variants) {
-        try {
-          const r = await createProject(p);
-          body = r?.data;
-          if (r?.data?.isSuccess !== false) { successLabel = label; break; }
-        } catch (_) {}
-      }
-
-      if (body?.isSuccess === false) {
-        const detail = [body?.message, ...(body?.errors || [])].filter(Boolean).join('\n');
-        Alert.alert(t('error'), `branch3+str1, branch3+str0, branch44+str1, branch44+str24, branch44+str0\nAll failed: ${detail || 'InvalidEntry'}`);
-        return;
-      }
+      const res = await createProject(payload);
+      const body = res?.data;
 
       const newId = body?.data?.id ?? body?.data;
       Alert.alert(
