@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, Alert,
+  Modal, FlatList, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getPlanByIdForView, getPlanItems,
   submitPlan, approvePlan, rejectPlan, revertPlanStep,
-  deletePlanItem,
+  deletePlanItem, getAvailableStageDefItems, createPlanItemFromCatalog,
 } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
@@ -29,6 +30,13 @@ export default function PlanDetailScreen({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Catalog modal
+  const [catalogModal, setCatalogModal] = useState(false);
+  const [catalogItems, setCatalogItems] = useState([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [addingCatalog, setAddingCatalog] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -111,6 +119,35 @@ export default function PlanDetailScreen({ navigation, route }) {
     );
   };
 
+  const openCatalog = async () => {
+    setCatalogModal(true);
+    setSelectedIds([]);
+    setLoadingCatalog(true);
+    try {
+      const res = await getAvailableStageDefItems(planId);
+      const { extractList: el, extractData: ed } = await import('../utils/helpers').then(m => ({ extractList: m.extractList, extractData: m.extractData }));
+      setCatalogItems(el(res) || ed(res) || []);
+    } catch { setCatalogItems([]); }
+    finally { setLoadingCatalog(false); }
+  };
+
+  const toggleItem = (id) =>
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
+
+  const handleAddFromCatalog = async () => {
+    if (selectedIds.length === 0) return;
+    setAddingCatalog(true);
+    try {
+      for (const stageDefItemId of selectedIds) {
+        await createPlanItemFromCatalog({ projectPlanId: planId, stageDefItemId });
+      }
+      setCatalogModal(false);
+      load();
+    } catch (e) {
+      Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+    } finally { setAddingCatalog(false); }
+  };
+
   if (loading) return <LoadingScreen />;
   if (error && !plan) return <ErrorMessage message={error} onRetry={load} />;
 
@@ -180,13 +217,19 @@ export default function PlanDetailScreen({ navigation, route }) {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{t('planItems')}</Text>
         {isDraft && (
-          <TouchableOpacity
-            style={styles.addBtn}
-            onPress={() => navigation.navigate('CreatePlanItem', { planId, onDone: load })}
-          >
-            <Ionicons name="add" size={18} color="#fff" />
-            <Text style={styles.addBtnText}>{t('newPlanItem')}</Text>
-          </TouchableOpacity>
+          <View style={styles.addBtns}>
+            <TouchableOpacity style={styles.catalogBtn} onPress={openCatalog}>
+              <Ionicons name="list-outline" size={15} color="#1565C0" />
+              <Text style={styles.catalogBtnText}>{lang === 'ar' ? 'من الكتالوج' : 'From Catalog'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.addBtn}
+              onPress={() => navigation.navigate('CreatePlanItem', { planId, onDone: load })}
+            >
+              <Ionicons name="add" size={18} color="#fff" />
+              <Text style={styles.addBtnText}>{lang === 'ar' ? 'يدوي' : 'Manual'}</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -246,6 +289,90 @@ export default function PlanDetailScreen({ navigation, route }) {
           </Card>
         ))
       )}
+      {/* Catalog Modal */}
+      <Modal visible={catalogModal} transparent animationType="slide" onRequestClose={() => setCatalogModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{lang === 'ar' ? 'اختر البنود' : 'Select Items'}</Text>
+              <TouchableOpacity onPress={() => setCatalogModal(false)}>
+                <Ionicons name="close" size={22} color="#444" />
+              </TouchableOpacity>
+            </View>
+
+            {loadingCatalog ? (
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <ActivityIndicator color="#1565C0" />
+              </View>
+            ) : catalogItems.length === 0 ? (
+              <Text style={styles.emptyText}>{lang === 'ar' ? 'لا توجد بنود متاحة' : 'No items available'}</Text>
+            ) : (
+              <>
+                {/* Select All */}
+                <TouchableOpacity
+                  style={styles.selectAllRow}
+                  onPress={() =>
+                    setSelectedIds(
+                      selectedIds.length === catalogItems.length
+                        ? []
+                        : catalogItems.map((i) => i.id ?? i.stageDefItemId)
+                    )
+                  }
+                >
+                  <Ionicons
+                    name={selectedIds.length === catalogItems.length ? 'checkbox' : 'square-outline'}
+                    size={20}
+                    color="#1565C0"
+                  />
+                  <Text style={styles.selectAllText}>{lang === 'ar' ? 'تحديد الكل' : 'Select All'}</Text>
+                </TouchableOpacity>
+
+                <FlatList
+                  data={catalogItems}
+                  keyExtractor={(i, idx) => String(i.id ?? i.stageDefItemId ?? idx)}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => {
+                    const itemId = item.id ?? item.stageDefItemId;
+                    const checked = selectedIds.includes(itemId);
+                    return (
+                      <TouchableOpacity style={styles.catalogItem} onPress={() => toggleItem(itemId)}>
+                        <Ionicons
+                          name={checked ? 'checkbox' : 'square-outline'}
+                          size={20}
+                          color={checked ? '#1565C0' : '#bbb'}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.catalogItemTitle}>{item.title || item.name || item.nameAr || `Item #${itemId}`}</Text>
+                          {item.description && (
+                            <Text style={styles.catalogItemDesc} numberOfLines={1}>{item.description}</Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  }}
+                  style={{ maxHeight: 340 }}
+                />
+
+                <View style={styles.modalFooter}>
+                  <Text style={styles.selectedCount}>
+                    {selectedIds.length} {lang === 'ar' ? 'محدد' : 'selected'}
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.addBtn, { opacity: selectedIds.length === 0 ? 0.5 : 1 }]}
+                    onPress={handleAddFromCatalog}
+                    disabled={selectedIds.length === 0 || addingCatalog}
+                  >
+                    {addingCatalog
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <><Ionicons name="checkmark" size={16} color="#fff" /><Text style={styles.addBtnText}>{lang === 'ar' ? 'إضافة' : 'Add'}</Text></>
+                    }
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -283,5 +410,39 @@ const styles = StyleSheet.create({
   requestBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, borderTopWidth: 1, borderTopColor: '#F0F0F0', paddingTop: 8 },
   requestBtnText: { color: '#1565C0', fontSize: 13, fontWeight: '500' },
   empty: { alignItems: 'center', paddingVertical: 32 },
-  emptyText: { color: '#aaa', marginTop: 8 },
+  emptyText: { color: '#aaa', marginTop: 8, textAlign: 'center', padding: 16 },
+  addBtns: { flexDirection: 'row', gap: 8 },
+  catalogBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderWidth: 1.5, borderColor: '#1565C0', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  catalogBtnText: { color: '#1565C0', fontSize: 12, fontWeight: '600' },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalBox: { backgroundColor: '#fff', borderTopLeftRadius: 22, borderTopRightRadius: 22, maxHeight: '80%' },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
+  },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
+  selectAllRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
+    backgroundColor: '#F8F9FF',
+  },
+  selectAllText: { fontSize: 14, fontWeight: '600', color: '#1565C0' },
+  catalogItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#F5F5F5',
+  },
+  catalogItemTitle: { fontSize: 14, color: '#222', fontWeight: '500' },
+  catalogItemDesc: { fontSize: 12, color: '#888', marginTop: 2 },
+  modalFooter: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 16, borderTopWidth: 1, borderTopColor: '#F0F0F0',
+  },
+  selectedCount: { fontSize: 13, color: '#666', fontWeight: '500' },
 });

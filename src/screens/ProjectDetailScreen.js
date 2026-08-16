@@ -7,9 +7,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   getProjectByIdForView, getProjectProgress,
-  getScopesByProject, getProjectUsers,
+  getScopesByProject, getProjectUsers, addProjectUser, deleteProjectUser,
   getClientContacts, addClientContact, deleteClientContact,
-  getEligibleClientUsers, getProducts,
+  getEligibleClientUsers, getProducts, getUsers,
   getProjectVisits, createProjectVisit, deleteProjectVisit,
   getStagesByScope, getPlansByScope,
 } from '../api/projects';
@@ -77,6 +77,12 @@ export default function ProjectDetailScreen({ navigation, route }) {
   const [visitStageOpen,  setVisitStageOpen]  = useState(false);
   const [visitPlanOpen,   setVisitPlanOpen]   = useState(false);
   const [visitDropSearch, setVisitDropSearch] = useState('');
+
+  // Team member add modal
+  const [teamModalVisible, setTeamModalVisible] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
+  const [teamSearch, setTeamSearch] = useState('');
+  const [addingMember, setAddingMember] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -248,10 +254,58 @@ export default function ProjectDetailScreen({ navigation, route }) {
       setVisitModalVisible(false);
       await load();
     } catch (e) {
-      Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+      const status = e?.response?.status;
+      const msg = e?.response?.data?.message || e?.response?.data?.title || e?.response?.data?.errors?.join(', ');
+      Alert.alert(t('error'), [msg, status ? `(HTTP ${status})` : null].filter(Boolean).join(' ') || t('networkError'));
     } finally {
       setSavingVisit(false);
     }
+  };
+
+  // ── Team member handlers ─────────────────────────────────────────────────────
+  const openTeamModal = async () => {
+    setTeamModalVisible(true);
+    setTeamSearch('');
+    try {
+      const res = await getUsers();
+      const list = extractList(res) || extractData(res) || [];
+      const addedIds = new Set(users.map((u) => u.userId ?? u.user?.id));
+      setAllUsers(
+        (Array.isArray(list) ? list : [])
+          .map((u) => ({ id: u.key ?? u.id, name: u.value || u.fullName || u.userName || '' }))
+          .filter((u) => u.id != null && !addedIds.has(u.id))
+      );
+    } catch { setAllUsers([]); }
+  };
+
+  const handleAddMember = async (user) => {
+    setAddingMember(user.id);
+    try {
+      await addProjectUser({ projectId, userId: user.id });
+      await load();
+      setTeamModalVisible(false);
+    } catch (e) {
+      Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+    } finally {
+      setAddingMember(null);
+    }
+  };
+
+  const handleRemoveMember = (u) => {
+    Alert.alert(
+      lang === 'ar' ? 'تأكيد الحذف' : 'Confirm Remove',
+      lang === 'ar' ? `حذف ${u.user?.fullName || u.user?.userName || ''} من الفريق؟` : `Remove from team?`,
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('delete'), style: 'destructive',
+          onPress: async () => {
+            try { await deleteProjectUser(u.id); await load(); }
+            catch (e) { Alert.alert(t('error'), e?.response?.data?.message || t('networkError')); }
+          },
+        },
+      ]
+    );
   };
 
   const handleDeleteVisit = (visit) => {
@@ -596,7 +650,13 @@ export default function ProjectDetailScreen({ navigation, route }) {
       {/* ── Internal Team Tab ── */}
       {activeTab === 'team' && (
         <View>
-          <Text style={styles.sectionTitle}>{t('projectUsers')}</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t('projectUsers')}</Text>
+            <TouchableOpacity style={styles.addBtn} onPress={openTeamModal}>
+              <Ionicons name="add" size={18} color="#fff" />
+              <Text style={styles.addBtnText}>{lang === 'ar' ? 'إضافة عضو' : 'Add Member'}</Text>
+            </TouchableOpacity>
+          </View>
           {users.length === 0 ? (
             <View style={styles.emptySection}>
               <Ionicons name="people-outline" size={36} color="#ccc" />
@@ -612,7 +672,10 @@ export default function ProjectDetailScreen({ navigation, route }) {
                   <Text style={styles.userName}>{u.user?.fullName || u.user?.userName}</Text>
                   <Text style={styles.userRole}>{u.isAdmin ? (lang === 'ar' ? 'مسؤول' : 'Admin') : (lang === 'ar' ? 'عضو' : 'Member')}</Text>
                 </View>
-                {u.isAdmin && <Ionicons name="shield-checkmark" size={18} color="#1565C0" />}
+                {u.isAdmin && <Ionicons name="shield-checkmark" size={18} color="#1565C0" style={{ marginRight: 4 }} />}
+                <TouchableOpacity onPress={() => handleRemoveMember(u)} style={styles.removeBtn}>
+                  <Ionicons name="remove-circle-outline" size={20} color="#D32F2F" />
+                </TouchableOpacity>
               </Card>
             ))
           )}
@@ -706,6 +769,54 @@ export default function ProjectDetailScreen({ navigation, route }) {
         </Card>
       )}
 
+      {/* ── Add Team Member Modal ── */}
+      <Modal visible={teamModalVisible} transparent animationType="slide" onRequestClose={() => setTeamModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{lang === 'ar' ? 'إضافة عضو للفريق' : 'Add Team Member'}</Text>
+              <TouchableOpacity onPress={() => setTeamModalVisible(false)}>
+                <Ionicons name="close" size={22} color="#444" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.searchRow}>
+              <Ionicons name="search-outline" size={16} color="#888" />
+              <TextInput
+                style={styles.searchInput}
+                value={teamSearch}
+                onChangeText={setTeamSearch}
+                placeholder={lang === 'ar' ? 'بحث...' : 'Search...'}
+                placeholderTextColor="#aaa"
+                autoFocus
+              />
+            </View>
+            <FlatList
+              data={teamSearch ? allUsers.filter((u) => u.name.toLowerCase().includes(teamSearch.toLowerCase())) : allUsers}
+              keyExtractor={(u) => String(u.id)}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={<Text style={styles.emptyText}>{lang === 'ar' ? 'لا توجد نتائج' : 'No results'}</Text>}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.eligibleRow}
+                  onPress={() => handleAddMember(item)}
+                  disabled={addingMember === item.id}
+                >
+                  <View style={[styles.userAvatar, { width: 32, height: 32, borderRadius: 16 }]}>
+                    <Text style={[styles.userInitial, { fontSize: 13 }]}>{(item.name || '?')[0].toUpperCase()}</Text>
+                  </View>
+                  <Text style={[styles.userName, { flex: 1 }]}>{item.name}</Text>
+                  {addingMember === item.id
+                    ? <ActivityIndicator size="small" color="#1565C0" />
+                    : <Ionicons name="add-circle-outline" size={22} color="#1565C0" />
+                  }
+                </TouchableOpacity>
+              )}
+              style={{ maxHeight: 380 }}
+            />
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Add Visit Modal ── */}
       <Modal visible={visitModalVisible} transparent animationType="slide" onRequestClose={() => setVisitModalVisible(false)}>
         <View style={vstyles.modalOverlay}>
@@ -738,7 +849,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 onSelect={(id) => { setVisitForm((f) => ({ ...f, stageId: id })); onVisitStageSelect(id); }}
                 open={visitStageOpen}
                 setOpen={setVisitStageOpen}
-                getLabel={(s) => s.stageDef?.name || `Stage #${s.id}`}
+                getLabel={(s) => s.stageDef?.name || s.stageDef?.nameAr || s.stageDef?.localName || s.stageDef?.title || s.name || s.title || s.nameAr || s.localName || `Stage #${s.id}`}
               />
 
               {/* Plan */}
