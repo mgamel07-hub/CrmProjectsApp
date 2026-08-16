@@ -223,6 +223,16 @@ export default function CreateProjectScreen({ navigation }) {
 
       const structureId = jwtClaims.StructureId ? Number(jwtClaims.StructureId) : null;
 
+      // Fetch scope structure from existing project to understand required fields
+      try {
+        const { getScopesByProject } = await import('../api/projects');
+        const scopeRes = await getScopesByProject(11);
+        const scopes = scopeRes?.data?.data || scopeRes?.data || [];
+        const first = Array.isArray(scopes) ? scopes[0] : scopes;
+        console.log('SCOPE_KEYS', JSON.stringify(Object.keys(first || {})));
+        console.log('SCOPE_DATA', JSON.stringify(first));
+      } catch (e) { console.log('SCOPE_ERR', e?.message); }
+
       const payload = {
         title: form.title.trim(),
         description: form.description.trim() || null,
