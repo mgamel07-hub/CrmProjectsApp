@@ -11,7 +11,7 @@ import {
   getClientContacts, addClientContact, deleteClientContact,
   getEligibleClientUsers, getProducts, getUsers,
   getProjectVisits, createProjectVisit, deleteProjectVisit,
-  getStagesDropdown, getPlansByScope,
+  getPlanExecutionStages, getPlansDropDown,
 } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
@@ -215,8 +215,8 @@ export default function ProjectDetailScreen({ navigation, route }) {
     setVisitStages([]);
     setVisitPlans([]);
     try {
-      const res = await getStagesDropdown(scopeId);
-      setVisitStages(extractList(res) || []);
+      const res = await getPlanExecutionStages(scopeId);
+      setVisitStages(extractData(res)?.stagesDDL || []);
     } catch { setVisitStages([]); }
   };
 
@@ -224,14 +224,14 @@ export default function ProjectDetailScreen({ navigation, route }) {
     setVisitForm((f) => ({ ...f, stageId, planId: null }));
     setVisitPlans([]);
     try {
-      const res = await getPlansByScope({ projectScopeId: visitForm.scopeId, projectScopeStageId: stageId });
+      const res = await getPlansDropDown(visitForm.scopeId, stageId);
       setVisitPlans(extractList(res) || []);
     } catch { setVisitPlans([]); }
   };
 
   const handleSaveVisit = async () => {
-    if (!visitForm.scopeId) {
-      Alert.alert(t('error'), lang === 'ar' ? 'اختر نطاق المشروع' : 'Select project scope');
+    if (!visitForm.planId) {
+      Alert.alert(t('error'), lang === 'ar' ? 'اختر الخطة' : 'Select a plan');
       return;
     }
     if (!visitForm.date) {
@@ -240,16 +240,14 @@ export default function ProjectDetailScreen({ navigation, route }) {
     }
     setSavingVisit(true);
     try {
-      const toISO = (d) => d ? (d.includes('T') ? d : `${d}T00:00:00`) : null;
       await createProjectVisit({
-        projectId,
-        projectScopeId: visitForm.scopeId,
-        projectScopeStageId: visitForm.stageId || null,
-        projectPlanId: visitForm.planId || null,
-        date: toISO(visitForm.date),
+        projectPlanId: visitForm.planId,
+        executionDate: visitForm.date,
         startTime: visitForm.startTime || null,
         endTime: visitForm.endTime || null,
         description: visitForm.description.trim() || null,
+        projectPlanItemIds: [],
+        hideItemsInEmail: false,
       });
       setVisitModalVisible(false);
       await load();
@@ -580,69 +578,65 @@ export default function ProjectDetailScreen({ navigation, route }) {
               <Text style={styles.emptyText}>{t('noVisits')}</Text>
             </View>
           ) : (
-            visits.map((v) => {
-              const scopeName = getScopeName(v.projectScope || { productId: v.projectScopeId });
-              const stageName  = v.projectScopeStage?.stageDef?.name || v.stageName || '';
-              const planName   = v.projectPlan?.title || v.planTitle || '';
-              return (
-                <Card key={v.id} style={vstyles.visitCard}>
-                  {/* Header row: scope tag + date + actions */}
-                  <View style={vstyles.visitHeader}>
-                    <View style={vstyles.visitTags}>
-                      {scopeName ? (
-                        <View style={vstyles.tag}>
-                          <Ionicons name="cube-outline" size={11} color="#1565C0" />
-                          <Text style={vstyles.tagText} numberOfLines={1}>{scopeName}</Text>
-                        </View>
-                      ) : null}
-                      {stageName ? (
-                        <View style={[vstyles.tag, { backgroundColor: '#FFF3E0' }]}>
-                          <Text style={[vstyles.tagText, { color: '#E65100' }]}>{stageName}</Text>
-                        </View>
-                      ) : null}
-                      {planName ? (
-                        <View style={[vstyles.tag, { backgroundColor: '#E8F5E9' }]}>
-                          <Text style={[vstyles.tagText, { color: '#388E3C' }]}>{planName}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    <TouchableOpacity onPress={() => handleDeleteVisit(v)} style={vstyles.deleteBtn}>
-                      <Ionicons name="trash-outline" size={18} color="#D32F2F" />
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Date + time row */}
-                  <View style={vstyles.visitMeta}>
-                    <Ionicons name="calendar-outline" size={13} color="#888" />
-                    <Text style={vstyles.visitMetaText}>{formatDate(v.date)}</Text>
-                    {(v.startTime || v.endTime) && (
-                      <>
-                        <Ionicons name="time-outline" size={13} color="#888" style={{ marginLeft: 10 }} />
-                        <Text style={vstyles.visitMetaText}>
-                          {v.startTime || ''}{v.startTime && v.endTime ? ' — ' : ''}{v.endTime || ''}
-                        </Text>
-                      </>
-                    )}
-                    {v.addedBy && (
-                      <Text style={[vstyles.visitMetaText, { marginLeft: 10, color: '#aaa' }]}>{v.addedBy}</Text>
+            visits.map((v) => (
+              <Card key={v.id} style={vstyles.visitCard}>
+                {/* Header: scope + stage tags + delete */}
+                <View style={vstyles.visitHeader}>
+                  <View style={vstyles.visitTags}>
+                    {(v.scopeTitle || v.productName) ? (
+                      <View style={vstyles.tag}>
+                        <Ionicons name="cube-outline" size={11} color="#1565C0" />
+                        <Text style={vstyles.tagText} numberOfLines={1}>{v.scopeTitle || v.productName}</Text>
+                      </View>
+                    ) : null}
+                    {v.stageName ? (
+                      <View style={[vstyles.tag, { backgroundColor: '#FFF3E0' }]}>
+                        <Text style={[vstyles.tagText, { color: '#E65100' }]}>{v.stageName}</Text>
+                      </View>
+                    ) : null}
+                    {(v.items || []).length > 0 && (
+                      <View style={[vstyles.tag, { backgroundColor: '#E8F5E9' }]}>
+                        <Ionicons name="list-outline" size={11} color="#388E3C" />
+                        <Text style={[vstyles.tagText, { color: '#388E3C' }]}>{v.items.length} {lang === 'ar' ? 'بند' : 'items'}</Text>
+                      </View>
                     )}
                   </View>
+                  <TouchableOpacity onPress={() => handleDeleteVisit(v)} style={vstyles.deleteBtn}>
+                    <Ionicons name="trash-outline" size={18} color="#D32F2F" />
+                  </TouchableOpacity>
+                </View>
 
-                  {/* Description */}
-                  {v.description ? (
-                    <Text style={vstyles.visitDesc} numberOfLines={2}>{v.description}</Text>
-                  ) : null}
-
-                  {/* Attachments count */}
-                  {v.attachmentsCount > 0 && (
-                    <View style={vstyles.attachRow}>
-                      <Ionicons name="attach-outline" size={14} color="#1565C0" />
-                      <Text style={vstyles.attachText}>{v.attachmentsCount} {lang === 'ar' ? 'مرفق' : 'attachment(s)'}</Text>
-                    </View>
+                {/* Date + time */}
+                <View style={vstyles.visitMeta}>
+                  <Ionicons name="calendar-outline" size={13} color="#888" />
+                  <Text style={vstyles.visitMetaText}>{formatDate(v.executionDate)}</Text>
+                  {(v.startTime || v.endTime) && (
+                    <>
+                      <Ionicons name="time-outline" size={13} color="#888" style={{ marginLeft: 10 }} />
+                      <Text style={vstyles.visitMetaText}>
+                        {v.startTime || ''}{v.startTime && v.endTime ? ' — ' : ''}{v.endTime || ''}
+                      </Text>
+                    </>
                   )}
-                </Card>
-              );
-            })
+                  {v.createdBy && (
+                    <Text style={[vstyles.visitMetaText, { marginLeft: 10, color: '#aaa' }]}>{v.createdBy}</Text>
+                  )}
+                </View>
+
+                {/* Description */}
+                {v.description ? (
+                  <Text style={vstyles.visitDesc} numberOfLines={2}>{v.description}</Text>
+                ) : null}
+
+                {/* Attachments */}
+                {v.attachmentCount > 0 && (
+                  <View style={vstyles.attachRow}>
+                    <Ionicons name="attach-outline" size={14} color="#1565C0" />
+                    <Text style={vstyles.attachText}>{v.attachmentCount} {lang === 'ar' ? 'مرفق' : 'attachment(s)'}</Text>
+                  </View>
+                )}
+              </Card>
+            ))
           )}
         </View>
       )}
@@ -849,7 +843,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 onSelect={(id) => { setVisitForm((f) => ({ ...f, stageId: id })); onVisitStageSelect(id); }}
                 open={visitStageOpen}
                 setOpen={setVisitStageOpen}
-                getLabel={(s) => s.value || s.stageDef?.name || s.stageDef?.nameAr || s.name || s.title || `Stage #${s.id ?? s.key}`}
+                getLabel={(s) => s.value || s.name || `Stage #${s.id ?? s.key}`}
               />
 
               {/* Plan */}
@@ -860,7 +854,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 onSelect={(id) => setVisitForm((f) => ({ ...f, planId: id }))}
                 open={visitPlanOpen}
                 setOpen={setVisitPlanOpen}
-                getLabel={(p) => p.title || `Plan #${p.id}`}
+                getLabel={(p) => p.value || p.title || `Plan #${p.id ?? p.key}`}
               />
 
               {/* Date */}
