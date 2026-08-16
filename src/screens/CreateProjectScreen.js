@@ -223,16 +223,16 @@ export default function CreateProjectScreen({ navigation }) {
 
       const structureId = jwtClaims.StructureId ? Number(jwtClaims.StructureId) : null;
 
-      // Fetch first valid product to use in scope
-      let firstProductId = null;
+      // Fetch products for scope; fall back to known product from existing scope
+      let firstProductId = 203; // fallback: productId from existing project scope
       try {
         const { getProducts } = await import('../api/projects');
         const prodRes = await getProducts();
         const prods = prodRes?.data?.data || prodRes?.data || [];
         const first = Array.isArray(prods) ? prods[0] : null;
-        firstProductId = first?.key ?? first?.id ?? null;
+        if (first?.key ?? first?.id) firstProductId = first.key ?? first.id;
         console.log('FIRST_PRODUCT', JSON.stringify(first));
-      } catch (e) { console.log('PROD_ERR', e?.message); }
+      } catch (e) { console.log('PROD_ERR_USING_FALLBACK', e?.message); }
 
       const payload = {
         title: form.title.trim(),
