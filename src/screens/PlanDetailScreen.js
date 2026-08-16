@@ -151,8 +151,10 @@ export default function PlanDetailScreen({ navigation, route }) {
   if (loading) return <LoadingScreen />;
   if (error && !plan) return <ErrorMessage message={error} onRetry={load} />;
 
-  const isDraft = plan?.statusId === 1;
-  const isSubmitted = plan?.statusId === 2;
+  const statusName = String(plan?.statusName || '').toLowerCase();
+  const isDraft = plan?.canEditPlan ?? (plan?.statusId === 1 || statusName === 'draft');
+  const isSubmitted = plan?.canApprovePlan || plan?.canRejectPlan ||
+    (plan?.statusId === 2 || statusName === 'submitted');
 
   return (
     <ScrollView
@@ -189,22 +191,41 @@ export default function PlanDetailScreen({ navigation, route }) {
               <Text style={styles.actionBtnText}>{t('submit')}</Text>
             </TouchableOpacity>
           )}
-          {isSubmitted && (
-            <>
-              <TouchableOpacity style={[styles.actionBtn, styles.approveBtn]} onPress={handleApprove}>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
-                <Text style={styles.actionBtnText}>{t('approve')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.rejectBtn]}
-                onPress={() => navigation.navigate('RejectPlan', { planId, onDone: load })}
-              >
-                <Ionicons name="close-circle-outline" size={16} color="#fff" />
-                <Text style={styles.actionBtnText}>{t('reject')}</Text>
-              </TouchableOpacity>
-            </>
+          {(plan?.canApprovePlan || isSubmitted) && (
+            <TouchableOpacity style={[styles.actionBtn, styles.approveBtn]} onPress={handleApprove}>
+              <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+              <Text style={styles.actionBtnText}>{t('approve')}</Text>
+            </TouchableOpacity>
           )}
-          {(isDraft || plan?.statusId === 4) && (
+          {(plan?.canRejectPlan || isSubmitted) && (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.rejectBtn]}
+              onPress={() => {
+                Alert.alert(
+                  lang === 'ar' ? 'سبب الرفض' : 'Rejection Reason',
+                  lang === 'ar' ? 'هل تريد رفض هذه الخطة؟' : 'Reject this plan?',
+                  [
+                    { text: t('cancel'), style: 'cancel' },
+                    {
+                      text: t('reject'), style: 'destructive',
+                      onPress: async () => {
+                        try {
+                          await rejectPlan(planId, {});
+                          load();
+                        } catch (e) {
+                          Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+                        }
+                      },
+                    },
+                  ]
+                );
+              }}
+            >
+              <Ionicons name="close-circle-outline" size={16} color="#fff" />
+              <Text style={styles.actionBtnText}>{t('reject')}</Text>
+            </TouchableOpacity>
+          )}
+          {(isDraft || plan?.statusId === 4 || statusName === 'rejected') && (
             <TouchableOpacity style={[styles.actionBtn, styles.revertBtn]} onPress={handleRevert}>
               <Ionicons name="refresh-outline" size={16} color="#fff" />
               <Text style={styles.actionBtnText}>{t('revert')}</Text>

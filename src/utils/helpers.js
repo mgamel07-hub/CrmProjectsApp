@@ -63,10 +63,10 @@ const PLAN_STATUS_MAP = {
   submitted: { label: () => t('planSubmitted'),  color: '#1565C0' },
   approved:  { label: () => t('planApproved'),   color: '#388E3C' },
   rejected:  { label: () => t('planRejected'),   color: '#D32F2F' },
-  0:         { label: () => t('planDraft'),      color: '#607D8B' },
-  1:         { label: () => t('planSubmitted'),  color: '#1565C0' },
-  2:         { label: () => t('planApproved'),   color: '#388E3C' },
-  3:         { label: () => t('planRejected'),   color: '#D32F2F' },
+  1:         { label: () => t('planDraft'),      color: '#607D8B' },
+  2:         { label: () => t('planSubmitted'),  color: '#1565C0' },
+  3:         { label: () => t('planApproved'),   color: '#388E3C' },
+  4:         { label: () => t('planRejected'),   color: '#D32F2F' },
 };
 
 export function getPlanStatusLabel(status) {
