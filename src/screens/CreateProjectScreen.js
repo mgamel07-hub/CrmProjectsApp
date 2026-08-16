@@ -223,15 +223,16 @@ export default function CreateProjectScreen({ navigation }) {
 
       const structureId = jwtClaims.StructureId ? Number(jwtClaims.StructureId) : null;
 
-      // Fetch scope structure from existing project to understand required fields
+      // Fetch first valid product to use in scope
+      let firstProductId = null;
       try {
-        const { getScopesByProject } = await import('../api/projects');
-        const scopeRes = await getScopesByProject(11);
-        const scopes = scopeRes?.data?.data || scopeRes?.data || [];
-        const first = Array.isArray(scopes) ? scopes[0] : scopes;
-        console.log('SCOPE_KEYS', JSON.stringify(Object.keys(first || {})));
-        console.log('SCOPE_DATA', JSON.stringify(first));
-      } catch (e) { console.log('SCOPE_ERR', e?.message); }
+        const { getProducts } = await import('../api/projects');
+        const prodRes = await getProducts();
+        const prods = prodRes?.data?.data || prodRes?.data || [];
+        const first = Array.isArray(prods) ? prods[0] : null;
+        firstProductId = first?.key ?? first?.id ?? null;
+        console.log('FIRST_PRODUCT', JSON.stringify(first));
+      } catch (e) { console.log('PROD_ERR', e?.message); }
 
       const payload = {
         title: form.title.trim(),
@@ -243,13 +244,16 @@ export default function CreateProjectScreen({ navigation }) {
         structureId,
         dateStart: toISO(form.dateStart) || null,
         dateEnd: toISO(form.dateEnd) || null,
-        projectScope: [
+        projectScope: firstProductId ? [
           {
-            title: form.title.trim(),
-            description: null,
+            productId: firstProductId,
+            weightPercent: 100,
             allocatedUnits: Number(form.allocatedUnits),
+            propertyId: null,
+            dateStart: null,
+            dateEnd: null,
           },
-        ],
+        ] : [],
       };
       console.log('CREATE_PAYLOAD', JSON.stringify(payload));
 
