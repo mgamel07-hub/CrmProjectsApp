@@ -65,6 +65,14 @@ const translations = {
     addContact: 'إضافة جهة اتصال',
     scopeProgress: 'تقدم النطاق',
     systemName: 'اسم النظام',
+    planExecution: 'تنفيذ الخطة',
+    addVisit: 'إضافة',
+    visitDate: 'التاريخ',
+    timeFrom: 'من',
+    timeTo: 'إلى',
+    noVisits: 'لا توجد سجلات تنفيذ',
+    confirmDelete: 'تأكيد الحذف',
+    deleteVisitConfirm: 'هل تريد حذف هذا السجل؟',
 
     // Scope
     scope: 'النطاق',
@@ -189,6 +197,14 @@ const translations = {
     addContact: 'Add Contact',
     scopeProgress: 'Scope Progress',
     systemName: 'System Name',
+    planExecution: 'Plan Execution',
+    addVisit: 'Add',
+    visitDate: 'Date',
+    timeFrom: 'From',
+    timeTo: 'To',
+    noVisits: 'No execution records',
+    confirmDelete: 'Confirm Delete',
+    deleteVisitConfirm: 'Delete this record?',
 
     // Scope
     scope: 'Scope',

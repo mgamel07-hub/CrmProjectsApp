@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   RefreshControl, Alert, Modal, FlatList, TextInput, ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -9,6 +10,8 @@ import {
   getScopesByProject, getProjectUsers,
   getClientContacts, addClientContact, deleteClientContact,
   getEligibleClientUsers, getProducts,
+  getProjectVisits, createProjectVisit, deleteProjectVisit,
+  getStagesByScope, getPlansByScope,
 } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
@@ -59,15 +62,32 @@ export default function ProjectDetailScreen({ navigation, route }) {
   const [eligibleSearch, setEligibleSearch] = useState('');
   const [addingContact, setAddingContact] = useState(null);
 
+  // Visit / Plan Execution state
+  const [visits, setVisits] = useState([]);
+  const [visitsErr, setVisitsErr] = useState(false);
+  const [visitModalVisible, setVisitModalVisible] = useState(false);
+  const [savingVisit, setSavingVisit] = useState(false);
+  const [visitForm, setVisitForm] = useState({
+    scopeId: null, stageId: null, planId: null,
+    date: '', startTime: '', endTime: '', description: '',
+  });
+  const [visitStages, setVisitStages] = useState([]);
+  const [visitPlans, setVisitPlans]   = useState([]);
+  const [visitScopeOpen,  setVisitScopeOpen]  = useState(false);
+  const [visitStageOpen,  setVisitStageOpen]  = useState(false);
+  const [visitPlanOpen,   setVisitPlanOpen]   = useState(false);
+  const [visitDropSearch, setVisitDropSearch] = useState('');
+
   const load = useCallback(async () => {
     try {
-      const [projRes, scopesRes, usersRes, progressRes, prodRes, contactsRes] = await Promise.allSettled([
+      const [projRes, scopesRes, usersRes, progressRes, prodRes, contactsRes, visitsRes] = await Promise.allSettled([
         getProjectByIdForView(projectId),
         getScopesByProject(projectId),
         getProjectUsers(projectId),
         getProjectProgress(projectId),
         getProducts(),
         getClientContacts(projectId),
+        getProjectVisits(projectId),
       ]);
       if (projRes.status === 'fulfilled') setProject(extractData(projRes.value));
       if (scopesRes.status === 'fulfilled') setScopes(extractList(scopesRes.value) || []);
@@ -89,6 +109,13 @@ export default function ProjectDetailScreen({ navigation, route }) {
         setClientContactsErr(false);
       } else {
         setClientContactsErr(true);
+      }
+
+      if (visitsRes.status === 'fulfilled') {
+        setVisits(extractList(visitsRes.value) || []);
+        setVisitsErr(false);
+      } else {
+        setVisitsErr(true);
       }
 
       setError(null);
@@ -168,14 +195,148 @@ export default function ProjectDetailScreen({ navigation, route }) {
     );
   };
 
+  // ── Visit helpers ──────────────────────────────────────────────────────────
+  const openVisitModal = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    setVisitForm({ scopeId: null, stageId: null, planId: null, date: today, startTime: '', endTime: '', description: '' });
+    setVisitStages([]);
+    setVisitPlans([]);
+    setVisitModalVisible(true);
+  };
+
+  const onVisitScopeSelect = async (scopeId) => {
+    setVisitForm((f) => ({ ...f, scopeId, stageId: null, planId: null }));
+    setVisitStages([]);
+    setVisitPlans([]);
+    try {
+      const res = await getStagesByScope(scopeId);
+      setVisitStages(extractList(res) || []);
+    } catch { setVisitStages([]); }
+  };
+
+  const onVisitStageSelect = async (stageId) => {
+    setVisitForm((f) => ({ ...f, stageId, planId: null }));
+    setVisitPlans([]);
+    try {
+      const res = await getPlansByScope({ projectScopeId: visitForm.scopeId, projectScopeStageId: stageId });
+      setVisitPlans(extractList(res) || []);
+    } catch { setVisitPlans([]); }
+  };
+
+  const handleSaveVisit = async () => {
+    if (!visitForm.scopeId) {
+      Alert.alert(t('error'), lang === 'ar' ? 'اختر نطاق المشروع' : 'Select project scope');
+      return;
+    }
+    if (!visitForm.date) {
+      Alert.alert(t('error'), lang === 'ar' ? 'أدخل التاريخ' : 'Enter date');
+      return;
+    }
+    setSavingVisit(true);
+    try {
+      const toISO = (d) => d ? (d.includes('T') ? d : `${d}T00:00:00`) : null;
+      await createProjectVisit({
+        projectId,
+        projectScopeId: visitForm.scopeId,
+        projectScopeStageId: visitForm.stageId || null,
+        projectPlanId: visitForm.planId || null,
+        date: toISO(visitForm.date),
+        startTime: visitForm.startTime || null,
+        endTime: visitForm.endTime || null,
+        description: visitForm.description.trim() || null,
+      });
+      setVisitModalVisible(false);
+      await load();
+    } catch (e) {
+      Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+    } finally {
+      setSavingVisit(false);
+    }
+  };
+
+  const handleDeleteVisit = (visit) => {
+    Alert.alert(
+      t('confirmDelete'),
+      t('deleteVisitConfirm'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('delete'), style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteProjectVisit(visit.id);
+              await load();
+            } catch (e) {
+              Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // ── Mini inline-dropdown for visit modal ────────────────────────────────────
+  function VisitDropdown({ label, options, value, onSelect, open, setOpen, getLabel }) {
+    const selected = options.find((o) => (o.id ?? o.key) === value);
+    const filtered = visitDropSearch
+      ? options.filter((o) => getLabel(o).toLowerCase().includes(visitDropSearch.toLowerCase()))
+      : options;
+    return (
+      <View style={vstyles.field}>
+        <Text style={vstyles.label}>{label}</Text>
+        <TouchableOpacity style={vstyles.select} onPress={() => { setVisitDropSearch(''); setOpen(true); }}>
+          <Text style={selected ? vstyles.selectText : vstyles.selectPlaceholder} numberOfLines={1}>
+            {selected ? getLabel(selected) : (lang === 'ar' ? '-- اختر --' : '-- Select --')}
+          </Text>
+          <Ionicons name="chevron-down" size={16} color="#888" />
+        </TouchableOpacity>
+        <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+          <TouchableOpacity style={vstyles.dropOverlay} activeOpacity={1} onPress={() => setOpen(false)}>
+            <View style={vstyles.dropBox}>
+              <View style={vstyles.dropSearch}>
+                <Ionicons name="search-outline" size={14} color="#888" />
+                <TextInput
+                  style={vstyles.dropSearchInput}
+                  value={visitDropSearch}
+                  onChangeText={setVisitDropSearch}
+                  placeholder={lang === 'ar' ? 'بحث...' : 'Search...'}
+                  placeholderTextColor="#aaa"
+                  autoFocus
+                />
+              </View>
+              <FlatList
+                data={filtered}
+                keyExtractor={(o, i) => String(o.id ?? o.key ?? i)}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[vstyles.dropItem, value === (item.id ?? item.key) && vstyles.dropItemActive]}
+                    onPress={() => { onSelect(item.id ?? item.key); setOpen(false); setVisitDropSearch(''); }}
+                  >
+                    <Text style={[vstyles.dropItemText, value === (item.id ?? item.key) && vstyles.dropItemTextActive]}>
+                      {getLabel(item)}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={<Text style={vstyles.dropEmpty}>{lang === 'ar' ? 'لا توجد نتائج' : 'No results'}</Text>}
+                style={{ maxHeight: 260 }}
+              />
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      </View>
+    );
+  }
+
   if (loading) return <LoadingScreen />;
   if (error && !project) return <ErrorMessage message={error} onRetry={load} />;
 
   const tabs = [
-    { key: 'scopes',  label: lang === 'ar' ? 'النطاقات' : 'Scopes',         icon: 'layers-outline' },
-    { key: 'team',    label: t('projectUsers'),                               icon: 'people-outline' },
-    { key: 'client',  label: t('clientTeam'),                                 icon: 'business-outline' },
-    { key: 'info',    label: lang === 'ar' ? 'التفاصيل' : 'Details',         icon: 'information-circle-outline' },
+    { key: 'scopes',  label: lang === 'ar' ? 'النطاقات' : 'Scopes',       icon: 'layers-outline' },
+    { key: 'visits',  label: t('planExecution'),                            icon: 'checkmark-circle-outline' },
+    { key: 'team',    label: t('projectUsers'),                             icon: 'people-outline' },
+    { key: 'client',  label: t('clientTeam'),                               icon: 'business-outline' },
+    { key: 'info',    label: lang === 'ar' ? 'التفاصيل' : 'Details',      icon: 'information-circle-outline' },
   ];
 
   const filteredEligible = eligibleSearch
@@ -236,8 +397,13 @@ export default function ProjectDetailScreen({ navigation, route }) {
         )}
       </Card>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
+      {/* Tabs — horizontally scrollable */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsScroll}
+        contentContainerStyle={styles.tabsContent}
+      >
         {tabs.map((tab) => (
           <TouchableOpacity
             key={tab.key}
@@ -248,7 +414,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
             <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       {/* ── Scopes Tab ── */}
       {activeTab === 'scopes' && (
@@ -331,6 +497,95 @@ export default function ProjectDetailScreen({ navigation, route }) {
                   )}
 
                   <Ionicons name="chevron-forward" size={18} color="#bbb" style={styles.cardArrow} />
+                </Card>
+              );
+            })
+          )}
+        </View>
+      )}
+
+      {/* ── Plan Execution / Visits Tab ── */}
+      {activeTab === 'visits' && (
+        <View>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t('planExecution')}</Text>
+            <TouchableOpacity style={styles.addBtn} onPress={openVisitModal}>
+              <Ionicons name="add" size={18} color="#fff" />
+              <Text style={styles.addBtnText}>{t('addVisit')}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {visitsErr ? (
+            <View style={styles.emptySection}>
+              <Ionicons name="alert-circle-outline" size={36} color="#ccc" />
+              <Text style={styles.emptyText}>{lang === 'ar' ? 'هذه الخاصية غير متاحة حالياً' : 'Feature not available'}</Text>
+            </View>
+          ) : visits.length === 0 ? (
+            <View style={styles.emptySection}>
+              <Ionicons name="checkmark-circle-outline" size={36} color="#ccc" />
+              <Text style={styles.emptyText}>{t('noVisits')}</Text>
+            </View>
+          ) : (
+            visits.map((v) => {
+              const scopeName = getScopeName(v.projectScope || { productId: v.projectScopeId });
+              const stageName  = v.projectScopeStage?.stageDef?.name || v.stageName || '';
+              const planName   = v.projectPlan?.title || v.planTitle || '';
+              return (
+                <Card key={v.id} style={vstyles.visitCard}>
+                  {/* Header row: scope tag + date + actions */}
+                  <View style={vstyles.visitHeader}>
+                    <View style={vstyles.visitTags}>
+                      {scopeName ? (
+                        <View style={vstyles.tag}>
+                          <Ionicons name="cube-outline" size={11} color="#1565C0" />
+                          <Text style={vstyles.tagText} numberOfLines={1}>{scopeName}</Text>
+                        </View>
+                      ) : null}
+                      {stageName ? (
+                        <View style={[vstyles.tag, { backgroundColor: '#FFF3E0' }]}>
+                          <Text style={[vstyles.tagText, { color: '#E65100' }]}>{stageName}</Text>
+                        </View>
+                      ) : null}
+                      {planName ? (
+                        <View style={[vstyles.tag, { backgroundColor: '#E8F5E9' }]}>
+                          <Text style={[vstyles.tagText, { color: '#388E3C' }]}>{planName}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <TouchableOpacity onPress={() => handleDeleteVisit(v)} style={vstyles.deleteBtn}>
+                      <Ionicons name="trash-outline" size={18} color="#D32F2F" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Date + time row */}
+                  <View style={vstyles.visitMeta}>
+                    <Ionicons name="calendar-outline" size={13} color="#888" />
+                    <Text style={vstyles.visitMetaText}>{formatDate(v.date)}</Text>
+                    {(v.startTime || v.endTime) && (
+                      <>
+                        <Ionicons name="time-outline" size={13} color="#888" style={{ marginLeft: 10 }} />
+                        <Text style={vstyles.visitMetaText}>
+                          {v.startTime || ''}{v.startTime && v.endTime ? ' — ' : ''}{v.endTime || ''}
+                        </Text>
+                      </>
+                    )}
+                    {v.addedBy && (
+                      <Text style={[vstyles.visitMetaText, { marginLeft: 10, color: '#aaa' }]}>{v.addedBy}</Text>
+                    )}
+                  </View>
+
+                  {/* Description */}
+                  {v.description ? (
+                    <Text style={vstyles.visitDesc} numberOfLines={2}>{v.description}</Text>
+                  ) : null}
+
+                  {/* Attachments count */}
+                  {v.attachmentsCount > 0 && (
+                    <View style={vstyles.attachRow}>
+                      <Ionicons name="attach-outline" size={14} color="#1565C0" />
+                      <Text style={vstyles.attachText}>{v.attachmentsCount} {lang === 'ar' ? 'مرفق' : 'attachment(s)'}</Text>
+                    </View>
+                  )}
                 </Card>
               );
             })
@@ -451,6 +706,120 @@ export default function ProjectDetailScreen({ navigation, route }) {
         </Card>
       )}
 
+      {/* ── Add Visit Modal ── */}
+      <Modal visible={visitModalVisible} transparent animationType="slide" onRequestClose={() => setVisitModalVisible(false)}>
+        <View style={vstyles.modalOverlay}>
+          <View style={vstyles.modalBox}>
+            {/* Header */}
+            <View style={vstyles.modalHeader}>
+              <Text style={vstyles.modalTitle}>{lang === 'ar' ? 'إضافة تنفيذ' : 'Add Execution'}</Text>
+              <TouchableOpacity onPress={() => setVisitModalVisible(false)}>
+                <Ionicons name="close" size={22} color="#444" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
+              {/* Scope */}
+              <VisitDropdown
+                label={lang === 'ar' ? 'نطاق المشروع *' : 'Project Scope *'}
+                options={scopes}
+                value={visitForm.scopeId}
+                onSelect={onVisitScopeSelect}
+                open={visitScopeOpen}
+                setOpen={setVisitScopeOpen}
+                getLabel={(s) => getScopeName(s)}
+              />
+
+              {/* Stage */}
+              <VisitDropdown
+                label={lang === 'ar' ? 'المرحلة' : 'Stage'}
+                options={visitStages}
+                value={visitForm.stageId}
+                onSelect={(id) => { setVisitForm((f) => ({ ...f, stageId: id })); onVisitStageSelect(id); }}
+                open={visitStageOpen}
+                setOpen={setVisitStageOpen}
+                getLabel={(s) => s.stageDef?.name || `Stage #${s.id}`}
+              />
+
+              {/* Plan */}
+              <VisitDropdown
+                label={lang === 'ar' ? 'الخطة' : 'Plan'}
+                options={visitPlans}
+                value={visitForm.planId}
+                onSelect={(id) => setVisitForm((f) => ({ ...f, planId: id }))}
+                open={visitPlanOpen}
+                setOpen={setVisitPlanOpen}
+                getLabel={(p) => p.title || `Plan #${p.id}`}
+              />
+
+              {/* Date */}
+              <View style={vstyles.field}>
+                <Text style={vstyles.label}>{t('visitDate')} *</Text>
+                <TextInput
+                  style={vstyles.input}
+                  value={visitForm.date}
+                  onChangeText={(v) => setVisitForm((f) => ({ ...f, date: v }))}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#aaa"
+                  keyboardType="numeric"
+                  textAlign={lang === 'ar' ? 'right' : 'left'}
+                />
+              </View>
+
+              {/* Time row */}
+              <View style={vstyles.timeRow}>
+                <View style={[vstyles.field, { flex: 1 }]}>
+                  <Text style={vstyles.label}>{t('timeFrom')}</Text>
+                  <TextInput
+                    style={vstyles.input}
+                    value={visitForm.startTime}
+                    onChangeText={(v) => setVisitForm((f) => ({ ...f, startTime: v }))}
+                    placeholder="HH:MM"
+                    placeholderTextColor="#aaa"
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={[vstyles.field, { flex: 1 }]}>
+                  <Text style={vstyles.label}>{t('timeTo')}</Text>
+                  <TextInput
+                    style={vstyles.input}
+                    value={visitForm.endTime}
+                    onChangeText={(v) => setVisitForm((f) => ({ ...f, endTime: v }))}
+                    placeholder="HH:MM"
+                    placeholderTextColor="#aaa"
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+
+              {/* Description */}
+              <View style={vstyles.field}>
+                <Text style={vstyles.label}>{t('description')}</Text>
+                <TextInput
+                  style={[vstyles.input, vstyles.textarea]}
+                  value={visitForm.description}
+                  onChangeText={(v) => setVisitForm((f) => ({ ...f, description: v }))}
+                  placeholder={lang === 'ar' ? 'الوصف (اختياري)' : 'Description (optional)'}
+                  placeholderTextColor="#aaa"
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  textAlign={lang === 'ar' ? 'right' : 'left'}
+                />
+              </View>
+
+              {/* Save button */}
+              <TouchableOpacity style={vstyles.saveBtn} onPress={handleSaveVisit} disabled={savingVisit}>
+                {savingVisit
+                  ? <ActivityIndicator color="#fff" />
+                  : <><Ionicons name="save-outline" size={18} color="#fff" /><Text style={vstyles.saveBtnText}>{lang === 'ar' ? 'حفظ' : 'Save'}</Text></>
+                }
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Add Contact Modal ── */}
       <Modal visible={addModalVisible} transparent animationType="slide" onRequestClose={() => setAddModalVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -523,11 +892,12 @@ const styles = StyleSheet.create({
   unitsText: { fontSize: 13, color: '#1565C0', fontWeight: '600' },
   progressSection: { marginTop: 4 },
   progressLabel: { fontSize: 12, color: '#666', marginBottom: 6 },
-  tabs: {
-    flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, marginBottom: 16, overflow: 'hidden',
+  tabsScroll: { marginBottom: 16 },
+  tabsContent: {
+    flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden',
     elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3,
   },
-  tab: { flex: 1, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', paddingVertical: 10, gap: 2 },
+  tab: { flexDirection: 'column', justifyContent: 'center', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, gap: 2 },
   tabActive: { borderBottomWidth: 2, borderBottomColor: '#1565C0' },
   tabText: { fontSize: 10, color: '#888', fontWeight: '500' },
   tabTextActive: { color: '#1565C0', fontWeight: '700' },
@@ -600,4 +970,70 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: '#F5F5F5',
   },
+});
+
+// ── Visit / Plan-Execution styles (separate sheet to avoid collisions) ────────
+const vstyles = StyleSheet.create({
+  visitCard: { marginBottom: 10 },
+  visitHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 },
+  visitTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, flex: 1 },
+  tag: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: '#E8EEF8', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3,
+  },
+  tagText: { fontSize: 11, color: '#1565C0', fontWeight: '600' },
+  deleteBtn: { padding: 4, marginLeft: 8 },
+  visitMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
+  visitMetaText: { fontSize: 12, color: '#666' },
+  visitDesc: { fontSize: 13, color: '#444', lineHeight: 18, marginBottom: 4 },
+  attachRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  attachText: { fontSize: 12, color: '#1565C0' },
+
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalBox: {
+    backgroundColor: '#fff', borderTopLeftRadius: 22, borderTopRightRadius: 22,
+    maxHeight: '88%',
+  },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
+  },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
+
+  // Form fields inside modal
+  field: { marginBottom: 14 },
+  label: { fontSize: 13, fontWeight: '600', color: '#444', marginBottom: 5 },
+  input: {
+    backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11,
+    fontSize: 14, color: '#222', borderWidth: 1.5, borderColor: '#E8E8E8',
+  },
+  textarea: { height: 70, paddingTop: 10 },
+  timeRow: { flexDirection: 'row', gap: 10 },
+  select: {
+    backgroundColor: '#F5F7FA', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#E8E8E8',
+  },
+  selectText: { fontSize: 14, color: '#222', flex: 1 },
+  selectPlaceholder: { fontSize: 14, color: '#aaa', flex: 1 },
+  saveBtn: {
+    backgroundColor: '#1565C0', borderRadius: 12, height: 48, flexDirection: 'row',
+    justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 4,
+  },
+  saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Inline dropdown
+  dropOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
+  dropBox: { backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden', elevation: 8 },
+  dropSearch: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    padding: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
+  },
+  dropSearchInput: { flex: 1, fontSize: 14, color: '#222', height: 32 },
+  dropItem: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
+  dropItemActive: { backgroundColor: '#F0F4FF' },
+  dropItemText: { fontSize: 14, color: '#333' },
+  dropItemTextActive: { color: '#1565C0', fontWeight: '600' },
+  dropEmpty: { textAlign: 'center', color: '#aaa', padding: 20, fontSize: 13 },
 });
