@@ -806,7 +806,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
       )}
 
       {/* ── Add Team Member Modal ── */}
-      <Modal visible={teamModalVisible} transparent animationType="slide" onRequestClose={() => setTeamModalVisible(false)}>
+      <Modal visible={teamModalVisible} transparent animationType="slide" onRequestClose={() => {}}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
@@ -854,7 +854,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
       </Modal>
 
       {/* ── Add Visit Modal ── */}
-      <Modal visible={visitModalVisible} transparent animationType="slide" onRequestClose={() => setVisitModalVisible(false)}>
+      <Modal visible={visitModalVisible} transparent animationType="slide" onRequestClose={() => {}}>
         <View style={vstyles.modalOverlay}>
           <View style={vstyles.modalBox}>
             {/* Header */}
@@ -1036,7 +1036,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
       </Modal>
 
       {/* ── Add Contact Modal ── */}
-      <Modal visible={addModalVisible} transparent animationType="slide" onRequestClose={() => setAddModalVisible(false)}>
+      <Modal visible={addModalVisible} transparent animationType="slide" onRequestClose={() => {}}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
