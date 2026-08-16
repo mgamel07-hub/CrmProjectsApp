@@ -12,8 +12,8 @@ import { getUsers } from '../../api/projects';
 import { extractList } from '../../utils/helpers';
 
 const TABS = [
-  { key: 'members', label: 'الأعضاء', icon: 'people-outline' },
   { key: 'teams', label: 'الفرق', icon: 'layers-outline' },
+  { key: 'members', label: 'الأعضاء', icon: 'people-outline' },
   { key: 'permissions', label: 'الصلاحيات', icon: 'shield-checkmark-outline' },
 ];
 
@@ -30,7 +30,7 @@ function getCrmName(u) {
 }
 
 export default function TeamSetupScreen() {
-  const [tab, setTab] = useState('members');
+  const [tab, setTab] = useState('teams');
   const [crmUsers, setCrmUsers] = useState([]);
   const [members, setMembers] = useState([]);
   const [teams, setTeams] = useState([]);
@@ -38,15 +38,19 @@ export default function TeamSetupScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
 
-  // Edit member sheet
+  // Edit member sheet (used for both تعديل from الأعضاء tab AND إضافة from الفرق tab)
   const [editUser, setEditUser] = useState(null);
   const [editForm, setEditForm] = useState({ role: 'employee', teamId: null });
   const [saving, setSaving] = useState(false);
 
-  // New team
+  // New / rename team modal
   const [teamModal, setTeamModal] = useState(false);
   const [teamName, setTeamName] = useState('');
   const [editingTeam, setEditingTeam] = useState(null);
+
+  // Add-member-to-team picker (shown when pressing + on a team card)
+  const [addToTeam, setAddToTeam] = useState(null); // the team object
+  const [addSearch, setAddSearch] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -80,11 +84,19 @@ export default function TeamSetupScreen() {
     ? merged.filter(u => u.name.toLowerCase().includes(search.toLowerCase()) || u.crmId.includes(search))
     : merged;
 
-  const openEdit = (u) => {
+  // Users NOT yet in the target team (for the add-member picker)
+  const unassignedForTeam = addToTeam
+    ? merged.filter(u => !u.member || u.member.team_id !== addToTeam.id)
+    : [];
+  const addFiltered = addSearch.trim()
+    ? unassignedForTeam.filter(u => u.name.toLowerCase().includes(addSearch.toLowerCase()) || u.crmId.includes(addSearch))
+    : unassignedForTeam;
+
+  const openEdit = (u, presetTeamId = null) => {
     setEditUser(u);
     setEditForm({
       role: u.member?.role || 'employee',
-      teamId: u.member?.team_id || null,
+      teamId: presetTeamId ?? (u.member?.team_id || null),
     });
   };
 
@@ -100,6 +112,7 @@ export default function TeamSetupScreen() {
       });
       await load();
       setEditUser(null);
+      setAddToTeam(null);
     } catch (e) {
       Alert.alert('خطأ', e.message);
     } finally {
@@ -113,6 +126,18 @@ export default function TeamSetupScreen() {
       { text: 'إلغاء', style: 'cancel' },
       { text: 'إزالة', style: 'destructive', onPress: async () => {
         try { await deleteTeamMember(u.crmId); load(); } catch (e) { Alert.alert('خطأ', e.message); }
+      }},
+    ]);
+  };
+
+  const removeMemberFromTeam = async (member) => {
+    Alert.alert('إزالة من الفريق', `إزالة "${member.display_name}" من الفريق؟`, [
+      { text: 'إلغاء', style: 'cancel' },
+      { text: 'إزالة', style: 'destructive', onPress: async () => {
+        try {
+          await upsertTeamMember({ crm_user_id: member.crm_user_id, display_name: member.display_name, role: member.role, team_id: null });
+          load();
+        } catch (e) { Alert.alert('خطأ', e.message); }
       }},
     ]);
   };
@@ -134,7 +159,7 @@ export default function TeamSetupScreen() {
   };
 
   const removeTeam = (t) => {
-    Alert.alert('حذف', `حذف الفريق "${t.name}"؟ الأعضاء المرتبطين سيبقون لكن بدون فريق.`, [
+    Alert.alert('حذف', `حذف الفريق "${t.name}"؟`, [
       { text: 'إلغاء', style: 'cancel' },
       { text: 'حذف', style: 'destructive', onPress: async () => {
         try { await deleteTeam(t.id); load(); } catch (e) { Alert.alert('خطأ', e.message); }
@@ -144,8 +169,6 @@ export default function TeamSetupScreen() {
 
   // ── Permissions computation ───────────────────────────────────────────────
   const permGroups = React.useMemo(() => {
-    // Managers: see their whole team + themselves
-    // Employees: see only themselves
     const groups = [];
     const managers = members.filter(m => m.role === 'manager');
     const teamMap = {};
@@ -168,8 +191,11 @@ export default function TeamSetupScreen() {
       });
     });
 
-    const unassigned = members.filter(m => m.role === 'employee' && !managers.some(mg => mg.team_id && mg.team_id === m.team_id));
-    unassigned.forEach(emp => {
+    const assignedToManagedTeams = new Set(
+      managers.flatMap(mg => mg.team_id ? members.filter(m => m.team_id === mg.team_id).map(m => m.crm_user_id) : [])
+    );
+    const standalone = members.filter(m => m.role === 'employee' && !assignedToManagedTeams.has(m.crm_user_id));
+    standalone.forEach(emp => {
       const name = emp.display_name || emp.crm_user_id;
       groups.push({ managerId: null, managerName: name, teamName: '—', isEmployee: true, canSee: [{ id: emp.crm_user_id, name, self: true }] });
     });
@@ -191,8 +217,7 @@ export default function TeamSetupScreen() {
           <View style={styles.memberNameRow}>
             <Text style={styles.memberName}>{u.name}</Text>
             <View style={styles.idBadge}>
-              <Ionicons name="finger-print-outline" size={10} color="#888" />
-              <Text style={styles.idText}>{u.crmId}</Text>
+              <Text style={styles.idText}>#{u.crmId}</Text>
             </View>
           </View>
           <View style={styles.memberMeta}>
@@ -203,7 +228,7 @@ export default function TeamSetupScreen() {
               </View>
             ) : (
               <View style={[styles.rolePill, { backgroundColor: '#f0f0f0' }]}>
-                <Text style={[styles.rolePillText, { color: '#aaa' }]}>غير محدد</Text>
+                <Text style={[styles.rolePillText, { color: '#aaa' }]}>اضغط لتعيين الدور</Text>
               </View>
             )}
             {teamName && (
@@ -214,17 +239,18 @@ export default function TeamSetupScreen() {
             )}
           </View>
         </View>
-        <TouchableOpacity onPress={() => clearMember(u)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ paddingLeft: 8 }}>
-          <Ionicons name={u.member ? 'close-circle-outline' : 'chevron-forward'} size={18} color="#ccc" />
-        </TouchableOpacity>
+        {u.member && (
+          <TouchableOpacity onPress={() => clearMember(u)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={{ paddingLeft: 8 }}>
+            <Ionicons name="close-circle-outline" size={18} color="#ddd" />
+          </TouchableOpacity>
+        )}
       </TouchableOpacity>
     );
   };
 
   const renderTeam = ({ item: t }) => {
-    const tmCount = members.filter(m => m.team_id === t.id).length;
-    const manager = members.find(m => m.team_id === t.id && m.role === 'manager');
     const teamMembersList = members.filter(m => m.team_id === t.id);
+    const manager = teamMembersList.find(m => m.role === 'manager');
     return (
       <View style={styles.teamCard}>
         <View style={styles.teamCardHeader}>
@@ -233,7 +259,7 @@ export default function TeamSetupScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.teamCardName}>{t.name}</Text>
-            <Text style={styles.teamCardMeta}>{tmCount} {tmCount === 1 ? 'عضو' : 'أعضاء'}</Text>
+            <Text style={styles.teamCardMeta}>{teamMembersList.length} {teamMembersList.length === 1 ? 'عضو' : 'أعضاء'}</Text>
           </View>
           <TouchableOpacity onPress={() => openRenameTeam(t)} style={styles.teamAction}>
             <Ionicons name="pencil-outline" size={16} color="#888" />
@@ -242,23 +268,41 @@ export default function TeamSetupScreen() {
             <Ionicons name="trash-outline" size={16} color="#ccc" />
           </TouchableOpacity>
         </View>
+
+        {/* Members chips */}
+        {teamMembersList.length > 0 && (
+          <View style={styles.memberChips}>
+            {teamMembersList.map(m => (
+              <TouchableOpacity
+                key={m.id}
+                style={[styles.memberChip, m.role === 'manager' && styles.memberChipManager]}
+                onLongPress={() => removeMemberFromTeam(m)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={m.role === 'manager' ? 'star' : 'person-outline'} size={11} color={m.role === 'manager' ? '#E65100' : '#555'} />
+                <Text style={[styles.memberChipText, m.role === 'manager' && { color: '#E65100' }]}>
+                  {m.display_name || m.crm_user_id}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
         {manager && (
           <View style={styles.managerBanner}>
             <Ionicons name="star" size={12} color="#E65100" />
             <Text style={styles.managerBannerText}>المدير: {manager.display_name || manager.crm_user_id}</Text>
           </View>
         )}
-        {teamMembersList.length > 0 && (
-          <View style={styles.memberChips}>
-            {teamMembersList.map(m => (
-              <View key={m.id} style={[styles.memberChip, m.role === 'manager' && styles.memberChipManager]}>
-                <Text style={[styles.memberChipText, m.role === 'manager' && { color: '#E65100' }]}>
-                  {m.display_name || m.crm_user_id}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
+
+        {/* Add member button */}
+        <TouchableOpacity
+          style={styles.addMemberBtn}
+          onPress={() => { setAddToTeam(t); setAddSearch(''); }}
+        >
+          <Ionicons name="person-add-outline" size={15} color="#00695C" />
+          <Text style={styles.addMemberText}>إضافة عضو للفريق</Text>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -266,9 +310,6 @@ export default function TeamSetupScreen() {
   if (loading) {
     return <ActivityIndicator style={{ flex: 1, marginTop: 80 }} color="#1565C0" size="large" />;
   }
-
-  const currentTeamName = editUser?.member?.teams?.name
-    || (editForm.teamId ? teams.find(t => t.id === editForm.teamId)?.name : null);
 
   return (
     <View style={styles.root}>
@@ -282,9 +323,36 @@ export default function TeamSetupScreen() {
         ))}
       </View>
 
+      {/* ── Teams Tab ── */}
+      {tab === 'teams' && (
+        <>
+          <TouchableOpacity style={styles.newTeamBtn} onPress={openNewTeam}>
+            <Ionicons name="add-circle-outline" size={18} color="#fff" />
+            <Text style={styles.newTeamText}>إنشاء فريق جديد</Text>
+          </TouchableOpacity>
+          <FlatList
+            data={teams}
+            keyExtractor={t => t.id}
+            renderItem={renderTeam}
+            contentContainerStyle={styles.list}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={['#1565C0']} />}
+            ListEmptyComponent={
+              <View style={styles.emptyWrap}>
+                <Ionicons name="layers-outline" size={48} color="#ddd" />
+                <Text style={styles.emptyText}>ابدأ بإنشاء فريق من الزرار أعلاه</Text>
+              </View>
+            }
+          />
+        </>
+      )}
+
       {/* ── Members Tab ── */}
       {tab === 'members' && (
         <>
+          <View style={styles.membersHint}>
+            <Ionicons name="information-circle-outline" size={14} color="#1565C0" />
+            <Text style={styles.membersHintText}>اضغط على أي شخص لتعيين دوره وفريقه</Text>
+          </View>
           <View style={styles.searchWrap}>
             <Ionicons name="search-outline" size={16} color="#aaa" />
             <TextInput
@@ -307,29 +375,6 @@ export default function TeamSetupScreen() {
         </>
       )}
 
-      {/* ── Teams Tab ── */}
-      {tab === 'teams' && (
-        <>
-          <TouchableOpacity style={styles.newTeamBtn} onPress={openNewTeam}>
-            <Ionicons name="add-circle-outline" size={18} color="#fff" />
-            <Text style={styles.newTeamText}>إنشاء فريق جديد</Text>
-          </TouchableOpacity>
-          <FlatList
-            data={teams}
-            keyExtractor={t => t.id}
-            renderItem={renderTeam}
-            contentContainerStyle={styles.list}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={['#1565C0']} />}
-            ListEmptyComponent={
-              <View style={styles.emptyWrap}>
-                <Ionicons name="layers-outline" size={48} color="#ddd" />
-                <Text style={styles.emptyText}>لم تنشئ فرقاً بعد</Text>
-              </View>
-            }
-          />
-        </>
-      )}
-
       {/* ── Permissions Tab ── */}
       {tab === 'permissions' && (
         <ScrollView
@@ -343,7 +388,7 @@ export default function TeamSetupScreen() {
           {permGroups.length === 0 && (
             <View style={styles.emptyWrap}>
               <Ionicons name="shield-outline" size={48} color="#ddd" />
-              <Text style={styles.emptyText}>لم يتم إعداد أي صلاحيات بعد</Text>
+              <Text style={styles.emptyText}>أنشئ فرقاً وعيّن أدواراً أولاً</Text>
             </View>
           )}
           {permGroups.map((g, i) => (
@@ -383,16 +428,73 @@ export default function TeamSetupScreen() {
         </ScrollView>
       )}
 
-      {/* ── Edit Member Modal ── */}
+      {/* ── Add Member to Team Picker ── */}
+      <Modal visible={!!addToTeam} transparent animationType="slide" onRequestClose={() => setAddToTeam(null)}>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { maxHeight: '80%' }]}>
+            <View style={styles.sheetHeaderRow}>
+              <Text style={styles.sheetTitle}>إضافة عضو إلى "{addToTeam?.name}"</Text>
+              <TouchableOpacity onPress={() => setAddToTeam(null)}>
+                <Ionicons name="close" size={22} color="#888" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.searchWrap}>
+              <Ionicons name="search-outline" size={15} color="#aaa" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="ابحث..."
+                value={addSearch}
+                onChangeText={setAddSearch}
+                autoFocus
+                placeholderTextColor="#bbb"
+              />
+            </View>
+            {crmUsers.length === 0 ? (
+              <Text style={styles.emptyText}>لا يوجد مستخدمون من الـ CRM</Text>
+            ) : (
+              <FlatList
+                data={addFiltered}
+                keyExtractor={u => u.crmId}
+                renderItem={({ item: u }) => (
+                  <TouchableOpacity
+                    style={styles.addPickerRow}
+                    onPress={() => { setAddToTeam(null); openEdit(u, addToTeam.id); }}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.avatar, { width: 34, height: 34, borderRadius: 17 }]}>
+                      <Text style={[styles.avatarText, { fontSize: 13 }]}>{u.name.charAt(0)}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.addPickerName}>{u.name}</Text>
+                      <Text style={styles.addPickerId}>#{u.crmId}</Text>
+                    </View>
+                    {u.member?.team_id && (
+                      <View style={styles.alreadyBadge}>
+                        <Text style={styles.alreadyBadgeText}>
+                          {teams.find(t => t.id === u.member.team_id)?.name || 'فريق آخر'}
+                        </Text>
+                      </View>
+                    )}
+                    <Ionicons name="chevron-forward" size={16} color="#ccc" />
+                  </TouchableOpacity>
+                )}
+                ListEmptyComponent={<Text style={styles.emptyText}>لا نتائج</Text>}
+                contentContainerStyle={{ paddingBottom: 20 }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Edit Member Role/Team Modal ── */}
       <Modal visible={!!editUser} transparent animationType="slide" onRequestClose={() => setEditUser(null)}>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>{editUser?.name}</Text>
             <View style={styles.crmIdRow}>
-              <Ionicons name="finger-print-outline" size={13} color="#888" />
-              <Text style={styles.crmIdLabel}>رقم المستخدم في النظام:</Text>
-              <Text style={styles.crmIdValue}>{editUser?.crmId}</Text>
+              <Text style={styles.crmIdLabel}>رقم المستخدم:</Text>
+              <Text style={styles.crmIdValue}>#{editUser?.crmId}</Text>
             </View>
 
             <Text style={styles.sheetSectionLabel}>الدور</Text>
@@ -403,7 +505,7 @@ export default function TeamSetupScreen() {
                   style={[styles.roleBtn, editForm.role === r.key && { borderColor: r.color, backgroundColor: r.bg }]}
                   onPress={() => setEditForm(f => ({ ...f, role: r.key }))}
                 >
-                  <Ionicons name={r.icon} size={20} color={editForm.role === r.key ? r.color : '#bbb'} />
+                  <Ionicons name={r.icon} size={22} color={editForm.role === r.key ? r.color : '#ccc'} />
                   <Text style={[styles.roleBtnText, editForm.role === r.key && { color: r.color }]}>{r.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -477,6 +579,10 @@ const styles = StyleSheet.create({
   tabLabel: { fontSize: 11, color: '#aaa', fontWeight: '600' },
   tabLabelActive: { color: '#1565C0' },
 
+  // Members hint
+  membersHint: { flexDirection: 'row', alignItems: 'center', gap: 6, margin: 12, marginBottom: 0, backgroundColor: '#E3F2FD', borderRadius: 8, padding: 10 },
+  membersHintText: { fontSize: 12, color: '#1565C0', flex: 1 },
+
   // Search
   searchWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -497,8 +603,8 @@ const styles = StyleSheet.create({
   memberInfo: { flex: 1 },
   memberNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   memberName: { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
-  idBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#f5f5f5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  idText: { fontSize: 10, color: '#888', fontFamily: 'monospace', fontWeight: '600' },
+  idBadge: { backgroundColor: '#f0f0f0', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  idText: { fontSize: 10, color: '#888', fontWeight: '700' },
   memberMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' },
   rolePill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
   rolePillText: { fontSize: 11, fontWeight: '600' },
@@ -514,12 +620,29 @@ const styles = StyleSheet.create({
   teamCardName: { fontSize: 15, fontWeight: '800', color: '#1a1a1a' },
   teamCardMeta: { fontSize: 12, color: '#888', marginTop: 2 },
   teamAction: { padding: 6 },
-  managerBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF8F0', paddingHorizontal: 14, paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#FFF3E0' },
+  managerBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF8F0', paddingHorizontal: 14, paddingVertical: 6 },
   managerBannerText: { fontSize: 12, color: '#E65100', fontWeight: '600' },
-  memberChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, padding: 12, paddingTop: 8 },
-  memberChip: { backgroundColor: '#f5f5f5', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  memberChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingVertical: 8 },
+  memberChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f5f5f5', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
   memberChipManager: { backgroundColor: '#FFF3E0' },
   memberChipText: { fontSize: 12, color: '#555', fontWeight: '600' },
+  addMemberBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center',
+    borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingVertical: 12,
+    backgroundColor: '#F1F8F5',
+  },
+  addMemberText: { fontSize: 13, color: '#00695C', fontWeight: '700' },
+
+  // Add member picker
+  addPickerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 12, paddingHorizontal: 4,
+    borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
+  },
+  addPickerName: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
+  addPickerId: { fontSize: 11, color: '#aaa', marginTop: 2 },
+  alreadyBadge: { backgroundColor: '#FFF3E0', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  alreadyBadgeText: { fontSize: 11, color: '#E65100', fontWeight: '600' },
 
   // Permissions tab
   permList: { padding: 12, paddingBottom: 40 },
@@ -540,19 +663,20 @@ const styles = StyleSheet.create({
   seeChipText: { fontSize: 12, color: '#666' },
   seeChipTextSelf: { color: '#1565C0', fontWeight: '600' },
 
-  // Edit modal
+  // Modals
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
   sheetHandle: { width: 40, height: 4, backgroundColor: '#e0e0e0', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+  sheetHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   smallSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 32 },
-  sheetTitle: { fontSize: 16, fontWeight: '800', color: '#1a1a1a', marginBottom: 6, textAlign: 'center' },
+  sheetTitle: { fontSize: 15, fontWeight: '800', color: '#1a1a1a', marginBottom: 6, textAlign: 'center', flex: 1 },
   crmIdRow: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'center', marginBottom: 20 },
   crmIdLabel: { fontSize: 12, color: '#888' },
-  crmIdValue: { fontSize: 14, fontWeight: '800', color: '#1565C0', fontFamily: 'monospace' },
-  sheetSectionLabel: { fontSize: 12, fontWeight: '700', color: '#888', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
+  crmIdValue: { fontSize: 15, fontWeight: '800', color: '#1565C0' },
+  sheetSectionLabel: { fontSize: 11, fontWeight: '700', color: '#aaa', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
   roleRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   roleBtn: { flex: 1, alignItems: 'center', gap: 6, padding: 14, borderRadius: 14, borderWidth: 2, borderColor: '#eee', backgroundColor: '#fafafa' },
-  roleBtnText: { fontSize: 13, fontWeight: '700', color: '#bbb' },
+  roleBtnText: { fontSize: 13, fontWeight: '700', color: '#ccc' },
   teamChips: { gap: 8, paddingBottom: 4, marginBottom: 20 },
   teamChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#ddd', backgroundColor: '#fafafa' },
   teamChipSelected: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
