@@ -48,10 +48,11 @@ export const getPlanByIdForView = (id) => api.get(`/ProjectPlan/GetByIdForView/$
 export const createPlan = (data) => api.post('/ProjectPlan/Create', data);
 export const updatePlan = (data) => api.put('/ProjectPlan/Update', data);
 export const updatePlanStatus = (data) => api.put('/ProjectPlan/UpdateStatus', data);
-export const submitPlan = (id) => api.put(`/ProjectPlan/Submit/${id}`);
-export const approvePlan = (id) => api.put(`/ProjectPlan/Approve/${id}`);
-export const rejectPlan = (id, data) => api.put(`/ProjectPlan/Reject/${id}`, data);
-export const revertPlanStep = (id) => api.put(`/ProjectPlan/RevertStep/${id}`);
+// statusId: 2=Submitted, 3=Approved, 4=Rejected (confirmed from API: statusId 3 → statusName "Approved")
+export const submitPlan  = (id) => api.put('/ProjectPlan/UpdateStatus', { id, statusId: 2 });
+export const approvePlan = (id) => api.put('/ProjectPlan/UpdateStatus', { id, statusId: 3 });
+export const rejectPlan  = (id, data) => api.put('/ProjectPlan/UpdateStatus', { id, statusId: 4, ...data });
+export const revertPlanStep = (id) => api.put('/ProjectPlan/UpdateStatus', { id, statusId: 1 });
 export const deletePlan = (id) => api.delete(`/ProjectPlan/Delete/${id}`);
 export const getAvailableStageDefItems = (planId) => api.get(`/ProjectPlan/GetAvailableStageDefItems/${planId}`);
 export const getPendingPlans = (params) => api.get('/ProjectPlan/GetByFilter', { params });
