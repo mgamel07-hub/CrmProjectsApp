@@ -89,6 +89,10 @@ export const deleteProjectVisit = (id) => api.delete(`/PlanExecution/Delete/${id
 export const getPlanExecutionStages = (projectScopeId) => api.get(`/PlanExecution/GetStagesByScopeId?projectScopeId=${projectScopeId}`);
 export const getPlansDropDown = (projectScopeId, projectScopeStageId) =>
   api.get('/ProjectPlan/GetPlansDropDown', { params: { projectScopeId, projectScopeStageId, approvedPlansOnly: true } });
+export const uploadPlanExecutionAttachment = (planExecutionId, formData) =>
+  api.post(`/PlanExecution/UploadAttachment/${planExecutionId}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
 
 // Client Team (فريق العميل) — contacts from the customer side on a project
 export const getClientContacts = (projectId) => api.get(`/ProjectClientUser/GetByProject/${projectId}`);

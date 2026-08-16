@@ -5,13 +5,15 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import {
   getProjectByIdForView, getProjectProgress,
   getScopesByProject, getProjectUsers, addProjectUser, deleteProjectUser,
   getClientContacts, addClientContact, deleteClientContact,
   getEligibleClientUsers, getProducts, getUsers,
   getProjectVisits, createProjectVisit, deleteProjectVisit,
-  getPlanExecutionStages, getPlansDropDown,
+  getPlanExecutionStages, getPlansDropDown, getPlanItems,
+  uploadPlanExecutionAttachment,
 } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
@@ -73,6 +75,10 @@ export default function ProjectDetailScreen({ navigation, route }) {
   });
   const [visitStages, setVisitStages] = useState([]);
   const [visitPlans, setVisitPlans]   = useState([]);
+  const [visitPlanItems, setVisitPlanItems]   = useState([]);
+  const [loadingPlanItems, setLoadingPlanItems] = useState(false);
+  const [selectedPlanItemIds, setSelectedPlanItemIds] = useState([]);
+  const [visitAttachments, setVisitAttachments] = useState([]);
   const [visitScopeOpen,  setVisitScopeOpen]  = useState(false);
   const [visitStageOpen,  setVisitStageOpen]  = useState(false);
   const [visitPlanOpen,   setVisitPlanOpen]   = useState(false);
@@ -207,6 +213,9 @@ export default function ProjectDetailScreen({ navigation, route }) {
     setVisitForm({ scopeId: null, stageId: null, planId: null, date: today, startTime: '', endTime: '', description: '' });
     setVisitStages([]);
     setVisitPlans([]);
+    setVisitPlanItems([]);
+    setSelectedPlanItemIds([]);
+    setVisitAttachments([]);
     setVisitModalVisible(true);
   };
 
@@ -229,6 +238,28 @@ export default function ProjectDetailScreen({ navigation, route }) {
     } catch { setVisitPlans([]); }
   };
 
+  const onVisitPlanSelect = async (planId) => {
+    setVisitForm((f) => ({ ...f, planId }));
+    setSelectedPlanItemIds([]);
+    setVisitPlanItems([]);
+    if (!planId) return;
+    setLoadingPlanItems(true);
+    try {
+      const res = await getPlanItems(planId);
+      setVisitPlanItems(extractList(res) || []);
+    } catch { setVisitPlanItems([]); }
+    finally { setLoadingPlanItems(false); }
+  };
+
+  const pickAttachment = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
+      if (!result.canceled && result.assets?.length) {
+        setVisitAttachments((prev) => [...prev, ...result.assets]);
+      }
+    } catch { /* ignore */ }
+  };
+
   const handleSaveVisit = async () => {
     if (!visitForm.planId) {
       Alert.alert(t('error'), lang === 'ar' ? 'اختر الخطة' : 'Select a plan');
@@ -240,15 +271,26 @@ export default function ProjectDetailScreen({ navigation, route }) {
     }
     setSavingVisit(true);
     try {
-      await createProjectVisit({
+      const res = await createProjectVisit({
         projectPlanId: visitForm.planId,
         executionDate: visitForm.date,
         startTime: visitForm.startTime || null,
         endTime: visitForm.endTime || null,
         description: visitForm.description.trim() || null,
-        projectPlanItemIds: [],
+        projectPlanItemIds: selectedPlanItemIds,
         hideItemsInEmail: false,
       });
+      const executionId = res?.data?.data ?? res?.data;
+      // Upload attachments if any
+      if (visitAttachments.length > 0 && executionId) {
+        for (const file of visitAttachments) {
+          try {
+            const fd = new FormData();
+            fd.append('file', { uri: file.uri, name: file.name, type: file.mimeType || 'application/octet-stream' });
+            await uploadPlanExecutionAttachment(executionId, fd);
+          } catch { /* attachment upload failure is non-fatal */ }
+        }
+      }
       setVisitModalVisible(false);
       await load();
     } catch (e) {
@@ -848,14 +890,64 @@ export default function ProjectDetailScreen({ navigation, route }) {
 
               {/* Plan */}
               <VisitDropdown
-                label={lang === 'ar' ? 'الخطة' : 'Plan'}
+                label={lang === 'ar' ? 'الخطة *' : 'Plan *'}
                 options={visitPlans}
                 value={visitForm.planId}
-                onSelect={(id) => setVisitForm((f) => ({ ...f, planId: id }))}
+                onSelect={onVisitPlanSelect}
                 open={visitPlanOpen}
                 setOpen={setVisitPlanOpen}
                 getLabel={(p) => p.value || p.title || `Plan #${p.id ?? p.key}`}
               />
+
+              {/* Plan Items (أصناف) */}
+              {loadingPlanItems && (
+                <View style={vstyles.itemsLoading}>
+                  <ActivityIndicator size="small" color="#1565C0" />
+                  <Text style={vstyles.itemsLoadingText}>{lang === 'ar' ? 'جاري تحميل الأصناف...' : 'Loading items...'}</Text>
+                </View>
+              )}
+              {visitPlanItems.length > 0 && (
+                <View style={vstyles.field}>
+                  <View style={vstyles.itemsHeader}>
+                    <Text style={vstyles.label}>{lang === 'ar' ? 'الأصناف' : 'Items'}</Text>
+                    <TouchableOpacity onPress={() => {
+                      if (selectedPlanItemIds.length === visitPlanItems.length) {
+                        setSelectedPlanItemIds([]);
+                      } else {
+                        setSelectedPlanItemIds(visitPlanItems.map((i) => i.id));
+                      }
+                    }}>
+                      <Text style={vstyles.selectAllText}>
+                        {selectedPlanItemIds.length === visitPlanItems.length
+                          ? (lang === 'ar' ? 'إلغاء الكل' : 'Deselect All')
+                          : (lang === 'ar' ? 'تحديد الكل' : 'Select All')}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {visitPlanItems.map((item) => {
+                    const checked = selectedPlanItemIds.includes(item.id);
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[vstyles.itemRow, checked && vstyles.itemRowChecked]}
+                        onPress={() => setSelectedPlanItemIds((prev) =>
+                          prev.includes(item.id) ? prev.filter((id) => id !== item.id) : [...prev, item.id]
+                        )}
+                      >
+                        <Ionicons
+                          name={checked ? 'checkbox' : 'square-outline'}
+                          size={20}
+                          color={checked ? '#1565C0' : '#bbb'}
+                          style={{ marginTop: 1 }}
+                        />
+                        <Text style={vstyles.itemText} numberOfLines={3}>
+                          {item.title || item.name || `Item #${item.id}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
 
               {/* Date */}
               <View style={vstyles.field}>
@@ -911,6 +1003,24 @@ export default function ProjectDetailScreen({ navigation, route }) {
                   textAlignVertical="top"
                   textAlign={lang === 'ar' ? 'right' : 'left'}
                 />
+              </View>
+
+              {/* Attachments */}
+              <View style={vstyles.field}>
+                <Text style={vstyles.label}>{lang === 'ar' ? 'المرفقات' : 'Attachments'}</Text>
+                {visitAttachments.map((f, i) => (
+                  <View key={i} style={vstyles.attachmentRow}>
+                    <Ionicons name="document-outline" size={16} color="#1565C0" />
+                    <Text style={vstyles.attachmentName} numberOfLines={1}>{f.name}</Text>
+                    <TouchableOpacity onPress={() => setVisitAttachments((prev) => prev.filter((_, j) => j !== i))}>
+                      <Ionicons name="close-circle" size={18} color="#D32F2F" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <TouchableOpacity style={vstyles.attachPickBtn} onPress={pickAttachment}>
+                  <Ionicons name="attach-outline" size={18} color="#1565C0" />
+                  <Text style={vstyles.attachPickText}>{lang === 'ar' ? 'إضافة مرفق' : 'Add Attachment'}</Text>
+                </TouchableOpacity>
               </View>
 
               {/* Save button */}
@@ -1127,6 +1237,32 @@ const vstyles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 4,
   },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Plan items
+  itemsLoading: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 },
+  itemsLoadingText: { fontSize: 12, color: '#888' },
+  itemsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  selectAllText: { fontSize: 12, color: '#1565C0', fontWeight: '600' },
+  itemRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    paddingVertical: 9, paddingHorizontal: 10, borderRadius: 8,
+    borderWidth: 1, borderColor: '#E8E8E8', marginBottom: 6, backgroundColor: '#FAFAFA',
+  },
+  itemRowChecked: { borderColor: '#1565C0', backgroundColor: '#F0F4FF' },
+  itemText: { flex: 1, fontSize: 13, color: '#333', lineHeight: 18 },
+
+  // Attachments
+  attachmentRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#F0F4FF', borderRadius: 8, padding: 8, marginBottom: 6,
+  },
+  attachmentName: { flex: 1, fontSize: 13, color: '#1565C0' },
+  attachPickBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: '#1565C0', borderStyle: 'dashed',
+    borderRadius: 10, padding: 10, justifyContent: 'center', marginTop: 4,
+  },
+  attachPickText: { color: '#1565C0', fontSize: 13, fontWeight: '600' },
 
   // Inline dropdown
   dropOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
