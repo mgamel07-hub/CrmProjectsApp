@@ -109,7 +109,7 @@ export default function StageDetailScreen({ navigation, route }) {
             )}
 
             <View style={styles.planActions}>
-              {plan.statusId === 1 && (
+              {(plan.statusId === 1 || plan.canEditPlan) && (
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.submitBtn]}
                   onPress={async () => {
@@ -117,7 +117,10 @@ export default function StageDetailScreen({ navigation, route }) {
                       await require('../api/projects').submitPlan(plan.id);
                       load();
                     } catch (e) {
-                      Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+                      const d = e?.response?.data;
+                      const msg = d?.message || d?.title || (typeof d === 'string' ? d : null) || e?.message || t('networkError');
+                      const status = e?.response?.status;
+                      Alert.alert(t('error'), status ? `(HTTP ${status}) ${msg}` : msg);
                     }
                   }}
                 >
@@ -125,7 +128,7 @@ export default function StageDetailScreen({ navigation, route }) {
                   <Text style={styles.actionBtnText}>{t('submit')}</Text>
                 </TouchableOpacity>
               )}
-              {plan.statusId === 2 && (
+              {(plan.statusId === 2 || plan.canApprovePlan || plan.canRejectPlan) && (
                 <>
                   <TouchableOpacity
                     style={[styles.actionBtn, styles.approveBtn]}
@@ -134,7 +137,10 @@ export default function StageDetailScreen({ navigation, route }) {
                         await require('../api/projects').approvePlan(plan.id);
                         load();
                       } catch (e) {
-                        Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+                        const d = e?.response?.data;
+                        const msg = d?.message || d?.title || (typeof d === 'string' ? d : null) || e?.message || t('networkError');
+                        const status = e?.response?.status;
+                        Alert.alert(t('error'), status ? `(HTTP ${status}) ${msg}` : msg);
                       }
                     }}
                   >
@@ -143,7 +149,29 @@ export default function StageDetailScreen({ navigation, route }) {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.actionBtn, styles.rejectBtn]}
-                    onPress={() => navigation.navigate('RejectPlan', { planId: plan.id, onDone: load })}
+                    onPress={() => {
+                      Alert.alert(
+                        lang === 'ar' ? 'رفض الخطة' : 'Reject Plan',
+                        lang === 'ar' ? 'هل تريد رفض هذه الخطة؟' : 'Reject this plan?',
+                        [
+                          { text: t('cancel'), style: 'cancel' },
+                          {
+                            text: t('reject'), style: 'destructive',
+                            onPress: async () => {
+                              try {
+                                await require('../api/projects').rejectPlan(plan.id, {});
+                                load();
+                              } catch (e) {
+                                const d = e?.response?.data;
+                                const msg = d?.message || d?.title || (typeof d === 'string' ? d : null) || e?.message || t('networkError');
+                                const status = e?.response?.status;
+                                Alert.alert(t('error'), status ? `(HTTP ${status}) ${msg}` : msg);
+                              }
+                            },
+                          },
+                        ]
+                      );
+                    }}
                   >
                     <Ionicons name="close-outline" size={14} color="#fff" />
                     <Text style={styles.actionBtnText}>{t('reject')}</Text>
