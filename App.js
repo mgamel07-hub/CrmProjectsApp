@@ -29,6 +29,14 @@ import CreateUnitsRequestScreen from './src/screens/CreateUnitsRequestScreen';
 import LoadingScreen          from './src/components/LoadingScreen';
 import NotificationBell       from './src/components/NotificationBell';
 
+// Internal (team) screens
+import TeamHomeScreen              from './src/screens/internal/TeamHomeScreen';
+import WeeklyScheduleScreen        from './src/screens/internal/WeeklyScheduleScreen';
+import MyTasksScreen               from './src/screens/internal/MyTasksScreen';
+import ManageTasksScreen           from './src/screens/internal/ManageTasksScreen';
+import TeamScheduleScreen          from './src/screens/internal/TeamScheduleScreen';
+import InternalNotificationsScreen from './src/screens/internal/InternalNotificationsScreen';
+
 I18nManager.forceRTL(true);
 
 const Stack = createNativeStackNavigator();
@@ -55,6 +63,7 @@ function MainTabs({ navigation }) {
             Projects:  focused ? 'folder'            : 'folder-outline',
             Reports:   focused ? 'bar-chart'         : 'bar-chart-outline',
             Approvals: focused ? 'checkmark-circle'  : 'checkmark-circle-outline',
+            Team:      focused ? 'people'            : 'people-outline',
             Profile:   focused ? 'person'            : 'person-outline',
           };
           return <Ionicons name={icons[route.name] || 'ellipse-outline'} size={size} color={color} />;
@@ -80,6 +89,11 @@ function MainTabs({ navigation }) {
         name="Approvals"
         component={ApprovalsScreen}
         options={{ title: t('approvals'), tabBarLabel: t('approvals') }}
+      />
+      <Tab.Screen
+        name="Team"
+        component={TeamHomeScreen}
+        options={{ title: 'الفريق', tabBarLabel: 'الفريق' }}
       />
       <Tab.Screen
         name="Profile"
@@ -161,6 +175,32 @@ function AppNavigator() {
               name="CreateUnitsRequest"
               component={CreateUnitsRequestScreen}
               options={{ title: t('newUnitsRequest'), presentation: 'modal' }}
+            />
+            {/* Internal team screens */}
+            <Stack.Screen
+              name="WeeklySchedule"
+              component={WeeklyScheduleScreen}
+              options={{ title: 'جدولي الأسبوعي' }}
+            />
+            <Stack.Screen
+              name="MyTasks"
+              component={MyTasksScreen}
+              options={{ title: 'مهامي' }}
+            />
+            <Stack.Screen
+              name="ManageTasks"
+              component={ManageTasksScreen}
+              options={{ title: 'إسناد مهام' }}
+            />
+            <Stack.Screen
+              name="TeamSchedule"
+              component={TeamScheduleScreen}
+              options={{ title: 'جدول الفريق' }}
+            />
+            <Stack.Screen
+              name="InternalNotifications"
+              component={InternalNotificationsScreen}
+              options={{ title: 'إشعارات الفريق' }}
             />
           </>
         )}
