@@ -229,34 +229,31 @@ export default function CreateProjectScreen({ navigation }) {
         }],
       };
 
-      // Try variations to find which flagId format & combination works
-      const rawFlagStr = String(form.projectTypeFlagId ?? '');
-      const flagVariants = rawFlagStr.includes('-')
-        ? [null, Number(rawFlagStr.split('-')[0]), Number(rawFlagStr.split('-').pop())]
-        : [null, flagId];
+      // Try combinations to isolate what's causing InvalidEntry
+      const variants = [
+        { label: 'noScope+noCustomer', p: { ...payload, projectScope: [], customerId: null } },
+        { label: 'noScope+customer',   p: { ...payload, projectScope: [] } },
+        { label: 'scope203+noCustomer',p: { ...payload, customerId: null } },
+        { label: 'scope203+customer',  p: { ...payload } },
+      ];
 
       let body = null;
-      let successVariant = null;
-      for (const fv of flagVariants) {
-        const tryPayload = { ...payload, projectTypeFlagId: fv };
+      let successLabel = null;
+      for (const { label, p } of variants) {
         try {
-          const r = await createProject(tryPayload);
+          const r = await createProject(p);
           if (r?.data?.isSuccess !== false) {
             body = r?.data;
-            successVariant = fv;
+            successLabel = label;
             break;
           }
           body = r?.data;
         } catch (_) {}
       }
 
-      if (successVariant !== null && successVariant !== undefined) {
-        console.log('SUCCESS_WITH_FLAG', successVariant);
-      }
-
       if (body?.isSuccess === false) {
         const detail = [body?.message, ...(body?.errors || [])].filter(Boolean).join('\n');
-        Alert.alert(t('error'), `flagVariants tried: ${flagVariants.join(',')}\n${detail || 'فشل'}`);
+        Alert.alert(t('error'), `Tried: noScope+noCustomer, noScope+customer, scope203+noCustomer, scope203+customer\nAll failed: ${detail || 'InvalidEntry'}`);
         return;
       }
 
