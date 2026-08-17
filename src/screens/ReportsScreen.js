@@ -125,7 +125,7 @@ function TeamUserRow({ item }) {
 
 // ─── main screen ────────────────────────────────────────────────────────────
 
-export default function ReportsScreen() {
+export default function ReportsScreen({ navigation }) {
   const { profile } = useAuth();
   const { lang }    = useLang();
 
@@ -236,6 +236,22 @@ export default function ReportsScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1565C0']} />}
     >
+      {/* ── تقارير التنفيذ entry ─────────────────────────────────── */}
+      <TouchableOpacity
+        style={styles.implEntry}
+        onPress={() => navigation.navigate('ImplReports')}
+        activeOpacity={0.8}
+      >
+        <View style={styles.implEntryLeft}>
+          <Ionicons name="git-branch-outline" size={22} color="#fff" />
+          <View>
+            <Text style={styles.implEntryTitle}>تقارير التنفيذ</Text>
+            <Text style={styles.implEntrySub}>الأنظمة · المراحل · الزيارات</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.7)" />
+      </TouchableOpacity>
+
       <PeriodFilter value={period} onChange={setPeriod} lang={lang} />
 
       {/* ── Project overview ─────────────────────────────────────────── */}
@@ -395,6 +411,15 @@ const styles = StyleSheet.create({
   content:     { padding: 12, paddingBottom: 32 },
   center:      { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
   loadingText: { color: '#666', fontSize: 14 },
+
+  implEntry: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#1565C0', borderRadius: 14, padding: 16, marginBottom: 14,
+    elevation: 3, shadowColor: '#000', shadowOffset:{width:0,height:2}, shadowOpacity:0.12, shadowRadius:5,
+  },
+  implEntryLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  implEntryTitle: { fontSize: 16, fontWeight: '800', color: '#fff' },
+  implEntrySub:   { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 1 },
 
   periodRow: {
     flexDirection: 'row', gap: 8, marginBottom: 14,

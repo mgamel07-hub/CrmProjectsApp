@@ -37,6 +37,7 @@ import ManageTasksScreen           from './src/screens/internal/ManageTasksScree
 import TeamScheduleScreen          from './src/screens/internal/TeamScheduleScreen';
 import InternalNotificationsScreen from './src/screens/internal/InternalNotificationsScreen';
 import TeamSetupScreen             from './src/screens/internal/TeamSetupScreen';
+import ImplReportsScreen           from './src/screens/ImplReportsScreen';
 
 I18nManager.forceRTL(true);
 
@@ -207,6 +208,11 @@ function AppNavigator() {
               name="TeamSetup"
               component={TeamSetupScreen}
               options={{ title: 'إعداد الفريق' }}
+            />
+            <Stack.Screen
+              name="ImplReports"
+              component={ImplReportsScreen}
+              options={{ title: 'تقارير التنفيذ' }}
             />
           </>
         )}
