@@ -223,6 +223,15 @@ export async function getTeamMembers() {
   return data || [];
 }
 
+export async function getMyTeamRecord(userId) {
+  const { data } = await supabase
+    .from('team_members')
+    .select('*, teams(id, name)')
+    .eq('crm_user_id', String(userId))
+    .maybeSingle();
+  return data || null;
+}
+
 export async function upsertTeamMember({ crm_user_id, display_name, role, team_id }) {
   const { error } = await supabase.from('team_members').upsert(
     { crm_user_id: String(crm_user_id), display_name, role, team_id: team_id || null, updated_at: new Date().toISOString() },

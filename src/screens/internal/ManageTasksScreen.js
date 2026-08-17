@@ -5,21 +5,30 @@ import {
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
-import { getAssignedByMeTasks, createTask, deleteTask, createNotification } from '../../api/internal';
-import { getUsers } from '../../api/projects';
-import { extractList } from '../../utils/helpers';
+import {
+  getAssignedByMeTasks, createTask, deleteTask, createNotification,
+  getTeamMembers, getMyTeamRecord,
+} from '../../api/internal';
 
-function getUserId(u) {
-  return u.userId ?? u.id ?? u.key ?? String(u.value ?? '');
+// Convert a team_members row to the shape the UI needs
+function memberToUser(m) {
+  return {
+    key: m.crm_user_id,
+    value: m.display_name || m.crm_user_id,
+  };
 }
-function getUserName(u) {
-  return u.fullName ?? u.name ?? u.value ?? String(u.userId ?? u.id ?? u.key ?? '');
-}
+
+const ROLE_LABELS = {
+  admin:    { label: 'مدير إدارة', color: '#6A1B9A', bg: '#F3E5F5' },
+  manager:  { label: 'مدير فريق',  color: '#E65100', bg: '#FFF3E0' },
+  employee: { label: 'موظف',       color: '#1565C0', bg: '#E3F2FD' },
+};
 
 export default function ManageTasksScreen({ route }) {
-  const { userId, allUsers: passedUsers } = route.params;
+  const { userId } = route.params;
   const [tasks, setTasks] = useState([]);
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState([]);       // filtered by role
+  const [myRecord, setMyRecord] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modal, setModal] = useState(false);
@@ -29,20 +38,36 @@ export default function ManageTasksScreen({ route }) {
 
   const load = useCallback(async () => {
     try {
-      const [taskData, userRes] = await Promise.all([
+      const [taskData, allMembers, myRec] = await Promise.all([
         getAssignedByMeTasks(userId),
-        getUsers().catch(() => null),
+        getTeamMembers(),
+        getMyTeamRecord(userId),
       ]);
       setTasks(taskData);
-      const rawList = (userRes ? extractList(userRes) : null) || passedUsers || [];
-      setUsers(rawList.filter(u => String(getUserId(u)) !== String(userId)));
+      setMyRecord(myRec);
+
+      const role = myRec?.role;
+      let visible = [];
+
+      if (role === 'admin') {
+        // مدير الإدارة: كل الأعضاء المضافين في التطبيق ما عدا نفسه
+        visible = allMembers.filter(m => m.crm_user_id !== String(userId));
+      } else if (role === 'manager' && myRec?.team_id) {
+        // مدير الفريق: أعضاء فريقه فقط ما عدا نفسه
+        visible = allMembers.filter(
+          m => m.team_id === myRec.team_id && m.crm_user_id !== String(userId)
+        );
+      }
+      // الموظف أو غير المحدد: لا أحد
+
+      setUsers(visible.map(memberToUser));
     } catch (e) {
       Alert.alert('خطأ', e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userId, passedUsers]);
+  }, [userId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -56,17 +81,16 @@ export default function ManageTasksScreen({ route }) {
     if (!form.assignedTo) { Alert.alert('', 'اختر موظفاً'); return; }
     setSaving(true);
     try {
-      const assignedToId = String(getUserId(form.assignedTo));
       const dueDateStr = form.dueDate ? form.dueDate.toISOString().split('T')[0] : null;
       await createTask({
         title: form.title.trim(),
         description: form.description.trim() || null,
         assigned_by: String(userId),
-        assigned_to: assignedToId,
+        assigned_to: form.assignedTo.key,
         due_date: dueDateStr,
       });
       await createNotification({
-        to_user_id: assignedToId,
+        to_user_id: form.assignedTo.key,
         type: 'task_assigned',
         message: `تم إسناد مهمة لك: ${form.title}`,
         ref_type: 'task',
@@ -83,13 +107,15 @@ export default function ManageTasksScreen({ route }) {
   const del = (task) => {
     Alert.alert('حذف', `حذف "${task.title}"؟`, [
       { text: 'إلغاء', style: 'cancel' },
-      { text: 'حذف', style: 'destructive', onPress: async () => { try { await deleteTask(task.id); load(); } catch (e) { Alert.alert('خطأ', e.message); } } },
+      { text: 'حذف', style: 'destructive', onPress: async () => {
+        try { await deleteTask(task.id); load(); } catch (e) { Alert.alert('خطأ', e.message); }
+      }},
     ]);
   };
 
   const renderItem = ({ item }) => {
     const isDone = item.status === 'done';
-    const assignedUser = users.find(u => String(getUserId(u)) === String(item.assigned_to));
+    const assignedUser = users.find(u => u.key === item.assigned_to);
     return (
       <View style={styles.card}>
         <View style={[styles.statusDot, { backgroundColor: isDone ? '#388E3C' : '#E65100' }]} />
@@ -97,7 +123,7 @@ export default function ManageTasksScreen({ route }) {
           <Text style={styles.taskTitle}>{item.title}</Text>
           <View style={styles.metaRow}>
             <Ionicons name="person-outline" size={11} color="#888" />
-            <Text style={styles.metaText}>{assignedUser ? getUserName(assignedUser) : item.assigned_to}</Text>
+            <Text style={styles.metaText}>{assignedUser?.value || item.assigned_to}</Text>
             {item.due_date && <>
               <Ionicons name="calendar-outline" size={11} color="#888" />
               <Text style={styles.metaText}>{item.due_date}</Text>
@@ -120,8 +146,45 @@ export default function ManageTasksScreen({ route }) {
     ? form.dueDate.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })
     : 'اختر تاريخ...';
 
+  // Role info banner
+  const roleInfo = myRecord ? ROLE_LABELS[myRecord.role] : null;
+  const teamName = myRecord?.teams?.name;
+
+  // Not configured
+  if (!loading && !myRecord) {
+    return (
+      <View style={styles.notSetupWrap}>
+        <Ionicons name="shield-outline" size={52} color="#ddd" />
+        <Text style={styles.notSetupTitle}>لم يتم تعيين دورك بعد</Text>
+        <Text style={styles.notSetupSub}>اطلب من مدير الإدارة إضافتك في شاشة "إعداد الفريق"</Text>
+      </View>
+    );
+  }
+
+  if (!loading && myRecord?.role === 'employee') {
+    return (
+      <View style={styles.notSetupWrap}>
+        <Ionicons name="lock-closed-outline" size={52} color="#ddd" />
+        <Text style={styles.notSetupTitle}>لا تملك صلاحية إسناد مهام</Text>
+        <Text style={styles.notSetupSub}>صلاحية الإسناد متاحة لمديري الفرق ومديري الإدارة فقط</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
+      {/* Role banner */}
+      {roleInfo && (
+        <View style={[styles.roleBanner, { backgroundColor: roleInfo.bg }]}>
+          <Ionicons name="information-circle-outline" size={14} color={roleInfo.color} />
+          <Text style={[styles.roleBannerText, { color: roleInfo.color }]}>
+            {roleInfo.label}
+            {myRecord?.role === 'manager' && teamName ? ` — ${teamName}` : ''}
+            {myRecord?.role === 'admin' ? ' — ترى جميع الأعضاء' : myRecord?.role === 'manager' ? ' — ترى فريقك فقط' : ''}
+          </Text>
+        </View>
+      )}
+
       <TouchableOpacity style={styles.addBtn} onPress={openModal}>
         <Ionicons name="add-circle-outline" size={18} color="#fff" />
         <Text style={styles.addText}>إسناد مهمة جديدة</Text>
@@ -185,18 +248,27 @@ export default function ManageTasksScreen({ route }) {
                 />
               )}
 
-              <Text style={styles.label}>إسناد إلى * {users.length === 0 ? '(جاري التحميل...)' : ''}</Text>
+              <Text style={styles.label}>
+                إسناد إلى *
+                {users.length === 0 && !loading ? '  (لا يوجد أعضاء في فريقك)' : ''}
+              </Text>
               {users.length === 0 ? (
-                <Text style={styles.noUsersText}>لا يوجد موظفون متاحون</Text>
+                <Text style={styles.noUsersText}>
+                  {myRecord?.role === 'manager'
+                    ? 'لا يوجد أعضاء في فريقك — أضف أعضاء من شاشة "إعداد الفريق"'
+                    : 'لا يوجد أعضاء مضافون في التطبيق بعد'}
+                </Text>
               ) : (
                 <View style={styles.userList}>
                   {users.map((u) => {
-                    const uid = getUserId(u);
-                    const name = getUserName(u);
-                    const selected = form.assignedTo && String(getUserId(form.assignedTo)) === String(uid);
+                    const selected = form.assignedTo?.key === u.key;
                     return (
-                      <TouchableOpacity key={uid} style={[styles.userChip, selected && styles.userChipSelected]} onPress={() => setForm(f => ({ ...f, assignedTo: u }))}>
-                        <Text style={[styles.userChipText, selected && { color: '#fff' }]}>{name}</Text>
+                      <TouchableOpacity
+                        key={u.key}
+                        style={[styles.userChip, selected && styles.userChipSelected]}
+                        onPress={() => setForm(f => ({ ...f, assignedTo: u }))}
+                      >
+                        <Text style={[styles.userChipText, selected && { color: '#fff' }]}>{u.value}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -221,6 +293,8 @@ export default function ManageTasksScreen({ route }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F5F7FA' },
+  roleBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10 },
+  roleBannerText: { fontSize: 12, fontWeight: '600', flex: 1 },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 12, backgroundColor: '#6A1B9A', borderRadius: 10, padding: 14, justifyContent: 'center' },
   addText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   list: { padding: 12, paddingBottom: 32, gap: 8 },
@@ -237,6 +311,9 @@ const styles = StyleSheet.create({
   delBtn: { padding: 4, marginLeft: 6 },
   empty: { alignItems: 'center', paddingVertical: 60 },
   emptyText: { color: '#aaa', marginTop: 10, fontSize: 14 },
+  notSetupWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 },
+  notSetupTitle: { fontSize: 16, fontWeight: '800', color: '#555', textAlign: 'center' },
+  notSetupSub: { fontSize: 13, color: '#aaa', textAlign: 'center', lineHeight: 20 },
   // Modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheetScroll: { justifyContent: 'flex-end', flexGrow: 1 },
@@ -250,7 +327,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   dateBtnText: { flex: 1, fontSize: 14, color: '#aaa' },
-  noUsersText: { fontSize: 13, color: '#aaa', marginBottom: 14, fontStyle: 'italic' },
+  noUsersText: { fontSize: 13, color: '#aaa', marginBottom: 14, fontStyle: 'italic', lineHeight: 20 },
   userList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
   userChip: { paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#f0f0f0', borderRadius: 20, borderWidth: 1, borderColor: '#e0e0e0' },
   userChipSelected: { backgroundColor: '#6A1B9A', borderColor: '#6A1B9A' },

@@ -18,8 +18,9 @@ const TABS = [
 ];
 
 const ROLES = [
-  { key: 'manager', label: 'مدير فريق', icon: 'star', color: '#E65100', bg: '#FFF3E0' },
-  { key: 'employee', label: 'موظف', icon: 'person', color: '#1565C0', bg: '#E3F2FD' },
+  { key: 'admin',   label: 'مدير إدارة', icon: 'shield-checkmark', color: '#6A1B9A', bg: '#F3E5F5' },
+  { key: 'manager', label: 'مدير فريق',  icon: 'star',             color: '#E65100', bg: '#FFF3E0' },
+  { key: 'employee', label: 'موظف',       icon: 'person',           color: '#1565C0', bg: '#E3F2FD' },
 ];
 
 function getCrmId(u) {
