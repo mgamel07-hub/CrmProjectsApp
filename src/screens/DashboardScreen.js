@@ -280,20 +280,18 @@ export default function DashboardScreen({ navigation }) {
       if (overviewRes.status === 'fulfilled') setOverview(parseOverview(overviewRes.value?.data ?? overviewRes.value));
       if (stagesRes.status === 'fulfilled')  setStages(parseStages(stagesRes.value?.data ?? stagesRes.value));
 
-      // DEBUG — check scope fields inside project
+      // DEBUG — check stage fields for scope id=33
       try {
-        const pr = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 5 });
-        const list = pr?.data?.data ?? [];
-        const firstProject = list[0];
-        const scopes = firstProject?.scopes ?? [];
-        const firstScope = scopes[0];
-        if (firstScope) {
-          Alert.alert('DEBUG scope keys', Object.keys(firstScope).join('\n') + '\n\n--- sample ---\n' + JSON.stringify(firstScope).slice(0, 300));
+        const sr = await api.get('/ProjectScopeStage/GetByScope/33');
+        const stages = sr?.data?.data ?? sr?.data ?? [];
+        const first = Array.isArray(stages) ? stages[0] : null;
+        if (first) {
+          Alert.alert('DEBUG stage keys', Object.keys(first).join('\n') + '\n\n--- sample ---\n' + JSON.stringify(first).slice(0, 400));
         } else {
-          Alert.alert('DEBUG scopes empty', `project has ${scopes.length} scopes. project keys: ${firstProject ? Object.keys(firstProject).join(', ') : 'none'}`);
+          Alert.alert('DEBUG stages', JSON.stringify(sr?.data).slice(0,300));
         }
       } catch(e) {
-        Alert.alert('DEBUG error', e?.response?.status + ' ' + e?.message);
+        Alert.alert('DEBUG stage error', e?.response?.status + ' ' + e?.message);
       }
 
       setError(null);
