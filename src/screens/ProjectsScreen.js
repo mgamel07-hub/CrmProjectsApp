@@ -8,6 +8,7 @@ import { getProjects, deleteProject } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { useAuth } from '../context/AuthContext';
+import { useRole, projectMatchesRole } from '../context/RoleContext';
 import { DEMO_PROJECTS } from '../api/demoData';
 import { extractList, getProjectStatusLabel, getProjectStatusColor, formatDate } from '../utils/helpers';
 import LoadingScreen from '../components/LoadingScreen';
@@ -18,6 +19,7 @@ import ProgressBar from '../components/ProgressBar';
 export default function ProjectsScreen({ navigation, route }) {
   const { lang } = useLang();
   const { isDemo, can } = useAuth();
+  const { visibleCrmIds } = useRole();
   const canCreate = can('Project', 'create');
   const canDelete = can('Project', 'delete');
   const [projects, setProjects] = useState([]);
@@ -52,7 +54,11 @@ export default function ProjectsScreen({ navigation, route }) {
         statusId: statusFilter || undefined,
         includeClosed: true,
       });
-      setProjects(extractList(res) || []);
+      const all = extractList(res) || [];
+      const filtered = visibleCrmIds
+        ? all.filter(p => projectMatchesRole(p, visibleCrmIds))
+        : all;
+      setProjects(filtered);
       setError(null);
     } catch (e) {
       setError(e?.response?.data?.message || t('networkError'));
@@ -60,7 +66,7 @@ export default function ProjectsScreen({ navigation, route }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search, statusFilter, isDemo]);
+  }, [search, statusFilter, isDemo, visibleCrmIds]);
 
   useEffect(() => { load(); }, [load]);
 

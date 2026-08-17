@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
+import { useRole } from '../context/RoleContext';
 
 // ─── Shared data fetcher (projects + stages) ─────────────────────────────────
 
@@ -19,6 +20,13 @@ async function loadAllSystemsWithStages() {
       u.fullName || u.FullName || u.userName || u.UserName || u.name || ''
     ).filter(Boolean);
 
+      // CRM user IDs from project users (for role filtering)
+      const projUserIds = (proj.projectUsers ?? []).map(u => {
+        const v = u?.key ?? u?.Key ?? u?.userId ?? u?.UserId ?? u?.user_id
+               ?? u?.id  ?? u?.Id  ?? u?.ID    ?? u?.accountId ?? null;
+        return v != null ? String(v) : '';
+      }).filter(Boolean);
+
     for (const sc of proj.scopes ?? []) {
       // Scope-level users (sometimes populated)
       const scopeUsers = (sc.users ?? []).map(u =>
@@ -26,14 +34,15 @@ async function loadAllSystemsWithStages() {
       ).filter(Boolean);
 
       scopes.push({
-        scopeId:      sc.id,
-        systemName:   sc.productName || '',
-        clientName:   proj.customerName || '',
-        projectId:    proj.id,
-        projectTitle: proj.title || '',
-        progressPct:  sc.progressPercent ?? 0,
-        isStopped:    proj.stopped ?? false,
-        employees:    scopeUsers.length ? scopeUsers : projUsers,
+        scopeId:        sc.id,
+        systemName:     sc.productName || '',
+        clientName:     proj.customerName || '',
+        projectId:      proj.id,
+        projectTitle:   proj.title || '',
+        progressPct:    sc.progressPercent ?? 0,
+        isStopped:      proj.stopped ?? false,
+        employees:      scopeUsers.length ? scopeUsers : projUsers,
+        projectUserIds: projUserIds,
       });
     }
   }
@@ -75,12 +84,13 @@ async function loadAllSystemsWithStages() {
 
     return {
       ...scope,
-      currentStage: current,
-      allStages:    stages,
-      stageName:    current?.stageName        || '—',
-      sortOrder:    current?.stageSortOrder   ?? 99,
-      stageWeight:  current?.weightPercent    ?? null,
-      employees:    allEmployees,
+      currentStage:   current,
+      allStages:      stages,
+      stageName:      current?.stageName        || '—',
+      sortOrder:      current?.stageSortOrder   ?? 99,
+      stageWeight:    current?.weightPercent    ?? null,
+      employees:      allEmployees,
+      projectUserIds: scope.projectUserIds,
     };
   });
 }
@@ -426,6 +436,7 @@ function SystemModal({ item, onClose }) {
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function ImplReportsScreen() {
+  const { visibleCrmIds, visibleNames } = useRole();
   const [tab, setTab]           = useState('systems');
   const [systems, setSystems]   = useState([]);
   const [visits, setVisits]     = useState([]);
@@ -471,9 +482,29 @@ export default function ImplReportsScreen() {
 
   // ── derived data ──────────────────────────────────────────────────────────
 
+  // Role-based visibility filter
+  const roleSystems = visibleCrmIds === null
+    ? systems
+    : systems.filter(s =>
+        (s.projectUserIds ?? []).some(id => visibleCrmIds.includes(id))
+      );
+
+  const roleVisits = visibleCrmIds === null
+    ? visits
+    : visits.filter(v => {
+        const vid = String(v.userId || v.UserId || v.executedById || v.createdById || '');
+        if (vid && visibleCrmIds.includes(vid)) return true;
+        // fallback: name match
+        if (visibleNames) {
+          const name = v.userName || v.executedByName || v.createdBy || '';
+          return visibleNames.some(n => name && name.includes(n));
+        }
+        return true;
+      });
+
   // Unique clients and employees for filter chips
-  const uniqueClients   = [...new Set(systems.map(s => s.clientName).filter(Boolean))].sort();
-  const uniqueEmployees = [...new Set(systems.flatMap(s => s.employees ?? []).filter(Boolean))].sort();
+  const uniqueClients   = [...new Set(roleSystems.map(s => s.clientName).filter(Boolean))].sort();
+  const uniqueEmployees = [...new Set(roleSystems.flatMap(s => s.employees ?? []).filter(Boolean))].sort();
 
   const activeFiltersCount = [stageFilter, clientFilter, empFilter].filter(Boolean).length;
 
@@ -482,7 +513,7 @@ export default function ImplReportsScreen() {
     dateMode, selectedYear, selectedQuarter, selectedHalf, customFrom, customTo
   );
 
-  const filteredSystems = systems
+  const filteredSystems = roleSystems
     .filter(s => {
       if (stageFilter  && s.stageName  !== stageFilter)  return false;
       if (clientFilter && s.clientName !== clientFilter)  return false;
@@ -504,7 +535,7 @@ export default function ImplReportsScreen() {
   const clearAllFilters = () => { setStageFilter(null); setClientFilter(null); setEmpFilter(null); };
 
   // Stage cards: group by stageName
-  const stageGroups = systems.reduce((acc, s) => {
+  const stageGroups = roleSystems.reduce((acc, s) => {
     const key = s.stageName;
     if (!acc[key]) acc[key] = { name: key, sortOrder: s.sortOrder, count: 0 };
     acc[key].count++;
@@ -516,7 +547,7 @@ export default function ImplReportsScreen() {
   const stageNames = stageCards.map(c => c.name);
 
   // Visit filter by scope/project + date
-  const filteredVisits = visits.filter(v => {
+  const filteredVisits = roleVisits.filter(v => {
     if (search) {
       const q = search.toLowerCase();
       const match = (v.projectTitle || '').toLowerCase().includes(q)

@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { LangProvider, useLang } from './src/context/LangContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
+import { RoleProvider } from './src/context/RoleContext';
 import { t } from './src/i18n';
 
 import LoginScreen            from './src/screens/LoginScreen';
@@ -225,9 +226,11 @@ export default function App() {
   return (
     <LangProvider>
       <AuthProvider>
-        <NotificationsProvider>
-          <AppNavigator />
-        </NotificationsProvider>
+        <RoleProvider>
+          <NotificationsProvider>
+            <AppNavigator />
+          </NotificationsProvider>
+        </RoleProvider>
       </AuthProvider>
     </LangProvider>
   );

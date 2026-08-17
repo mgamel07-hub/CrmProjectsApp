@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import { getDashboardStats } from '../api/projects';
 import { useAuth } from '../context/AuthContext';
+import { useRole } from '../context/RoleContext';
 import { DEMO_STATS } from '../api/demoData';
 import { useLang } from '../context/LangContext';
 import { t } from '../i18n';
@@ -51,14 +52,25 @@ function cardIcon(name = '') {
 
 // ─── Build stage cards from projects data ────────────────────────────────────
 
-async function fetchStageCards() {
+async function fetchStageCards(visibleCrmIds) {
   // 1. Fetch all projects (with embedded scopes)
   const projRes = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 200 });
   const projects = projRes?.data?.data ?? [];
 
-  // 2. Collect all scopes with parent project context
+  // 2. Collect all scopes, applying role filter on projects
   const allScopes = [];
   for (const proj of projects) {
+    // Role filter: skip projects not belonging to visible users
+    if (visibleCrmIds) {
+      const projUsers = proj.projectUsers ?? [];
+      const included = projUsers.some(u => {
+        const id = String(u?.key ?? u?.Key ?? u?.userId ?? u?.UserId
+                 ?? u?.user_id ?? u?.id ?? u?.Id ?? u?.ID ?? '');
+        return id && visibleCrmIds.includes(id);
+      });
+      if (!included) continue;
+    }
+
     for (const scope of (proj.scopes ?? [])) {
       allScopes.push({
         scopeId:     scope.id,
@@ -219,6 +231,7 @@ function SystemRow({ item }) {
 export default function DashboardScreen({ navigation }) {
   const { user, isDemo } = useAuth();
   const { lang } = useLang();
+  const { visibleCrmIds } = useRole();
 
   const [stats, setStats]         = useState(null);
   const [stages, setStages]       = useState([]);
@@ -260,14 +273,14 @@ export default function DashboardScreen({ navigation }) {
     // Load stage cards in background (separate loading state)
     setStagesLoading(true);
     try {
-      const cards = await fetchStageCards();
+      const cards = await fetchStageCards(visibleCrmIds);
       setStages(cards);
     } catch (_) {
       // Stage cards are best-effort; don't surface error
     } finally {
       setStagesLoading(false);
     }
-  }, [isDemo]);
+  }, [isDemo, visibleCrmIds]);
 
   useEffect(() => { load(); }, [load]);
 
