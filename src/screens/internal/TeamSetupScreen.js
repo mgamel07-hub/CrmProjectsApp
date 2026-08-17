@@ -58,14 +58,29 @@ export default function TeamSetupScreen() {
   const load = useCallback(async () => {
     try {
       const [userRes, membersData, teamsData] = await Promise.all([
-        getUsers().catch(() => null),
+        getUsers().catch(e => ({ __error: e.message })),
         getTeamMembers(),
         getTeams(),
       ]);
-      const raw = (userRes ? extractList(userRes) : null) || [];
-      if (raw.length > 0) {
-        Alert.alert('DEBUG – first user', JSON.stringify(raw[0], null, 2));
+
+      // Debug: show raw API response shape
+      if (userRes?.__error) {
+        Alert.alert('DEBUG – getUsers error', userRes.__error);
+      } else {
+        const d = userRes?.data;
+        const keys = d ? Object.keys(d) : [];
+        const isArr = Array.isArray(d);
+        const sample = isArr ? d[0] : (keys.length ? d[keys[0]] : null);
+        Alert.alert(
+          'DEBUG – userRes',
+          `data type: ${isArr ? 'array' : typeof d}\n` +
+          `keys: ${keys.join(', ')}\n` +
+          `count: ${isArr ? d.length : '?'}\n` +
+          `sample[0]: ${JSON.stringify(sample)?.slice(0, 300)}`
+        );
       }
+
+      const raw = (userRes && !userRes.__error ? extractList(userRes) : null) || [];
       setCrmUsers(raw);
       setMembers(membersData);
       setTeams(teamsData);
