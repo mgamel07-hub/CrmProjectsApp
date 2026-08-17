@@ -280,14 +280,18 @@ export default function DashboardScreen({ navigation }) {
       if (overviewRes.status === 'fulfilled') setOverview(parseOverview(overviewRes.value?.data ?? overviewRes.value));
       if (stagesRes.status === 'fulfilled')  setStages(parseStages(stagesRes.value?.data ?? stagesRes.value));
 
-      // DEBUG — check projects response shape for stage fields
+      // DEBUG — check project fields with pagination
       try {
-        const pr = await api.post('/Project/GetAll', {});
-        const list = pr?.data?.data ?? pr?.data ?? pr;
-        const first = Array.isArray(list) ? list[0] : (Array.isArray(list?.items) ? list.items[0] : null);
-        Alert.alert('DEBUG project fields', first ? Object.keys(first).join(', ') : 'no item found — raw: ' + JSON.stringify(pr?.data).slice(0,200));
+        const pr = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 5 });
+        const list = pr?.data?.data ?? [];
+        const first = list[0];
+        if (first) {
+          Alert.alert('DEBUG project keys', Object.keys(first).join('\n'));
+        } else {
+          Alert.alert('DEBUG empty', JSON.stringify(pr?.data).slice(0,300));
+        }
       } catch(e) {
-        Alert.alert('DEBUG project error', e?.response?.status + ' ' + e?.message);
+        Alert.alert('DEBUG error', e?.response?.status + ' ' + e?.message);
       }
 
       setError(null);
