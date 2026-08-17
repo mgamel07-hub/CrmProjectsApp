@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity,
-  Modal, FlatList, Animated,
+  Modal, FlatList, Animated, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getDashboardStats } from '../api/projects';
@@ -278,6 +278,13 @@ export default function DashboardScreen({ navigation }) {
       if (statsRes.status === 'fulfilled')   setStats(extractData(statsRes.value));
       if (overviewRes.status === 'fulfilled') setOverview(parseOverview(overviewRes.value?.data ?? overviewRes.value));
       if (stagesRes.status === 'fulfilled')  setStages(parseStages(stagesRes.value?.data ?? stagesRes.value));
+
+      // DEBUG — remove after diagnosis
+      const dbg = [
+        `stages: ${stagesRes.status} — ${stagesRes.status === 'rejected' ? (stagesRes.reason?.response?.status + ' ' + stagesRes.reason?.message) : JSON.stringify(stagesRes.value?.data).slice(0,120)}`,
+        `overview: ${overviewRes.status} — ${overviewRes.status === 'rejected' ? (overviewRes.reason?.response?.status + ' ' + overviewRes.reason?.message) : JSON.stringify(overviewRes.value?.data).slice(0,120)}`,
+      ].join('\n\n');
+      Alert.alert('DEBUG', dbg);
 
       setError(null);
     } catch (e) {
