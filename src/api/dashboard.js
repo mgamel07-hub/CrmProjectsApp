@@ -1,7 +1,7 @@
-import { apiRoot } from './client';
+import api from './client';
 
-// All dashboard endpoints live at /api/dashboards/... (not /api/v1/)
-const dash = (path, params) => apiRoot.get(`/api/dashboards/${path}`, params ? { params } : undefined);
+// Dashboard endpoints live at /api/v1/dashboards/...
+const dash = (path, params) => api.get(`/dashboards/${path}`, params ? { params } : undefined);
 
 export const getMyOverview     = ()            => dash('my-overview');
 export const getStageCards     = (params = {}) => dash('stage-cards', params);
