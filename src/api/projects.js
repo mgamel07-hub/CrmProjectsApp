@@ -84,7 +84,7 @@ export const getCustomersByUser = (userId) =>
     api.get('/Account/GetAsDropDownList')
   );
 export const getFlags = (groupCode) => api.get('/Flag/GetAsDropDownList', { params: { groupCode } });
-export const getUsers = () => api.get('/User/GetAsDropDownList');
+export const getUsers = () => api.post('/User/GetAsDropDownList', {});
 export const getProducts = (search = '', pageSize = 200) =>
   api.get('/Product/GetDynamicList', { params: { pageNo: 1, pageSize, searchVal: search } });
 
