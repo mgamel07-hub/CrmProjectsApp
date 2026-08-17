@@ -280,21 +280,15 @@ export default function DashboardScreen({ navigation }) {
       if (overviewRes.status === 'fulfilled') setOverview(parseOverview(overviewRes.value?.data ?? overviewRes.value));
       if (stagesRes.status === 'fulfilled')  setStages(parseStages(stagesRes.value?.data ?? stagesRes.value));
 
-      // DEBUG — probe multiple paths to find working endpoints
-      const { getKpi } = require('../api/dashboard');
-      const probes = await Promise.allSettled([
-        getKpi(),
-        api.get('/dashboards/stage-cards'),
-        api.get('/dashboards/my-overview'),
-        api.get('/Dashboard/GetStageCards'),
-        api.get('/Dashboard/MyOverview'),
-        api.get('/ProjectScopeStage/GetStageSummary'),
-      ]);
-      const labels = ['kpi','stage-cards','my-overview','GetStageCards','MyOverview','GetStageSummary'];
-      const dbg = probes.map((r, i) =>
-        `${labels[i]}: ${r.status === 'fulfilled' ? '✓ ' + JSON.stringify(r.value?.data).slice(0, 60) : '✗ ' + r.reason?.response?.status}`
-      ).join('\n');
-      Alert.alert('DEBUG paths', dbg);
+      // DEBUG — check projects response shape for stage fields
+      try {
+        const pr = await api.post('/Project/GetAll', {});
+        const list = pr?.data?.data ?? pr?.data ?? pr;
+        const first = Array.isArray(list) ? list[0] : (Array.isArray(list?.items) ? list.items[0] : null);
+        Alert.alert('DEBUG project fields', first ? Object.keys(first).join(', ') : 'no item found — raw: ' + JSON.stringify(pr?.data).slice(0,200));
+      } catch(e) {
+        Alert.alert('DEBUG project error', e?.response?.status + ' ' + e?.message);
+      }
 
       setError(null);
     } catch (e) {
