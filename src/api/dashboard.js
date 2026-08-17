@@ -1,11 +1,15 @@
-import api from './client';
+import { apiRoot } from './client';
 
-export const getMyOverview    = ()            => api.get('/dashboards/my-overview');
-export const getStageCards    = (params = {}) => api.get('/dashboards/stage-cards', { params });
-export const getStaffKpi      = ()            => api.get('/dashboards/staff-kpi');
-export const getWorkload      = ()            => api.get('/dashboards/workload');
-export const getProgressTrend = (months = 6) => api.get('/dashboards/progress-trend', { params: { months } });
-export const getClientBreakdown = (cid)      => api.get(`/dashboards/client-breakdown/${cid}`);
-export const getTeamOverview  = ()            => api.get('/dashboards/team-overview');
-export const getAggregation   = (params = {}) => api.get('/dashboards/aggregation', { params });
-export const getUnplanned     = ()            => api.get('/dashboards/unplanned-report');
+// All dashboard endpoints live at /api/dashboards/... (not /api/v1/)
+const dash = (path, params) => apiRoot.get(`/api/dashboards/${path}`, params ? { params } : undefined);
+
+export const getMyOverview     = ()            => dash('my-overview');
+export const getStageCards     = (params = {}) => dash('stage-cards', params);
+export const getStaffKpi       = ()            => dash('staff-kpi');
+export const getWorkload       = ()            => dash('workload');
+export const getProgressTrend  = (months = 6) => dash('progress-trend', { months });
+export const getClientBreakdown = (cid)       => dash(`client-breakdown/${cid}`);
+export const getTeamOverview   = ()            => dash('team-overview');
+export const getAggregation    = (params = {}) => dash('aggregation', params);
+export const getUnplanned      = ()            => dash('unplanned-report');
+export const getKpi            = ()            => dash('kpi');
