@@ -1,12 +1,11 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity,
-  Modal, FlatList, Animated, Alert,
+  Modal, FlatList, Animated, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import { getDashboardStats } from '../api/projects';
-import { getMyOverview, getStageCards } from '../api/dashboard';
 import { useAuth } from '../context/AuthContext';
 import { DEMO_STATS } from '../api/demoData';
 import { useLang } from '../context/LangContext';
@@ -16,106 +15,159 @@ import LoadingScreen from '../components/LoadingScreen';
 import ErrorMessage from '../components/ErrorMessage';
 import ProgressBar from '../components/ProgressBar';
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Stage card colors ────────────────────────────────────────────────────────
 
-function g(obj, ...keys) {
-  for (const k of keys) {
-    if (obj?.[k] !== undefined && obj[k] !== null) return obj[k];
-  }
-  return undefined;
-}
-
-// ─── Stage colors pool ────────────────────────────────────────────────────
-
-const STAGE_COLORS = [
+const STAGE_PALETTE = [
   '#1565C0', '#0288D1', '#00838F', '#00897B',
   '#2E7D32', '#558B2F', '#6A1B9A', '#AD1457',
 ];
-const COMPLETED_COLOR = '#2E7D32';
-const RETURNED_COLOR  = '#C62828';
+const COMPLETED_COLOR  = '#2E7D32';
+const RETURNED_COLOR   = '#C62828';
 const UNASSIGNED_COLOR = '#E65100';
 
-function stageColor(index, name = '') {
-  const n = (name || '').trim();
-  if (n.includes('منته') || n.includes('انته')) return COMPLETED_COLOR;
-  if (n.includes('مرتجع') || n.includes('ارتجع')) return RETURNED_COLOR;
+function cardColor(sortOrder, name = '') {
+  const n = (name || '').toLowerCase();
+  if (n.includes('منته') || n.includes('انته') || n.includes('final')) return COMPLETED_COLOR;
+  if (n.includes('مرتجع') || n.includes('returned')) return RETURNED_COLOR;
   if (n.includes('غير مسند') || n.includes('unassigned')) return UNASSIGNED_COLOR;
-  return STAGE_COLORS[index % STAGE_COLORS.length];
+  return STAGE_PALETTE[(sortOrder - 1) % STAGE_PALETTE.length];
 }
 
-function stageIcon(name = '') {
-  const n = (name || '').trim();
-  if (n.includes('مكالم')) return 'call-outline';
-  if (n.includes('تحليل')) return 'analytics-outline';
-  if (n.includes('بيانات')) return 'server-outline';
-  if (n.includes('تنفيذ')) return 'build-outline';
-  if (n.includes('محاكاة')) return 'play-circle-outline';
-  if (n.includes('تدريب')) return 'school-outline';
-  if (n.includes('تجريبي')) return 'flask-outline';
-  if (n.includes('فعلي')) return 'checkmark-done-outline';
-  if (n.includes('منته') || n.includes('انته')) return 'trophy-outline';
-  if (n.includes('مرتجع')) return 'arrow-undo-outline';
-  if (n.includes('غير مسند')) return 'person-add-outline';
+function cardIcon(name = '') {
+  const n = (name || '').toLowerCase();
+  if (n.includes('مكالم') || n.includes('call'))        return 'call-outline';
+  if (n.includes('تحليل') || n.includes('analys'))      return 'analytics-outline';
+  if (n.includes('بيانات') || n.includes('data'))       return 'server-outline';
+  if (n.includes('تنفيذ') || n.includes('impl'))        return 'build-outline';
+  if (n.includes('محاكاة') || n.includes('simul'))      return 'play-circle-outline';
+  if (n.includes('تدريب') || n.includes('train'))       return 'school-outline';
+  if (n.includes('تجريبي') || n.includes('pilot'))      return 'flask-outline';
+  if (n.includes('فعلي') || n.includes('live'))         return 'checkmark-done-outline';
+  if (n.includes('منته') || n.includes('انته'))         return 'trophy-outline';
+  if (n.includes('مرتجع') || n.includes('return'))      return 'arrow-undo-outline';
+  if (n.includes('غير مسند') || n.includes('unassign')) return 'person-add-outline';
   return 'layers-outline';
 }
 
-// ─── Extract stage array from various response shapes ─────────────────────
+// ─── Build stage cards from projects data ────────────────────────────────────
 
-function parseStages(raw) {
-  if (!raw) return [];
-  const d = raw?.data ?? raw;
-  if (Array.isArray(d)) return d;
-  const keys = ['stages', 'stageCards', 'stage_cards', 'items', 'result'];
-  for (const k of keys) {
-    if (Array.isArray(d?.[k])) return d[k];
+async function fetchStageCards() {
+  // 1. Fetch all projects (with embedded scopes)
+  const projRes = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 200 });
+  const projects = projRes?.data?.data ?? [];
+
+  // 2. Collect all scopes with parent project context
+  const allScopes = [];
+  for (const proj of projects) {
+    for (const scope of (proj.scopes ?? [])) {
+      allScopes.push({
+        scopeId:     scope.id,
+        systemName:  scope.productName || '',
+        clientName:  proj.customerName || '',
+        progressPct: scope.progressPercent ?? 0,
+        users:       scope.users ?? [],
+        isStopped:   proj.stopped ?? false,
+      });
+    }
   }
-  return [];
+
+  if (allScopes.length === 0) return [];
+
+  // 3. Parallel-fetch stages for every scope
+  const stageResults = await Promise.allSettled(
+    allScopes.map(s => api.get(`/ProjectScopeStage/GetByScope/${s.scopeId}`))
+  );
+
+  // 4. Determine current stage per scope, group into cards
+  const cardMap = {}; // stageName → card object
+  const UNASSIGNED_KEY = 'غير مسند 👤';
+  const RETURNED_KEY   = 'مرتجع ⛔';
+
+  for (let i = 0; i < allScopes.length; i++) {
+    const scope = allScopes[i];
+    const res   = stageResults[i];
+
+    // ── Special: returned (project stopped) ──
+    if (scope.isStopped) {
+      if (!cardMap[RETURNED_KEY]) {
+        cardMap[RETURNED_KEY] = { stageName: RETURNED_KEY, sortOrder: 9998, weight: null, systems: [] };
+      }
+      cardMap[RETURNED_KEY].systems.push({
+        systemName: scope.systemName, clientName: scope.clientName,
+        progressPct: scope.progressPct, implementer: '',
+      });
+      continue;
+    }
+
+    // ── Special: unassigned (no users on scope) ──
+    if (scope.users.length === 0) {
+      if (!cardMap[UNASSIGNED_KEY]) {
+        cardMap[UNASSIGNED_KEY] = { stageName: UNASSIGNED_KEY, sortOrder: 9999, weight: null, systems: [] };
+      }
+      cardMap[UNASSIGNED_KEY].systems.push({
+        systemName: scope.systemName, clientName: scope.clientName,
+        progressPct: scope.progressPct, implementer: '',
+      });
+      continue;
+    }
+
+    if (res.status !== 'fulfilled') continue;
+    const stages = res.value?.data?.data ?? res.value?.data ?? [];
+    if (!Array.isArray(stages) || stages.length === 0) continue;
+
+    const implementer = scope.users?.[0]?.userName || scope.users?.[0]?.fullName || '';
+
+    // Find current stage: InProgress first, then last completed, then first
+    const inProgress    = stages.find(st => st.statusId === 2 || st.statusName === 'InProgress');
+    const allCompleted  = stages.every(st => st.statusId === 3 || st.statusName === 'Completed');
+    const lastCompleted = [...stages].reverse().find(st => st.statusId === 3 || st.statusName === 'Completed');
+
+    let current;
+    if (allCompleted) {
+      // Scope fully done → منتهي
+      const DONE_KEY = 'منتهيون ✅';
+      if (!cardMap[DONE_KEY]) {
+        cardMap[DONE_KEY] = { stageName: DONE_KEY, sortOrder: 9997, weight: null, systems: [] };
+      }
+      cardMap[DONE_KEY].systems.push({
+        systemName: scope.systemName, clientName: scope.clientName,
+        progressPct: scope.progressPct, implementer,
+      });
+      continue;
+    } else if (inProgress) {
+      current = inProgress;
+    } else if (lastCompleted) {
+      // Next stage after last completed
+      const nextIdx = stages.findIndex(st => st.id === lastCompleted.id) + 1;
+      current = stages[nextIdx] || lastCompleted;
+    } else {
+      current = stages[0]; // NotStarted, first stage
+    }
+
+    const key = current.stageName || `Stage-${current.stageDefId}`;
+    if (!cardMap[key]) {
+      cardMap[key] = {
+        stageName:  key,
+        sortOrder:  current.stageSortOrder ?? 99,
+        weight:     current.weightPercent ?? null,
+        systems: [],
+      };
+    }
+    cardMap[key].systems.push({
+      systemName:  scope.systemName,
+      clientName:  scope.clientName,
+      progressPct: scope.progressPct,
+      implementer,
+    });
+  }
+
+  // 5. Sort by sortOrder and attach count
+  return Object.values(cardMap)
+    .map(card => ({ ...card, count: card.systems.length }))
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-function parseOverview(raw) {
-  if (!raw) return null;
-  return raw?.data ?? raw;
-}
-
-function stageName(item) {
-  return g(item, 'stageName', 'stage_name', 'name', 'stage', 'title', 'label') || '';
-}
-function stageCount(item) {
-  return g(item, 'count', 'systemCount', 'system_count', 'total', 'totalCount') ?? 0;
-}
-function stageWeight(item) {
-  return g(item, 'weight', 'weightPercent', 'weight_percent', 'percentage') ?? null;
-}
-function stageSystems(item) {
-  const arr = g(item, 'systems', 'items', 'projectSystems', 'project_systems', 'scopes') ?? [];
-  return Array.isArray(arr) ? arr : [];
-}
-
-function systemClient(s) {
-  return g(s, 'clientName', 'client_name', 'accountName', 'account_name', 'customerName', 'customer_name') || '';
-}
-function systemName(s) {
-  return g(s, 'systemName', 'system_name', 'scopeName', 'scope_name', 'projectName', 'project_name', 'title', 'name') || '';
-}
-function systemImplementer(s) {
-  return g(s, 'implementerName', 'implementer_name', 'userName', 'user_name', 'assigneeName') || '';
-}
-function systemCompletion(s) {
-  const v = g(s, 'completionPct', 'completion_pct', 'completionPercent', 'completion', 'progress', 'progressPercent');
-  if (v == null) return null;
-  return typeof v === 'number' ? v : parseFloat(v) || null;
-}
-
-// ─── Workload ────────────────────────────────────────────────────────────
-
-const WORKLOAD_MAP = {
-  LOW:    { label: 'حمل منخفض',  color: '#2E7D32', bg: '#E8F5E9', icon: 'leaf-outline' },
-  NORMAL: { label: 'حمل طبيعي',  color: '#1565C0', bg: '#E3F2FD', icon: 'checkmark-circle-outline' },
-  HIGH:   { label: 'حمل مرتفع',  color: '#E65100', bg: '#FFF3E0', icon: 'warning-outline' },
-  OVER:   { label: 'تجاوز الطاقة', color: '#C62828', bg: '#FFEBEE', icon: 'alert-circle-outline' },
-};
-
-// ─── Sub-components ─────────────────────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatCard({ icon, label, value, color, onPress }) {
   return (
@@ -131,34 +183,21 @@ function StatCard({ icon, label, value, color, onPress }) {
   );
 }
 
-function KpiCard({ icon, label, value, unit, color }) {
-  return (
-    <View style={[styles.kpiCard, { borderTopColor: color }]}>
-      <View style={[styles.kpiIconWrap, { backgroundColor: color + '18' }]}>
-        <Ionicons name={icon} size={18} color={color} />
-      </View>
-      <Text style={[styles.kpiValue, { color }]}>{value ?? '—'}{unit ? <Text style={styles.kpiUnit}> {unit}</Text> : null}</Text>
-      <Text style={styles.kpiLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function StageCard({ item, index, onPress }) {
-  const name  = stageName(item);
-  const count = stageCount(item);
-  const wt    = stageWeight(item);
-  const color = stageColor(index, name);
-  const icon  = stageIcon(name);
+function StageCard({ card, index, onPress }) {
+  const color = cardColor(card.sortOrder, card.stageName);
+  const icon  = cardIcon(card.stageName);
+  // Strip trailing emoji/latin from stage name for display
+  const displayName = (card.stageName || '').replace(/ (Call|✅|⛔|👤)$/i, '').trim();
   return (
     <TouchableOpacity style={[styles.stageCard, { borderTopColor: color }]} onPress={onPress} activeOpacity={0.8}>
       <View style={[styles.stageIconWrap, { backgroundColor: color + '1A' }]}>
         <Ionicons name={icon} size={20} color={color} />
       </View>
-      <Text style={[styles.stageCount, { color }]}>{count}</Text>
-      <Text style={styles.stageName} numberOfLines={2}>{name || '—'}</Text>
-      {wt != null && (
+      <Text style={[styles.stageCount, { color }]}>{card.count}</Text>
+      <Text style={styles.stageName} numberOfLines={2}>{displayName}</Text>
+      {card.weight != null && (
         <View style={[styles.stageBadge, { backgroundColor: color + '22' }]}>
-          <Text style={[styles.stageBadgeText, { color }]}>{wt}%</Text>
+          <Text style={[styles.stageBadgeText, { color }]}>{card.weight}%</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -166,14 +205,13 @@ function StageCard({ item, index, onPress }) {
 }
 
 function SystemRow({ item }) {
-  const pct  = systemCompletion(item);
-  const impl = systemImplementer(item);
+  const pct = item.progressPct ?? null;
   return (
     <View style={styles.sysRow}>
       <View style={styles.sysMain}>
-        <Text style={styles.sysClient} numberOfLines={1}>{systemClient(item)}</Text>
-        <Text style={styles.sysName} numberOfLines={1}>{systemName(item)}</Text>
-        {impl ? <Text style={styles.sysImpl} numberOfLines={1}>👤 {impl}</Text> : null}
+        <Text style={styles.sysClient} numberOfLines={1}>{item.clientName}</Text>
+        <Text style={styles.sysName} numberOfLines={1}>{item.systemName}</Text>
+        {item.implementer ? <Text style={styles.sysImpl}>👤 {item.implementer}</Text> : null}
       </View>
       {pct != null && (
         <View style={styles.sysPct}>
@@ -189,77 +227,28 @@ function SystemRow({ item }) {
   );
 }
 
-function NearCompletionCard({ item }) {
-  const pct = systemCompletion(item);
-  return (
-    <View style={styles.nearCard}>
-      <View style={styles.nearInfo}>
-        <Text style={styles.nearClient} numberOfLines={1}>{systemClient(item)}</Text>
-        <Text style={styles.nearName} numberOfLines={1}>{systemName(item)}</Text>
-      </View>
-      <View style={styles.nearPct}>
-        <Text style={styles.nearPctText}>{pct != null ? Math.round(pct) + '%' : '—'}</Text>
-      </View>
-    </View>
-  );
-}
-
-function VisitRow({ item }) {
-  const date    = g(item, 'visitDate', 'visit_date', 'date', 'scheduledDate', 'scheduled_date') || '';
-  const client  = g(item, 'clientName', 'client_name', 'accountName', 'account_name') || '';
-  const sysname = g(item, 'systemName', 'system_name', 'scopeName', 'scope_name') || '';
-  const disp = date ? new Date(date).toLocaleDateString('ar-EG', { weekday: 'short', day: '2-digit', month: 'short' }) : '';
-  return (
-    <View style={styles.visitRow}>
-      <View style={styles.visitDate}>
-        <Text style={styles.visitDateText}>{disp}</Text>
-      </View>
-      <View style={styles.visitInfo}>
-        <Text style={styles.visitClient} numberOfLines={1}>{client}</Text>
-        {sysname ? <Text style={styles.visitSys} numberOfLines={1}>{sysname}</Text> : null}
-      </View>
-    </View>
-  );
-}
-
-function StaleRow({ item }) {
-  const days = g(item, 'daysSinceActivity', 'days_since_activity', 'stagnantDays', 'stale_days', 'idleDays') ?? '—';
-  return (
-    <View style={styles.staleRow}>
-      <View style={styles.staleInfo}>
-        <Text style={styles.staleClient} numberOfLines={1}>{systemClient(item)}</Text>
-        <Text style={styles.staleName} numberOfLines={1}>{systemName(item)}</Text>
-      </View>
-      <View style={styles.staleDays}>
-        <Ionicons name="time-outline" size={14} color="#C62828" />
-        <Text style={styles.staleDaysText}>{days} يوم</Text>
-      </View>
-    </View>
-  );
-}
-
-// ─── Main screen ────────────────────────────────────────────────────────────
+// ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function DashboardScreen({ navigation }) {
   const { user, isDemo } = useAuth();
   const { lang } = useLang();
 
-  const [stats, setStats]       = useState(null);
-  const [overview, setOverview] = useState(null);
-  const [stages, setStages]     = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState(null);
+  const [stats, setStats]         = useState(null);
+  const [stages, setStages]       = useState([]);
+  const [stagesLoading, setStagesLoading] = useState(false);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedCard, setSelectedCard] = useState(null);
 
-  const [selectedStage, setSelectedStage] = useState(null);
-  const slideAnim = useRef(new Animated.Value(500)).current;
+  const slideAnim = useRef(new Animated.Value(600)).current;
 
-  const openStageModal = (item) => {
-    setSelectedStage(item);
+  const openModal = (card) => {
+    setSelectedCard(card);
     Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
   };
-  const closeStageModal = () => {
-    Animated.timing(slideAnim, { toValue: 500, duration: 220, useNativeDriver: true }).start(() => setSelectedStage(null));
+  const closeModal = () => {
+    Animated.timing(slideAnim, { toValue: 600, duration: 220, useNativeDriver: true }).start(() => setSelectedCard(null));
   };
 
   const load = useCallback(async () => {
@@ -270,36 +259,26 @@ export default function DashboardScreen({ navigation }) {
       return;
     }
     try {
-      const [statsRes, overviewRes, stagesRes] = await Promise.allSettled([
-        getDashboardStats(),
-        getMyOverview(),
-        getStageCards(),
-      ]);
-
-      if (statsRes.status === 'fulfilled')   setStats(extractData(statsRes.value));
-      if (overviewRes.status === 'fulfilled') setOverview(parseOverview(overviewRes.value?.data ?? overviewRes.value));
-      if (stagesRes.status === 'fulfilled')  setStages(parseStages(stagesRes.value?.data ?? stagesRes.value));
-
-      // DEBUG — check stage fields for scope id=33
-      try {
-        const sr = await api.get('/ProjectScopeStage/GetByScope/33');
-        const stages = sr?.data?.data ?? sr?.data ?? [];
-        const first = Array.isArray(stages) ? stages[0] : null;
-        if (first) {
-          Alert.alert('DEBUG stage keys', Object.keys(first).join('\n') + '\n\n--- sample ---\n' + JSON.stringify(first).slice(0, 400));
-        } else {
-          Alert.alert('DEBUG stages', JSON.stringify(sr?.data).slice(0,300));
-        }
-      } catch(e) {
-        Alert.alert('DEBUG stage error', e?.response?.status + ' ' + e?.message);
-      }
-
+      // Load basic stats quickly
+      const statsRes = await getDashboardStats();
+      setStats(extractData(statsRes));
       setError(null);
     } catch (e) {
       setError(e?.response?.data?.message || t('networkError'));
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+
+    // Load stage cards in background (separate loading state)
+    setStagesLoading(true);
+    try {
+      const cards = await fetchStageCards();
+      setStages(cards);
+    } catch (_) {
+      // Stage cards are best-effort; don't surface error
+    } finally {
+      setStagesLoading(false);
     }
   }, [isDemo]);
 
@@ -308,37 +287,11 @@ export default function DashboardScreen({ navigation }) {
   const onRefresh = () => { setRefreshing(true); load(); };
 
   if (loading) return <LoadingScreen />;
-  if (error && !stats && !overview) return <ErrorMessage message={error} onRetry={load} />;
+  if (error && !stats) return <ErrorMessage message={error} onRetry={load} />;
 
   const greeting = lang === 'ar'
     ? `مرحباً، ${user?.fullName || user?.userName || 'مستخدم'}`
     : `Hello, ${user?.fullName || user?.userName || 'User'}`;
-
-  // ─── Overview field extraction ──────────────────────────────────────────
-  const kpiActive    = g(overview, 'activeSystems', 'active_systems', 'activeSystemsCount');
-  const kpiAvgComp   = g(overview, 'avgCompletionPercent', 'avg_completion_percent', 'avgCompletion', 'avg_completion');
-  const kpiVisits    = g(overview, 'visitsThisWeek', 'visits_this_week', 'weekVisits');
-  const kpiTasks     = g(overview, 'openTasksCount', 'open_tasks_count', 'openTasks', 'open_tasks');
-  const kpiReturned  = g(overview, 'returnedSystemsCount', 'returned_systems_count', 'returnedSystems');
-  const workloadRaw  = g(overview, 'workload', 'workloadLevel', 'workload_level');
-  const workloadLevel = typeof workloadRaw === 'object' ? g(workloadRaw, 'level', 'Level', 'status') : workloadRaw;
-  const workload     = WORKLOAD_MAP[String(workloadLevel || '').toUpperCase()] || null;
-
-  const nearCompletion = (() => {
-    const arr = g(overview, 'nearCompletion', 'near_completion', 'nearCompletionSystems', 'nearCompletionItems');
-    return Array.isArray(arr) ? arr : [];
-  })();
-  const staleSystems = (() => {
-    const arr = g(overview, 'staleSystems', 'stale_systems', 'stagnantSystems', 'idleSystems');
-    return Array.isArray(arr) ? arr : [];
-  })();
-  const upcomingVisits = (() => {
-    const arr = g(overview, 'upcomingVisits', 'upcoming_visits', 'nextVisits', 'next_visits');
-    return Array.isArray(arr) ? arr : [];
-  })();
-
-  const hasOverview   = overview !== null;
-  const hasStages     = stages.length > 0;
 
   return (
     <>
@@ -359,121 +312,63 @@ export default function DashboardScreen({ navigation }) {
         </View>
 
         {/* ── كروت المراحل ──────────────────────────────────────────── */}
-        {hasStages && (
-          <>
-            <Text style={styles.sectionTitle}>كروت المراحل</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stagesScroll}>
-              {stages.map((item, idx) => (
-                <StageCard
-                  key={idx}
-                  item={item}
-                  index={idx}
-                  onPress={() => openStageModal(item)}
-                />
-              ))}
-            </ScrollView>
-          </>
-        )}
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>كروت المراحل</Text>
+          {stagesLoading && <ActivityIndicator size="small" color="#1565C0" />}
+        </View>
 
-        {/* ── KPIs من my-overview ────────────────────────────────────── */}
-        {hasOverview && (
-          <>
-            <Text style={styles.sectionTitle}>مؤشراتي</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.kpiScroll}>
-              <KpiCard icon="layers-outline"            label="أنظمة نشطة"       value={kpiActive}                    color="#1565C0" />
-              <KpiCard icon="stats-chart-outline"       label="متوسط الإنجاز"    value={kpiAvgComp != null ? Math.round(kpiAvgComp) : null} unit="%" color="#2E7D32" />
-              <KpiCard icon="car-outline"               label="زيارات الأسبوع"   value={kpiVisits}                    color="#6A1B9A" />
-              <KpiCard icon="checkbox-outline"          label="مهام مفتوحة"      value={kpiTasks}                     color="#E65100" />
-              {kpiReturned != null && (
-                <KpiCard icon="arrow-undo-circle-outline" label="أنظمة مرتجعة" value={kpiReturned} color="#C62828" />
-              )}
-            </ScrollView>
-          </>
-        )}
-
-        {/* ── Workload ────────────────────────────────────────────────── */}
-        {workload && (
-          <View style={[styles.workloadBanner, { backgroundColor: workload.bg }]}>
-            <Ionicons name={workload.icon} size={20} color={workload.color} />
-            <Text style={[styles.workloadText, { color: workload.color }]}>{workload.label}</Text>
+        {stages.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stagesScroll}>
+            {stages.map((card, idx) => (
+              <StageCard key={card.stageName} card={card} index={idx} onPress={() => openModal(card)} />
+            ))}
+          </ScrollView>
+        ) : !stagesLoading ? (
+          <View style={styles.emptyStages}>
+            <Ionicons name="layers-outline" size={28} color="#ccc" />
+            <Text style={styles.emptyStagesText}>لا توجد أنظمة حالياً</Text>
           </View>
-        )}
+        ) : null}
 
-        {/* ── الأقرب للإنجاز (85-99%) ─────────────────────────────────── */}
-        {nearCompletion.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>الأقرب للإنجاز</Text>
-            <View style={styles.listCard}>
-              {nearCompletion.map((item, i) => <NearCompletionCard key={i} item={item} />)}
-            </View>
-          </>
-        )}
+        {/* ── إحصائيات المشاريع ─────────────────────────────────────── */}
+        <Text style={[styles.sectionTitle, { marginTop: 16 }]}>إحصائيات المشاريع</Text>
+        <View style={styles.statsGrid}>
+          <StatCard
+            icon="folder-open-outline"
+            label={t('totalProjects')}
+            value={stats?.totalProjects}
+            color="#1565C0"
+            onPress={() => navigation.navigate('Projects')}
+          />
+          <StatCard
+            icon="play-circle-outline"
+            label={t('activeProjects')}
+            value={stats?.activeProjects}
+            color="#F57C00"
+            onPress={() => navigation.navigate('Projects', { statusId: 1 })}
+          />
+          <StatCard
+            icon="checkmark-circle-outline"
+            label={t('completedProjects')}
+            value={stats?.completedProjects}
+            color="#388E3C"
+            onPress={() => navigation.navigate('Projects', { statusId: 3 })}
+          />
+          <StatCard
+            icon="time-outline"
+            label={t('pendingApprovals')}
+            value={stats?.pendingApprovals}
+            color="#9C27B0"
+            onPress={() => navigation.navigate('Approvals')}
+          />
+        </View>
 
-        {/* ── زياراتي القادمة ────────────────────────────────────────── */}
-        {upcomingVisits.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>زياراتي القادمة</Text>
-            <View style={styles.listCard}>
-              {upcomingVisits.map((item, i) => <VisitRow key={i} item={item} />)}
-            </View>
-          </>
-        )}
-
-        {/* ── أنظمة راكدة ─────────────────────────────────────────────── */}
-        {staleSystems.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>أنظمة راكدة 🔴</Text>
-            <View style={styles.listCard}>
-              {staleSystems.map((item, i) => <StaleRow key={i} item={item} />)}
-            </View>
-          </>
-        )}
-
-        {/* ── إحصائيات المشاريع (fallback) ────────────────────────────── */}
-        {stats && (
-          <>
-            <Text style={styles.sectionTitle}>إحصائيات المشاريع</Text>
-            <View style={styles.statsGrid}>
-              <StatCard
-                icon="folder-open-outline"
-                label={t('totalProjects')}
-                value={stats?.totalProjects}
-                color="#1565C0"
-                onPress={() => navigation.navigate('Projects')}
-              />
-              <StatCard
-                icon="play-circle-outline"
-                label={t('activeProjects')}
-                value={stats?.activeProjects}
-                color="#F57C00"
-                onPress={() => navigation.navigate('Projects', { statusId: 1 })}
-              />
-              <StatCard
-                icon="checkmark-circle-outline"
-                label={t('completedProjects')}
-                value={stats?.completedProjects}
-                color="#388E3C"
-                onPress={() => navigation.navigate('Projects', { statusId: 3 })}
-              />
-              <StatCard
-                icon="time-outline"
-                label={t('pendingApprovals')}
-                value={stats?.pendingApprovals}
-                color="#9C27B0"
-                onPress={() => navigation.navigate('Approvals')}
-              />
-            </View>
-          </>
-        )}
-
-        {/* Overall Progress */}
         {stats?.overallProgress !== undefined && (
           <View style={styles.progressCard}>
             <ProgressBar value={stats.overallProgress} color="#1565C0" />
           </View>
         )}
 
-        {/* Recent Projects */}
         {stats?.recentProjects?.length > 0 && (
           <>
             <View style={styles.sectionRow}>
@@ -500,52 +395,46 @@ export default function DashboardScreen({ navigation }) {
         )}
       </ScrollView>
 
-      {/* ── Stage Detail Modal ─────────────────────────────────────────── */}
+      {/* ── Stage Detail Modal ────────────────────────────────────────── */}
       <Modal
-        visible={selectedStage !== null}
+        visible={selectedCard !== null}
         transparent
         animationType="none"
-        onRequestClose={closeStageModal}
+        onRequestClose={closeModal}
       >
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={closeStageModal}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={closeModal}>
           <Animated.View style={[styles.modalSheet, { transform: [{ translateY: slideAnim }] }]}>
             <TouchableOpacity activeOpacity={1}>
               <View style={styles.modalHandle} />
-              {selectedStage && (() => {
-                const name  = stageName(selectedStage);
-                const count = stageCount(selectedStage);
-                const idx   = stages.indexOf(selectedStage);
-                const color = stageColor(idx, name);
-                const systems = stageSystems(selectedStage);
+              {selectedCard && (() => {
+                const color = cardColor(selectedCard.sortOrder, selectedCard.stageName);
+                const displayName = (selectedCard.stageName || '').replace(/ (Call|✅|⛔|👤)$/i, '').trim();
                 return (
                   <>
                     <View style={[styles.modalHeader, { borderBottomColor: color }]}>
                       <View style={[styles.modalIconWrap, { backgroundColor: color + '1A' }]}>
-                        <Ionicons name={stageIcon(name)} size={22} color={color} />
+                        <Ionicons name={cardIcon(selectedCard.stageName)} size={22} color={color} />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.modalTitle, { color }]}>{name || 'المرحلة'}</Text>
-                        <Text style={styles.modalCount}>{count} {count === 1 ? 'نظام' : 'أنظمة'}</Text>
+                        <Text style={[styles.modalTitle, { color }]}>{displayName}</Text>
+                        <Text style={styles.modalCount}>{selectedCard.count} {selectedCard.count === 1 ? 'نظام' : 'أنظمة'}</Text>
                       </View>
-                      <TouchableOpacity onPress={closeStageModal} style={styles.modalClose}>
+                      <TouchableOpacity onPress={closeModal} style={styles.modalClose}>
                         <Ionicons name="close" size={22} color="#666" />
                       </TouchableOpacity>
                     </View>
-                    {systems.length === 0 ? (
-                      <View style={styles.modalEmpty}>
-                        <Ionicons name="checkmark-circle-outline" size={40} color="#ccc" />
-                        <Text style={styles.modalEmptyText}>لا توجد أنظمة محملة</Text>
-                        <Text style={styles.modalEmptyHint}>العدد: {count}</Text>
-                      </View>
-                    ) : (
-                      <FlatList
-                        data={systems}
-                        keyExtractor={(_, i) => i.toString()}
-                        renderItem={({ item }) => <SystemRow item={item} />}
-                        contentContainerStyle={{ paddingBottom: 24 }}
-                        showsVerticalScrollIndicator={false}
-                      />
-                    )}
+                    <FlatList
+                      data={selectedCard.systems}
+                      keyExtractor={(_, i) => i.toString()}
+                      renderItem={({ item }) => <SystemRow item={item} />}
+                      contentContainerStyle={{ paddingBottom: 32 }}
+                      showsVerticalScrollIndicator={false}
+                      ListEmptyComponent={
+                        <View style={styles.modalEmpty}>
+                          <Text style={styles.modalEmptyText}>لا توجد أنظمة</Text>
+                        </View>
+                      }
+                    />
                   </>
                 );
               })()}
@@ -557,32 +446,31 @@ export default function DashboardScreen({ navigation }) {
   );
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F5F7FA' },
+  root:    { flex: 1, backgroundColor: '#F5F7FA' },
   content: { padding: 16, paddingBottom: 40 },
 
   greetingCard: {
     backgroundColor: '#1565C0', borderRadius: 16, padding: 20, marginBottom: 20,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  greetingLeft: { flex: 1 },
-  greeting:    { fontSize: 18, fontWeight: '700', color: '#fff' },
-  greetingSub: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
-  greetingIcon: { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: 8 },
+  greetingLeft:  { flex: 1 },
+  greeting:      { fontSize: 18, fontWeight: '700', color: '#fff' },
+  greetingSub:   { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
+  greetingIcon:  { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: 8 },
 
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 10, marginTop: 4 },
-  sectionRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 4 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 10 },
+  sectionRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   seeAll:       { color: '#1565C0', fontSize: 13, fontWeight: '600' },
 
-  // ── Stage cards
-  stagesScroll: { paddingRight: 16, paddingBottom: 4, gap: 10 },
+  stagesScroll: { paddingRight: 16, paddingBottom: 6, gap: 10 },
   stageCard: {
-    width: 110, backgroundColor: '#fff', borderRadius: 14, padding: 12,
+    width: 112, backgroundColor: '#fff', borderRadius: 14, padding: 12,
     borderTopWidth: 4, alignItems: 'center',
-    elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6,
-    marginBottom: 8,
+    elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 6, marginBottom: 8,
   },
   stageIconWrap: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
   stageCount:    { fontSize: 28, fontWeight: '800', lineHeight: 32 },
@@ -590,56 +478,11 @@ const styles = StyleSheet.create({
   stageBadge:    { marginTop: 6, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
   stageBadgeText: { fontSize: 10, fontWeight: '700' },
 
-  // ── KPI strip
-  kpiScroll: { paddingRight: 16, gap: 10, paddingBottom: 4 },
-  kpiCard: {
-    width: 100, backgroundColor: '#fff', borderRadius: 12, padding: 12,
-    borderTopWidth: 3, alignItems: 'center',
-    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
-    marginBottom: 8,
-  },
-  kpiIconWrap: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
-  kpiValue:    { fontSize: 22, fontWeight: '800' },
-  kpiUnit:     { fontSize: 12, fontWeight: '600' },
-  kpiLabel:    { fontSize: 10, color: '#666', textAlign: 'center', marginTop: 2, lineHeight: 14 },
+  emptyStages: { alignItems: 'center', paddingVertical: 20, gap: 6 },
+  emptyStagesText: { color: '#aaa', fontSize: 13 },
 
-  // ── Workload
-  workloadBanner: {
-    flexDirection: 'row', alignItems: 'center', borderRadius: 10, padding: 12,
-    marginBottom: 16, gap: 8,
-    elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3,
-  },
-  workloadText: { fontSize: 14, fontWeight: '700' },
-
-  // ── List cards (near completion, visits, stale)
-  listCard: {
-    backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden', marginBottom: 16,
-    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
-  },
-  nearCard:  { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  nearInfo:  { flex: 1 },
-  nearClient: { fontSize: 12, color: '#888', marginBottom: 1 },
-  nearName:   { fontSize: 14, fontWeight: '600', color: '#222' },
-  nearPct:    { marginLeft: 12 },
-  nearPctText: { fontSize: 18, fontWeight: '800', color: '#2E7D32' },
-
-  visitRow:   { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  visitDate:  { backgroundColor: '#E3F2FD', borderRadius: 8, padding: 8, marginRight: 12, minWidth: 70, alignItems: 'center' },
-  visitDateText: { fontSize: 11, color: '#1565C0', fontWeight: '700', textAlign: 'center' },
-  visitInfo:  { flex: 1 },
-  visitClient: { fontSize: 14, fontWeight: '600', color: '#222' },
-  visitSys:   { fontSize: 12, color: '#666', marginTop: 2 },
-
-  staleRow:   { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  staleInfo:  { flex: 1 },
-  staleClient: { fontSize: 12, color: '#888', marginBottom: 1 },
-  staleName:  { fontSize: 14, fontWeight: '600', color: '#222' },
-  staleDays:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  staleDaysText: { fontSize: 12, color: '#C62828', fontWeight: '700' },
-
-  // ── Classic stat cards
-  statsGrid:  { gap: 10, marginBottom: 8 },
-  statCard:   {
+  statsGrid: { gap: 10, marginBottom: 8 },
+  statCard: {
     backgroundColor: '#fff', borderRadius: 12, padding: 16, flexDirection: 'row',
     alignItems: 'center', borderLeftWidth: 4,
     elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
@@ -662,17 +505,17 @@ const styles = StyleSheet.create({
   recentTitle: { fontSize: 14, fontWeight: '600', color: '#222' },
   recentSub:   { fontSize: 12, color: '#888', marginTop: 2 },
 
-  // ── Stage detail modal
+  // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalSheet:   {
     backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    maxHeight: '80%', minHeight: 300,
+    maxHeight: '80%', minHeight: 280,
   },
-  modalHandle: {
+  modalHandle:  {
     width: 40, height: 4, backgroundColor: '#ddd', borderRadius: 2,
     alignSelf: 'center', marginTop: 10, marginBottom: 4,
   },
-  modalHeader: {
+  modalHeader:  {
     flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12,
     borderBottomWidth: 2, marginBottom: 4,
   },
@@ -680,12 +523,9 @@ const styles = StyleSheet.create({
   modalTitle:    { fontSize: 18, fontWeight: '800' },
   modalCount:    { fontSize: 13, color: '#666', marginTop: 2 },
   modalClose:    { padding: 6 },
+  modalEmpty:    { alignItems: 'center', padding: 32 },
+  modalEmptyText: { color: '#aaa', fontSize: 14 },
 
-  modalEmpty: { alignItems: 'center', paddingVertical: 32, gap: 8 },
-  modalEmptyText: { fontSize: 15, color: '#888', fontWeight: '600' },
-  modalEmptyHint: { fontSize: 12, color: '#aaa' },
-
-  // System row inside modal
   sysRow:  { padding: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', flexDirection: 'row', alignItems: 'center' },
   sysMain: { flex: 1 },
   sysClient: { fontSize: 11, color: '#888', marginBottom: 1 },
