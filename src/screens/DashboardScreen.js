@@ -280,15 +280,17 @@ export default function DashboardScreen({ navigation }) {
       if (overviewRes.status === 'fulfilled') setOverview(parseOverview(overviewRes.value?.data ?? overviewRes.value));
       if (stagesRes.status === 'fulfilled')  setStages(parseStages(stagesRes.value?.data ?? stagesRes.value));
 
-      // DEBUG — check project fields with pagination
+      // DEBUG — check scope fields inside project
       try {
         const pr = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 5 });
         const list = pr?.data?.data ?? [];
-        const first = list[0];
-        if (first) {
-          Alert.alert('DEBUG project keys', Object.keys(first).join('\n'));
+        const firstProject = list[0];
+        const scopes = firstProject?.scopes ?? [];
+        const firstScope = scopes[0];
+        if (firstScope) {
+          Alert.alert('DEBUG scope keys', Object.keys(firstScope).join('\n') + '\n\n--- sample ---\n' + JSON.stringify(firstScope).slice(0, 300));
         } else {
-          Alert.alert('DEBUG empty', JSON.stringify(pr?.data).slice(0,300));
+          Alert.alert('DEBUG scopes empty', `project has ${scopes.length} scopes. project keys: ${firstProject ? Object.keys(firstProject).join(', ') : 'none'}`);
         }
       } catch(e) {
         Alert.alert('DEBUG error', e?.response?.status + ' ' + e?.message);
