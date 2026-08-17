@@ -14,15 +14,26 @@ async function loadAllSystemsWithStages() {
 
   const scopes = [];
   for (const proj of projects) {
+    // Extract user names from projectUsers array (try several field shapes)
+    const projUsers = (proj.projectUsers ?? []).map(u =>
+      u.fullName || u.FullName || u.userName || u.UserName || u.name || ''
+    ).filter(Boolean);
+
     for (const sc of proj.scopes ?? []) {
+      // Scope-level users (sometimes populated)
+      const scopeUsers = (sc.users ?? []).map(u =>
+        u.fullName || u.FullName || u.userName || u.UserName || u.name || ''
+      ).filter(Boolean);
+
       scopes.push({
-        scopeId:     sc.id,
-        systemName:  sc.productName || '',
-        clientName:  proj.customerName || '',
-        projectId:   proj.id,
+        scopeId:      sc.id,
+        systemName:   sc.productName || '',
+        clientName:   proj.customerName || '',
+        projectId:    proj.id,
         projectTitle: proj.title || '',
-        progressPct: sc.progressPercent ?? 0,
-        isStopped:   proj.stopped ?? false,
+        progressPct:  sc.progressPercent ?? 0,
+        isStopped:    proj.stopped ?? false,
+        employees:    scopeUsers.length ? scopeUsers : projUsers,
       });
     }
   }
@@ -34,12 +45,16 @@ async function loadAllSystemsWithStages() {
   return scopes.map((scope, i) => {
     const res = stageResults[i];
     if (res.status !== 'fulfilled') {
-      return { ...scope, currentStage: null, allStages: [], stageName: '—', sortOrder: 999 };
+      return { ...scope, currentStage: null, allStages: [], stageName: '—', sortOrder: 999, employees: scope.employees };
     }
     const stages = res.value?.data?.data ?? res.value?.data ?? [];
     if (!Array.isArray(stages) || stages.length === 0) {
-      return { ...scope, currentStage: null, allStages: [], stageName: '—', sortOrder: 999 };
+      return { ...scope, currentStage: null, allStages: [], stageName: '—', sortOrder: 999, employees: scope.employees };
     }
+
+    // Also collect implementers from stage endedByUserName
+    const stageUsers = stages.map(s => s.endedByUserName).filter(Boolean);
+    const allEmployees = [...new Set([...scope.employees, ...stageUsers])];
     const inProgress = stages.find(st => st.statusId === 2 || st.statusName === 'InProgress');
     const allDone    = stages.every(st => st.statusId === 3 || st.statusName === 'Completed');
     const lastDone   = [...stages].reverse().find(st => st.statusId === 3 || st.statusName === 'Completed');
@@ -61,10 +76,11 @@ async function loadAllSystemsWithStages() {
     return {
       ...scope,
       currentStage: current,
-      allStages: stages,
-      stageName:  current?.stageName  || '—',
-      sortOrder:  current?.stageSortOrder ?? 99,
-      stageWeight: current?.weightPercent ?? null,
+      allStages:    stages,
+      stageName:    current?.stageName        || '—',
+      sortOrder:    current?.stageSortOrder   ?? 99,
+      stageWeight:  current?.weightPercent    ?? null,
+      employees:    allEmployees,
     };
   });
 }
@@ -272,9 +288,12 @@ export default function ImplReportsScreen() {
   const [loading, setLoading]   = useState(true);
   const [visitsLoading, setVisitsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch]     = useState('');
+  const [search, setSearch]           = useState('');
   const [stageFilter, setStageFilter] = useState(null);
-  const [sortDesc, setSortDesc] = useState(false);
+  const [clientFilter, setClientFilter] = useState(null);
+  const [empFilter, setEmpFilter]     = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [sortDesc, setSortDesc]       = useState(false);
   const [selectedSystem, setSelectedSystem] = useState(null);
 
   const load = useCallback(async () => {
@@ -300,9 +319,17 @@ export default function ImplReportsScreen() {
 
   // ── derived data ──────────────────────────────────────────────────────────
 
+  // Unique clients and employees for filter chips
+  const uniqueClients   = [...new Set(systems.map(s => s.clientName).filter(Boolean))].sort();
+  const uniqueEmployees = [...new Set(systems.flatMap(s => s.employees ?? []).filter(Boolean))].sort();
+
+  const activeFiltersCount = [stageFilter, clientFilter, empFilter].filter(Boolean).length;
+
   const filteredSystems = systems
     .filter(s => {
-      if (stageFilter && s.stageName !== stageFilter) return false;
+      if (stageFilter  && s.stageName  !== stageFilter)  return false;
+      if (clientFilter && s.clientName !== clientFilter)  return false;
+      if (empFilter    && !(s.employees ?? []).includes(empFilter)) return false;
       if (search) {
         const q = search.toLowerCase();
         return s.clientName.toLowerCase().includes(q) || s.systemName.toLowerCase().includes(q);
@@ -310,6 +337,8 @@ export default function ImplReportsScreen() {
       return true;
     })
     .sort((a, b) => sortDesc ? b.progressPct - a.progressPct : a.progressPct - b.progressPct);
+
+  const clearAllFilters = () => { setStageFilter(null); setClientFilter(null); setEmpFilter(null); };
 
   // Stage cards: group by stageName
   const stageGroups = systems.reduce((acc, s) => {
@@ -368,32 +397,78 @@ export default function ImplReportsScreen() {
       {/* ── SYSTEMS TAB ───────────────────────────────────────────── */}
       {tab === 'systems' && (
         <>
-          {/* Stage filter chips */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.filterRow}>
-            <TouchableOpacity
-              style={[st.chip, stageFilter === null && st.chipActive]}
-              onPress={() => setStageFilter(null)}
-            >
-              <Text style={[st.chipText, stageFilter === null && st.chipTextActive]}>الكل ({systems.length})</Text>
+          {/* Filter toggle bar */}
+          <View style={st.filterBar}>
+            <TouchableOpacity style={st.filterToggle} onPress={() => setShowFilters(p => !p)}>
+              <Ionicons name="options-outline" size={16} color={activeFiltersCount ? '#1565C0' : '#666'} />
+              <Text style={[st.filterToggleText, activeFiltersCount && { color: '#1565C0' }]}>
+                فلاتر{activeFiltersCount ? ` (${activeFiltersCount})` : ''}
+              </Text>
+              <Ionicons name={showFilters ? 'chevron-up' : 'chevron-down'} size={14} color="#999" />
             </TouchableOpacity>
-            {stageNames.map(name => (
-              <TouchableOpacity
-                key={name}
-                style={[st.chip, stageFilter === name && st.chipActive]}
-                onPress={() => setStageFilter(stageFilter === name ? null : name)}
-              >
-                <Text style={[st.chipText, stageFilter === name && st.chipTextActive]}>
-                  {(name || '').replace(/ (Call|✅|⛔)$/i,'').trim()}
-                </Text>
+            {activeFiltersCount > 0 && (
+              <TouchableOpacity onPress={clearAllFilters} style={st.clearBtn}>
+                <Text style={st.clearBtnText}>مسح الكل</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+            )}
+            <TouchableOpacity style={st.sortBtn2} onPress={() => setSortDesc(p => !p)}>
+              <Ionicons name={sortDesc ? 'arrow-down-outline' : 'arrow-up-outline'} size={14} color="#1565C0" />
+              <Text style={st.sortText}>{sortDesc ? 'الأعلى أولاً' : 'الأقل أولاً'}</Text>
+            </TouchableOpacity>
+          </View>
 
-          {/* Sort toggle */}
-          <TouchableOpacity style={st.sortBtn} onPress={() => setSortDesc(p => !p)}>
-            <Ionicons name={sortDesc ? 'arrow-down-outline' : 'arrow-up-outline'} size={14} color="#1565C0" />
-            <Text style={st.sortText}>{sortDesc ? 'الأعلى إنجازاً أولاً' : 'الأقل إنجازاً أولاً'}</Text>
-          </TouchableOpacity>
+          {/* Filter panel */}
+          {showFilters && (
+            <View style={st.filterPanel}>
+              {/* المراحل */}
+              <Text style={st.filterGroupLabel}>المرحلة</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.filterRow}>
+                <TouchableOpacity style={[st.chip, !stageFilter && st.chipActive]} onPress={() => setStageFilter(null)}>
+                  <Text style={[st.chipText, !stageFilter && st.chipTextActive]}>الكل</Text>
+                </TouchableOpacity>
+                {stageNames.map(name => (
+                  <TouchableOpacity key={name} style={[st.chip, stageFilter === name && st.chipActive]}
+                    onPress={() => setStageFilter(stageFilter === name ? null : name)}>
+                    <Text style={[st.chipText, stageFilter === name && st.chipTextActive]}>
+                      {(name || '').replace(/ (Call|✅|⛔)$/i,'').trim()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* العملاء */}
+              <Text style={st.filterGroupLabel}>العميل</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.filterRow}>
+                <TouchableOpacity style={[st.chip, !clientFilter && st.chipActive]} onPress={() => setClientFilter(null)}>
+                  <Text style={[st.chipText, !clientFilter && st.chipTextActive]}>الكل</Text>
+                </TouchableOpacity>
+                {uniqueClients.map(name => (
+                  <TouchableOpacity key={name} style={[st.chip, clientFilter === name && { backgroundColor: '#E65100', borderColor: '#E65100' }]}
+                    onPress={() => setClientFilter(clientFilter === name ? null : name)}>
+                    <Text style={[st.chipText, clientFilter === name && { color: '#fff' }]} numberOfLines={1}>{name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {/* الموظفين */}
+              {uniqueEmployees.length > 0 && (
+                <>
+                  <Text style={st.filterGroupLabel}>الموظف</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.filterRow}>
+                    <TouchableOpacity style={[st.chip, !empFilter && st.chipActive]} onPress={() => setEmpFilter(null)}>
+                      <Text style={[st.chipText, !empFilter && st.chipTextActive]}>الكل</Text>
+                    </TouchableOpacity>
+                    {uniqueEmployees.map(name => (
+                      <TouchableOpacity key={name} style={[st.chip, empFilter === name && { backgroundColor: '#6A1B9A', borderColor: '#6A1B9A' }]}
+                        onPress={() => setEmpFilter(empFilter === name ? null : name)}>
+                        <Text style={[st.chipText, empFilter === name && { color: '#fff' }]}>{name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              )}
+            </View>
+          )}
 
           <FlatList
             data={filteredSystems}
@@ -517,8 +592,27 @@ const st = StyleSheet.create({
   chipText:   { fontSize: 12, color: '#555', fontWeight: '600' },
   chipTextActive: { color: '#fff' },
 
-  sortBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 14, paddingBottom: 4 },
+  filterBar: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, gap: 8,
+  },
+  filterToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#fff',
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+    elevation: 1, shadowColor: '#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.05, shadowRadius:2,
+  },
+  filterToggleText: { fontSize: 13, color: '#666', fontWeight: '600' },
+  clearBtn: {
+    backgroundColor: '#FFEBEE', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  clearBtnText: { fontSize: 12, color: '#C62828', fontWeight: '700' },
+  sortBtn2: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto' },
   sortText: { fontSize: 12, color: '#1565C0', fontWeight: '600' },
+
+  filterPanel: {
+    backgroundColor: '#fff', marginHorizontal: 12, marginBottom: 8, borderRadius: 12, paddingTop: 10, paddingBottom: 6,
+    elevation: 2, shadowColor: '#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.07, shadowRadius:4,
+  },
+  filterGroupLabel: { fontSize: 11, color: '#999', fontWeight: '700', paddingHorizontal: 12, marginBottom: 4, marginTop: 4 },
 
   sysRow: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
