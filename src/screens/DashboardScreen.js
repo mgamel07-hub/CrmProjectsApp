@@ -80,8 +80,7 @@ async function fetchStageCards() {
 
   // 4. Determine current stage per scope, group into cards
   const cardMap = {}; // stageName → card object
-  const UNASSIGNED_KEY = 'غير مسند 👤';
-  const RETURNED_KEY   = 'مرتجع ⛔';
+  const RETURNED_KEY = 'مرتجع ⛔';
 
   for (let i = 0; i < allScopes.length; i++) {
     const scope = allScopes[i];
@@ -93,18 +92,6 @@ async function fetchStageCards() {
         cardMap[RETURNED_KEY] = { stageName: RETURNED_KEY, sortOrder: 9998, weight: null, systems: [] };
       }
       cardMap[RETURNED_KEY].systems.push({
-        systemName: scope.systemName, clientName: scope.clientName,
-        progressPct: scope.progressPct, implementer: '',
-      });
-      continue;
-    }
-
-    // ── Special: unassigned (no users on scope) ──
-    if (scope.users.length === 0) {
-      if (!cardMap[UNASSIGNED_KEY]) {
-        cardMap[UNASSIGNED_KEY] = { stageName: UNASSIGNED_KEY, sortOrder: 9999, weight: null, systems: [] };
-      }
-      cardMap[UNASSIGNED_KEY].systems.push({
         systemName: scope.systemName, clientName: scope.clientName,
         progressPct: scope.progressPct, implementer: '',
       });
