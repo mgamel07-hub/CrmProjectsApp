@@ -4,6 +4,7 @@ import {
   Modal, FlatList, Animated, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import api from '../api/client';
 import { getDashboardStats } from '../api/projects';
 import { getMyOverview, getStageCards } from '../api/dashboard';
 import { useAuth } from '../context/AuthContext';
@@ -279,12 +280,21 @@ export default function DashboardScreen({ navigation }) {
       if (overviewRes.status === 'fulfilled') setOverview(parseOverview(overviewRes.value?.data ?? overviewRes.value));
       if (stagesRes.status === 'fulfilled')  setStages(parseStages(stagesRes.value?.data ?? stagesRes.value));
 
-      // DEBUG — remove after diagnosis
-      const dbg = [
-        `stages: ${stagesRes.status} — ${stagesRes.status === 'rejected' ? (stagesRes.reason?.response?.status + ' ' + stagesRes.reason?.message) : JSON.stringify(stagesRes.value?.data).slice(0,120)}`,
-        `overview: ${overviewRes.status} — ${overviewRes.status === 'rejected' ? (overviewRes.reason?.response?.status + ' ' + overviewRes.reason?.message) : JSON.stringify(overviewRes.value?.data).slice(0,120)}`,
-      ].join('\n\n');
-      Alert.alert('DEBUG', dbg);
+      // DEBUG — probe multiple paths to find working endpoints
+      const { getKpi } = require('../api/dashboard');
+      const probes = await Promise.allSettled([
+        getKpi(),
+        api.get('/dashboards/stage-cards'),
+        api.get('/dashboards/my-overview'),
+        api.get('/Dashboard/GetStageCards'),
+        api.get('/Dashboard/MyOverview'),
+        api.get('/ProjectScopeStage/GetStageSummary'),
+      ]);
+      const labels = ['kpi','stage-cards','my-overview','GetStageCards','MyOverview','GetStageSummary'];
+      const dbg = probes.map((r, i) =>
+        `${labels[i]}: ${r.status === 'fulfilled' ? '✓ ' + JSON.stringify(r.value?.data).slice(0, 60) : '✗ ' + r.reason?.response?.status}`
+      ).join('\n');
+      Alert.alert('DEBUG paths', dbg);
 
       setError(null);
     } catch (e) {
