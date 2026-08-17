@@ -305,7 +305,12 @@ export default function DashboardScreen({ navigation }) {
         </View>
 
         {stages.length > 0 ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stagesScroll}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            contentContainerStyle={styles.stagesScroll}
+          >
             {stages.map((card, idx) => (
               <StageCard key={card.stageName} card={card} index={idx} onPress={() => openModal(card)} />
             ))}
@@ -452,10 +457,10 @@ const styles = StyleSheet.create({
   sectionRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   seeAll:       { color: '#1565C0', fontSize: 13, fontWeight: '600' },
 
-  stagesScroll: { paddingRight: 16, paddingBottom: 6, gap: 10 },
+  stagesScroll: { paddingRight: 16, paddingBottom: 6 },
   stageCard: {
     width: 112, backgroundColor: '#fff', borderRadius: 14, padding: 12,
-    borderTopWidth: 4, alignItems: 'center',
+    borderTopWidth: 4, alignItems: 'center', marginRight: 10,
     elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08, shadowRadius: 6, marginBottom: 8,
   },
