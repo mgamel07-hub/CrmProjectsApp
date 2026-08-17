@@ -109,6 +109,150 @@ function stageColor(sortOrder, name = '') {
   return PALETTE[(sortOrder - 1) % PALETTE.length];
 }
 
+// ─── Date filter helpers ──────────────────────────────────────────────────────
+
+const THIS_YEAR = new Date().getFullYear();
+
+function computeDateRange(mode, year, quarter, half, customFrom, customTo) {
+  const y = year || THIS_YEAR;
+  if (!mode) return { from: null, to: null };
+  if (mode === 'year')    return { from: `${y}-01-01`, to: `${y}-12-31` };
+  if (mode === 'half') {
+    const h = half || 1;
+    return h === 1
+      ? { from: `${y}-01-01`, to: `${y}-06-30` }
+      : { from: `${y}-07-01`, to: `${y}-12-31` };
+  }
+  if (mode === 'quarter') {
+    const q = quarter || 1;
+    const sm = (q - 1) * 3 + 1;
+    const em = sm + 2;
+    const ends = { 3: 31, 6: 30, 9: 30, 12: 31 };
+    return {
+      from: `${y}-${String(sm).padStart(2,'0')}-01`,
+      to:   `${y}-${String(em).padStart(2,'0')}-${ends[em]}`,
+    };
+  }
+  if (mode === 'custom') return { from: customFrom || null, to: customTo || null };
+  return { from: null, to: null };
+}
+
+function inDateRange(dateStr, from, to) {
+  if (!dateStr) return true;
+  if (!from && !to) return true;
+  const d = dateStr.slice(0, 10);
+  if (from && d < from) return false;
+  if (to   && d > to)   return false;
+  return true;
+}
+
+function DateFilterSection({ mode, setMode, year, setYear, quarter, setQuarter, half, setHalf,
+                              customFrom, setCustomFrom, customTo, setCustomTo }) {
+  const MODES = [
+    { key: null,      label: 'الكل' },
+    { key: 'quarter', label: 'ربع سنة' },
+    { key: 'half',    label: 'نصف سنة' },
+    { key: 'year',    label: 'سنة كاملة' },
+    { key: 'custom',  label: 'مخصص' },
+  ];
+  const QUARTERS = [
+    { key: 1, label: 'الربع الأول',  sub: 'يناير – مارس' },
+    { key: 2, label: 'الربع الثاني', sub: 'أبريل – يونيو' },
+    { key: 3, label: 'الربع الثالث', sub: 'يوليو – سبتمبر' },
+    { key: 4, label: 'الربع الرابع', sub: 'أكتوبر – ديسمبر' },
+  ];
+  const HALVES = [
+    { key: 1, label: 'النصف الأول', sub: 'يناير – يونيو' },
+    { key: 2, label: 'النصف الثاني', sub: 'يوليو – ديسمبر' },
+  ];
+
+  return (
+    <View style={st.dateSection}>
+      {/* Mode row */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.filterRow}>
+        {MODES.map(m => (
+          <TouchableOpacity key={String(m.key)} style={[st.chip, mode === m.key && st.chipDate]}
+            onPress={() => setMode(m.key)}>
+            <Text style={[st.chipText, mode === m.key && { color: '#fff' }]}>{m.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Year selector — shown for all non-null, non-custom modes */}
+      {mode && mode !== 'custom' && (
+        <View style={st.yearRow}>
+          <TouchableOpacity onPress={() => setYear(y => (y || THIS_YEAR) - 1)} style={st.yearBtn}>
+            <Ionicons name="chevron-forward" size={18} color="#1565C0" />
+          </TouchableOpacity>
+          <Text style={st.yearText}>{year || THIS_YEAR}</Text>
+          <TouchableOpacity onPress={() => setYear(y => (y || THIS_YEAR) + 1)} style={st.yearBtn}>
+            <Ionicons name="chevron-back" size={18} color="#1565C0" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Quarter chips */}
+      {mode === 'quarter' && (
+        <View style={st.periodGrid}>
+          {QUARTERS.map(q => (
+            <TouchableOpacity key={q.key}
+              style={[st.periodCard, quarter === q.key && st.periodCardActive]}
+              onPress={() => setQuarter(q.key)}>
+              <Text style={[st.periodCardTitle, quarter === q.key && { color: '#fff' }]}>{q.label}</Text>
+              <Text style={[st.periodCardSub, quarter === q.key && { color: 'rgba(255,255,255,0.8)' }]}>{q.sub}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* Half chips */}
+      {mode === 'half' && (
+        <View style={st.periodGrid}>
+          {HALVES.map(h => (
+            <TouchableOpacity key={h.key}
+              style={[st.periodCard, st.periodCardHalf, half === h.key && st.periodCardActive]}
+              onPress={() => setHalf(h.key)}>
+              <Text style={[st.periodCardTitle, half === h.key && { color: '#fff' }]}>{h.label}</Text>
+              <Text style={[st.periodCardSub, half === h.key && { color: 'rgba(255,255,255,0.8)' }]}>{h.sub}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* Custom date inputs */}
+      {mode === 'custom' && (
+        <View style={st.customRow}>
+          <View style={st.customField}>
+            <Text style={st.customLabel}>من</Text>
+            <TextInput
+              style={st.customInput}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#bbb"
+              value={customFrom}
+              onChangeText={setCustomFrom}
+              keyboardType="numeric"
+              maxLength={10}
+            />
+          </View>
+          <Ionicons name="arrow-back-outline" size={16} color="#999" />
+          <View style={st.customField}>
+            <Text style={st.customLabel}>إلى</Text>
+            <TextInput
+              style={st.customInput}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor="#bbb"
+              value={customTo}
+              onChangeText={setCustomTo}
+              keyboardType="numeric"
+              maxLength={10}
+            />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ─── Tiny components ─────────────────────────────────────────────────────────
 
 function TabBar({ tab, setTab }) {
@@ -296,6 +440,14 @@ export default function ImplReportsScreen() {
   const [sortDesc, setSortDesc]       = useState(false);
   const [selectedSystem, setSelectedSystem] = useState(null);
 
+  // Date filter states
+  const [dateMode,    setDateMode]    = useState(null);
+  const [selectedYear, setSelectedYear] = useState(THIS_YEAR);
+  const [selectedQuarter, setSelectedQuarter] = useState(1);
+  const [selectedHalf, setSelectedHalf] = useState(1);
+  const [customFrom, setCustomFrom]   = useState('');
+  const [customTo,   setCustomTo]     = useState('');
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -325,11 +477,22 @@ export default function ImplReportsScreen() {
 
   const activeFiltersCount = [stageFilter, clientFilter, empFilter].filter(Boolean).length;
 
+  // Compute date range from mode selection
+  const { from: filterFrom, to: filterTo } = computeDateRange(
+    dateMode, selectedYear, selectedQuarter, selectedHalf, customFrom, customTo
+  );
+
   const filteredSystems = systems
     .filter(s => {
       if (stageFilter  && s.stageName  !== stageFilter)  return false;
       if (clientFilter && s.clientName !== clientFilter)  return false;
       if (empFilter    && !(s.employees ?? []).includes(empFilter)) return false;
+      // Date filter: use currentStage.startedOn or any completed stage's date
+      if (filterFrom || filterTo) {
+        const dateRef = s.currentStage?.startedOn
+          || (s.allStages ?? []).find(st => st.startedOn)?.startedOn;
+        if (!inDateRange(dateRef, filterFrom, filterTo)) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         return s.clientName.toLowerCase().includes(q) || s.systemName.toLowerCase().includes(q);
@@ -352,15 +515,21 @@ export default function ImplReportsScreen() {
   // Unique stage names for filter
   const stageNames = stageCards.map(c => c.name);
 
-  // Visit filter by scope/project
-  const filteredVisits = search
-    ? visits.filter(v => {
-        const q = search.toLowerCase();
-        return (v.projectTitle || '').toLowerCase().includes(q)
-            || (v.scopeName || '').toLowerCase().includes(q)
-            || (v.userName  || '').toLowerCase().includes(q);
-      })
-    : visits;
+  // Visit filter by scope/project + date
+  const filteredVisits = visits.filter(v => {
+    if (search) {
+      const q = search.toLowerCase();
+      const match = (v.projectTitle || '').toLowerCase().includes(q)
+                 || (v.scopeName || '').toLowerCase().includes(q)
+                 || (v.userName  || '').toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    if (filterFrom || filterTo) {
+      const dateRef = v.executionDate || v.visitDate || v.date || v.createdOn;
+      if (!inDateRange(dateRef, filterFrom, filterTo)) return false;
+    }
+    return true;
+  });
 
   // Render ──────────────────────────────────────────────────────────────────
 
@@ -376,6 +545,16 @@ export default function ImplReportsScreen() {
   return (
     <View style={st.root}>
       <TabBar tab={tab} setTab={setTab} />
+
+      {/* ── Date filter ───────────────────────────────────────────── */}
+      <DateFilterSection
+        mode={dateMode}          setMode={setDateMode}
+        year={selectedYear}      setYear={setSelectedYear}
+        quarter={selectedQuarter} setQuarter={setSelectedQuarter}
+        half={selectedHalf}      setHalf={setSelectedHalf}
+        customFrom={customFrom}  setCustomFrom={setCustomFrom}
+        customTo={customTo}      setCustomTo={setCustomTo}
+      />
 
       {/* ── Search bar ────────────────────────────────────────────── */}
       <View style={st.searchWrap}>
@@ -706,4 +885,35 @@ const st = StyleSheet.create({
   stageRowName: { fontSize: 13, fontWeight: '600' },
   stageDate:    { fontSize: 10, color: '#aaa', marginTop: 2 },
   stagePct:     { fontSize: 12, fontWeight: '700', minWidth: 30, textAlign: 'right' },
+
+  // Date filter section
+  dateSection: {
+    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#EEE', paddingBottom: 6,
+  },
+  chipDate: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  yearRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, paddingVertical: 6,
+  },
+  yearBtn: { padding: 6 },
+  yearText: { fontSize: 16, fontWeight: '800', color: '#1565C0', minWidth: 60, textAlign: 'center' },
+  periodGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12, gap: 8, paddingBottom: 8,
+  },
+  periodCard: {
+    width: '46%', backgroundColor: '#F5F7FA', borderRadius: 10, padding: 10,
+    borderWidth: 1.5, borderColor: '#DDD', alignItems: 'center',
+  },
+  periodCardHalf: { width: '46%' },
+  periodCardActive: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  periodCardTitle: { fontSize: 13, fontWeight: '700', color: '#333', textAlign: 'center' },
+  periodCardSub:   { fontSize: 10, color: '#888', marginTop: 2, textAlign: 'center' },
+  customRow: {
+    flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8, paddingBottom: 8,
+  },
+  customField: { flex: 1 },
+  customLabel: { fontSize: 11, color: '#888', marginBottom: 4, fontWeight: '600', textAlign: 'right' },
+  customInput: {
+    backgroundColor: '#F5F7FA', borderRadius: 8, borderWidth: 1, borderColor: '#DDD',
+    paddingHorizontal: 10, paddingVertical: 7, fontSize: 13, color: '#222', textAlign: 'center',
+  },
 });
