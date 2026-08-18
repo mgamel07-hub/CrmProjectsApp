@@ -1,66 +1,78 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getMyTeamRecord, getTeamMembers } from '../api/internal';
 import { useAuth } from './AuthContext';
 
-const RoleContext = createContext({
-  myRole: 'employee',
-  visibleCrmIds: null,   // null → admin (no filter); string[] → filter to these CRM IDs
-  visibleNames: null,    // null → no filter; string[] → visible member display names
-  roleLoading: true,
-});
+// Lazy imports to avoid any startup side-effects
+let _getMyTeamRecord = null;
+let _getTeamMembers  = null;
 
-function extractCrmId(u) {
-  const v = u?.key ?? u?.Key ?? u?.userId ?? u?.UserId ?? u?.user_id
-         ?? u?.id  ?? u?.Id  ?? u?.ID     ?? u?.accountId ?? null;
-  return v != null ? String(v) : '';
-}
+const RoleContext = createContext({
+  myRole: 'admin',
+  visibleCrmIds: null,
+  visibleNames: null,
+  roleLoading: false,
+});
 
 export function RoleProvider({ children }) {
   const { user } = useAuth();
-  const [myRole, setMyRole]             = useState('employee');
+  const [myRole, setMyRole]             = useState('admin');
   const [visibleCrmIds, setVisible]     = useState(null);
   const [visibleNames, setVisibleNames] = useState(null);
-  const [roleLoading, setLoading]       = useState(true);
+  const [roleLoading, setLoading]       = useState(false);
 
   useEffect(() => {
-    const uid = user?.userId;
-    if (!uid) { setLoading(false); return; }
+    let cancelled = false;
+    const uid = user && (user.userId || user.UserId || user.id);
+    if (!uid) return;
+
+    setLoading(true);
 
     (async () => {
       try {
-        const me = await getMyTeamRecord(uid);
-        const role = me?.role || 'employee';
+        // Lazy-load internal API so any import errors don't crash the app
+        if (!_getMyTeamRecord) {
+          const mod = require('../api/internal');
+          _getMyTeamRecord = mod.getMyTeamRecord;
+          _getTeamMembers  = mod.getTeamMembers;
+        }
+
+        const me = await _getMyTeamRecord(String(uid));
+        if (cancelled) return;
+
+        const role = (me && me.role) ? me.role : 'admin';
         setMyRole(role);
 
         if (role === 'admin') {
-          setVisible(null);       // sees everything
+          setVisible(null);
           setVisibleNames(null);
         } else if (role === 'manager') {
-          const allMembers = await getTeamMembers();
-          const mine = allMembers.filter(m => m.team_id === me.team_id);
-          const ids   = mine.map(m => m.crm_user_id).filter(Boolean);
-          const names = mine.map(m => m.display_name).filter(Boolean);
-          setVisible(ids.length   ? ids   : [String(uid)]);
+          const allMembers = await _getTeamMembers();
+          if (cancelled) return;
+          const mine  = allMembers.filter(function(m) { return m.team_id === me.team_id; });
+          const ids   = mine.map(function(m) { return m.crm_user_id; }).filter(Boolean);
+          const names = mine.map(function(m) { return m.display_name; }).filter(Boolean);
+          setVisible(ids.length ? ids : [String(uid)]);
           setVisibleNames(names.length ? names : []);
         } else {
-          // employee: only own record
-          const ids   = [String(uid)];
-          const names = me?.display_name ? [me.display_name] : [];
-          setVisible(ids);
-          setVisibleNames(names);
+          setVisible([String(uid)]);
+          setVisibleNames(me && me.display_name ? [me.display_name] : []);
         }
-      } catch (_) {
-        // On Supabase failure → default to show everything (fail-open)
-        setVisible(null);
-        setVisibleNames(null);
+      } catch (e) {
+        if (!cancelled) {
+          // Fail-open: on any error, show everything (admin view)
+          setMyRole('admin');
+          setVisible(null);
+          setVisibleNames(null);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, [user?.userId]);
+
+    return function() { cancelled = true; };
+  }, [user && (user.userId || user.UserId || user.id)]);
 
   return (
-    <RoleContext.Provider value={{ myRole, visibleCrmIds, visibleNames, roleLoading, extractCrmId }}>
+    <RoleContext.Provider value={{ myRole, visibleCrmIds, visibleNames, roleLoading }}>
       {children}
     </RoleContext.Provider>
   );
