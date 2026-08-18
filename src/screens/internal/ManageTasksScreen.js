@@ -24,7 +24,7 @@ const ROLE_LABELS = {
   employee: { label: 'موظف',       color: '#1565C0', bg: '#E3F2FD' },
 };
 
-export default function ManageTasksScreen({ route }) {
+export default function ManageTasksScreen({ route, navigation }) {
   const { userId } = route.params;
   const [tasks, setTasks] = useState([]);
   const [users, setUsers] = useState([]);       // filtered by role
@@ -156,7 +156,13 @@ export default function ManageTasksScreen({ route }) {
       <View style={styles.notSetupWrap}>
         <Ionicons name="shield-outline" size={52} color="#ddd" />
         <Text style={styles.notSetupTitle}>لم يتم تعيين دورك بعد</Text>
-        <Text style={styles.notSetupSub}>اطلب من مدير الإدارة إضافتك في شاشة "إعداد الفريق"</Text>
+        <Text style={styles.notSetupSub}>
+          أضف نفسك أولاً في شاشة "إعداد الفريق" وحدد دورك (مدير إدارة / مدير فريق)
+        </Text>
+        <TouchableOpacity style={styles.setupBtn} onPress={() => navigation.navigate('TeamSetup')}>
+          <Ionicons name="settings-outline" size={16} color="#fff" />
+          <Text style={styles.setupBtnText}>اذهب إلى إعداد الفريق</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -314,6 +320,8 @@ const styles = StyleSheet.create({
   notSetupWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 },
   notSetupTitle: { fontSize: 16, fontWeight: '800', color: '#555', textAlign: 'center' },
   notSetupSub: { fontSize: 13, color: '#aaa', textAlign: 'center', lineHeight: 20 },
+  setupBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#6A1B9A', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12, marginTop: 8 },
+  setupBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   // Modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheetScroll: { justifyContent: 'flex-end', flexGrow: 1 },
