@@ -105,11 +105,11 @@ export default function TeamScheduleScreen({ route }) {
 
             {/* User rows */}
             <ScrollView style={styles.rows}>
-              {users.map((u) => {
+              {users.map((u, ui) => {
                 const uid = u.id || u.userId;
                 const name = u.fullName || u.name || String(uid);
                 return (
-                  <View key={uid} style={styles.userRow}>
+                  <View key={uid != null ? String(uid) : `user-${ui}`} style={styles.userRow}>
                     <View style={styles.nameCol}>
                       <Text style={styles.userName} numberOfLines={1}>{name}</Text>
                     </View>
@@ -117,7 +117,7 @@ export default function TeamScheduleScreen({ route }) {
                       const dateStr = fmt(d);
                       const entry = getEntry(uid, dateStr);
                       return (
-                        <View key={di} style={styles.dayCol}>
+                        <View key={`${ui}-${di}`} style={styles.dayCol}>
                           {entry ? (
                             <View style={[styles.cell, { backgroundColor: TYPE_COLORS[entry.type] }]}>
                               <Text style={styles.cellText}>{TYPE_SHORT[entry.type]}</Text>
