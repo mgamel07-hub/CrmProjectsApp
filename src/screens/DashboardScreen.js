@@ -52,33 +52,29 @@ function cardIcon(name = '') {
 
 // ─── Build stage cards from projects data ────────────────────────────────────
 
-async function fetchStageCards(visibleCrmIds) {
+async function fetchStageCards() {
   // 1. Fetch all projects (with embedded scopes)
   const projRes = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 200 });
   const projects = projRes?.data?.data ?? [];
 
-  // 2. Collect all scopes, applying role filter on projects
+  // 2. Collect all scopes with project user IDs (for client-side role filtering)
   const allScopes = [];
   for (const proj of projects) {
-    // Role filter: skip projects not belonging to visible users
-    if (visibleCrmIds) {
-      const projUsers = proj.projectUsers ?? [];
-      const included = projUsers.some(u => {
-        const id = String(u?.key ?? u?.Key ?? u?.userId ?? u?.UserId
-                 ?? u?.user_id ?? u?.id ?? u?.Id ?? u?.ID ?? '');
-        return id && visibleCrmIds.includes(id);
-      });
-      if (!included) continue;
-    }
+    const projUserIds = (proj.projectUsers ?? []).map(u => {
+      const v = u?.key ?? u?.Key ?? u?.userId ?? u?.UserId ?? u?.user_id
+             ?? u?.id  ?? u?.Id  ?? u?.ID    ?? u?.accountId ?? null;
+      return v != null ? String(v) : '';
+    }).filter(Boolean);
 
     for (const scope of (proj.scopes ?? [])) {
       allScopes.push({
-        scopeId:     scope.id,
-        systemName:  scope.productName || '',
-        clientName:  proj.customerName || '',
-        progressPct: scope.progressPercent ?? 0,
-        users:       scope.users ?? [],
-        isStopped:   proj.stopped ?? false,
+        scopeId:       scope.id,
+        systemName:    scope.productName || '',
+        clientName:    proj.customerName || '',
+        progressPct:   scope.progressPercent ?? 0,
+        users:         scope.users ?? [],
+        isStopped:     proj.stopped ?? false,
+        projectUserIds: projUserIds,
       });
     }
   }
@@ -106,6 +102,7 @@ async function fetchStageCards(visibleCrmIds) {
       cardMap[RETURNED_KEY].systems.push({
         systemName: scope.systemName, clientName: scope.clientName,
         progressPct: scope.progressPct, implementer: '',
+        projectUserIds: scope.projectUserIds,
       });
       continue;
     }
@@ -131,6 +128,7 @@ async function fetchStageCards(visibleCrmIds) {
       cardMap[DONE_KEY].systems.push({
         systemName: scope.systemName, clientName: scope.clientName,
         progressPct: scope.progressPct, implementer,
+        projectUserIds: scope.projectUserIds,
       });
       continue;
     } else if (inProgress) {
@@ -153,10 +151,11 @@ async function fetchStageCards(visibleCrmIds) {
       };
     }
     cardMap[key].systems.push({
-      systemName:  scope.systemName,
-      clientName:  scope.clientName,
-      progressPct: scope.progressPct,
+      systemName:     scope.systemName,
+      clientName:     scope.clientName,
+      progressPct:    scope.progressPct,
       implementer,
+      projectUserIds: scope.projectUserIds,
     });
   }
 
@@ -273,18 +272,28 @@ export default function DashboardScreen({ navigation }) {
     // Load stage cards in background (separate loading state)
     setStagesLoading(true);
     try {
-      const cards = await fetchStageCards(visibleCrmIds);
+      const cards = await fetchStageCards();
       setStages(cards);
     } catch (_) {
       // Stage cards are best-effort; don't surface error
     } finally {
       setStagesLoading(false);
     }
-  }, [isDemo, visibleCrmIds]);
+  }, [isDemo]);
 
   useEffect(() => { load(); }, [load]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
+
+  // Client-side role filter on stage cards
+  const visibleStages = visibleCrmIds === null
+    ? stages
+    : stages.map(card => {
+        const filtered = card.systems.filter(s =>
+          (s.projectUserIds ?? []).some(id => visibleCrmIds.includes(id))
+        );
+        return { ...card, systems: filtered, count: filtered.length };
+      }).filter(card => card.count > 0);
 
   if (loading) return <LoadingScreen />;
   if (error && !stats) return <ErrorMessage message={error} onRetry={load} />;
@@ -317,14 +326,14 @@ export default function DashboardScreen({ navigation }) {
           {stagesLoading && <ActivityIndicator size="small" color="#1565C0" />}
         </View>
 
-        {stages.length > 0 ? (
+        {visibleStages.length > 0 ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             nestedScrollEnabled
             contentContainerStyle={styles.stagesScroll}
           >
-            {stages.map((card, idx) => (
+            {visibleStages.map((card, idx) => (
               <StageCard key={card.stageName} card={card} index={idx} onPress={() => openModal(card)} />
             ))}
           </ScrollView>

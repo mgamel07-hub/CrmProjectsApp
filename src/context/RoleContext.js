@@ -49,7 +49,7 @@ export function RoleProvider({ children }) {
           setVisible(ids);
           setVisibleNames(names);
         }
-      } catch {
+      } catch (_) {
         // On Supabase failure → default to show everything (fail-open)
         setVisible(null);
         setVisibleNames(null);
