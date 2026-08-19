@@ -55,6 +55,13 @@ export default function TeamHomeScreen({ navigation }) {
       onPress: () => navigation.navigate('TeamSchedule', { userId, allUsers }),
     },
     {
+      title: 'سجل النشاط',
+      subtitle: 'مهام منجزة • زيارات • جداول الفريق',
+      icon: 'pulse-outline',
+      color: '#0288D1',
+      onPress: () => navigation.navigate('ActivityFeed'),
+    },
+    {
       title: 'إعداد الفريق',
       subtitle: 'أسماء الأعضاء • الأدوار • الصلاحيات',
       icon: 'settings-outline',

@@ -6,7 +6,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, SectionList, FlatList, StyleSheet, TouchableOpacity,
-  TextInput, RefreshControl, ActivityIndicator, Modal, Animated,
+  TextInput, RefreshControl, ActivityIndicator, Modal, Animated, Linking, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
@@ -140,11 +140,13 @@ function stageColor(sortOrder, name = '') {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function TabBar({ tab, setTab, systemsCount, stagesCount, visitsCount }) {
+function TabBar({ tab, setTab, systemsCount, stagesCount, visitsCount, clientsCount, empCount }) {
   const tabs = [
-    { key: 'systems', label: 'الأنظمة',  icon: 'layers-outline',    count: systemsCount },
-    { key: 'stages',  label: 'المراحل',  icon: 'git-branch-outline', count: stagesCount  },
-    { key: 'visits',  label: 'الزيارات', icon: 'car-outline',        count: visitsCount  },
+    { key: 'systems',  label: 'الأنظمة',  icon: 'layers-outline',    count: systemsCount },
+    { key: 'stages',   label: 'المراحل',  icon: 'git-branch-outline', count: stagesCount  },
+    { key: 'visits',   label: 'الزيارات', icon: 'car-outline',        count: visitsCount  },
+    { key: 'clients',  label: 'العملاء',  icon: 'business-outline',   count: clientsCount },
+    { key: 'perf',     label: 'الأداء',   icon: 'stats-chart-outline', count: empCount    },
   ];
   return (
     <View style={s.tabBar}>
@@ -626,6 +628,67 @@ export default function ReportsScreen() {
   const activeFilters = [clientFilter, empFilter, stageFilter].filter(Boolean).length + (search ? 1 : 0);
   const onRefresh = () => { setRefreshing(true); load(); };
 
+  // ── Client progress groups ────────────────────────────────────────────────
+
+  const clientGroups = {};
+  for (const sys of roleSystems) {
+    const cn = sys.clientName || '—';
+    if (!clientGroups[cn]) clientGroups[cn] = { name: cn, systems: [], visitCount: 0, lastVisit: '' };
+    clientGroups[cn].systems.push(sys);
+  }
+  for (const v of roleVisits) {
+    const cn = v._clientName || v.customerName || '—';
+    if (clientGroups[cn]) {
+      clientGroups[cn].visitCount++;
+      const d = visitDate(v).slice(0, 10);
+      if (d > clientGroups[cn].lastVisit) clientGroups[cn].lastVisit = d;
+    }
+  }
+  const clientList = Object.values(clientGroups).sort((a, b) => b.systems.length - a.systems.length);
+
+  // ── Employee performance stats ────────────────────────────────────────────
+
+  const empStats = {};
+  for (const sys of roleSystems) {
+    for (const emp of (sys.employees || [])) {
+      if (!emp) continue;
+      if (!empStats[emp]) empStats[emp] = { name: emp, systems: 0, completed: 0, totalPct: 0, visits: 0 };
+      empStats[emp].systems++;
+      if ((sys.stageName || '').includes('✅')) empStats[emp].completed++;
+      empStats[emp].totalPct += sys.progressPct;
+    }
+  }
+  for (const v of roleVisits) {
+    const name = v.userName || v.executedByName || v.createdBy || '';
+    if (name && empStats[name]) empStats[name].visits++;
+  }
+  const empList = Object.values(empStats).sort((a, b) => (b.visits + b.completed) - (a.visits + a.completed));
+
+  // ── WhatsApp weekly summary ───────────────────────────────────────────────
+
+  const sendWhatsApp = () => {
+    const week    = filterByPeriod(roleVisits, 'week');
+    const complt  = roleSystems.filter(s => (s.stageName || '').includes('✅')).length;
+    const stopped = roleSystems.filter(s => s.isStopped).length;
+    const top3    = empList.slice(0, 3).map(e => `  • ${e.name}: ${e.visits} زيارة`).join('\n');
+    const msg = [
+      `📊 تقرير أسبوعي — ${new Date().toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+      '',
+      `🔵 إجمالي الأنظمة: ${roleSystems.length}`,
+      `✅ منجزة: ${complt}`,
+      stopped ? `⛔ متوقفة: ${stopped}` : null,
+      '',
+      `🚗 زيارات هذا الأسبوع: ${week.length}`,
+      '',
+      `👥 أكثر الموظفين نشاطاً:`,
+      top3 || '  —',
+    ].filter(l => l !== null).join('\n');
+    const encoded = encodeURIComponent(msg);
+    Linking.openURL(`whatsapp://send?text=${encoded}`).catch(() => {
+      Linking.openURL(`https://wa.me/?text=${encoded}`);
+    });
+  };
+
   if (loading) {
     return (
       <View style={s.center}>
@@ -643,6 +706,8 @@ export default function ReportsScreen() {
         systemsCount={filteredSystems.length}
         stagesCount={stageCards.length}
         visitsCount={filteredVisits.length}
+        clientsCount={clientList.length}
+        empCount={empList.length}
       />
 
       {/* ════════════ SYSTEMS & STAGES: search + filters ════════════════════ */}
@@ -793,6 +858,148 @@ export default function ReportsScreen() {
         </>
       )}
 
+      {/* ════════════ CLIENTS TAB ════════════════════════════════════════════ */}
+      {tab === 'clients' && (
+        <ScrollView
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1565C0']} />}
+          contentContainerStyle={{ padding: 10, paddingBottom: 30 }}
+        >
+          {clientList.length === 0 && (
+            <View style={s.emptyWrap}><Ionicons name="business-outline" size={48} color="#ddd" /><Text style={s.emptyText}>لا يوجد عملاء</Text></View>
+          )}
+          {clientList.map((cl, i) => {
+            const totalSys  = cl.systems.length;
+            const completed = cl.systems.filter(s => (s.stageName || '').includes('✅')).length;
+            const stopped   = cl.systems.filter(s => s.isStopped).length;
+            const avgPct    = totalSys ? Math.round(cl.systems.reduce((a, s) => a + s.progressPct, 0) / totalSys) : 0;
+            const pctColor  = avgPct >= 80 ? '#2E7D32' : avgPct >= 50 ? '#1565C0' : '#E65100';
+            return (
+              <View key={i} style={s.clientCard}>
+                <View style={s.clientCardTop}>
+                  <View style={s.clientAvatarWrap}>
+                    <Text style={s.clientAvatarText}>{(cl.name || '?')[0]}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.clientName} numberOfLines={1}>{cl.name}</Text>
+                    <Text style={s.clientSub}>{totalSys} نظام</Text>
+                  </View>
+                  <Text style={[s.clientPct, { color: pctColor }]}>{avgPct}%</Text>
+                </View>
+                <View style={s.clientPctBar}>
+                  <View style={[s.clientPctFill, { width: `${avgPct}%`, backgroundColor: pctColor }]} />
+                </View>
+                <View style={s.clientStats}>
+                  <View style={s.clientStatItem}>
+                    <Ionicons name="checkmark-circle-outline" size={13} color="#2E7D32" />
+                    <Text style={[s.clientStatText, { color: '#2E7D32' }]}>{completed} منجز</Text>
+                  </View>
+                  {stopped > 0 && (
+                    <View style={s.clientStatItem}>
+                      <Ionicons name="warning-outline" size={13} color="#C62828" />
+                      <Text style={[s.clientStatText, { color: '#C62828' }]}>{stopped} متوقف</Text>
+                    </View>
+                  )}
+                  <View style={s.clientStatItem}>
+                    <Ionicons name="car-outline" size={13} color="#1565C0" />
+                    <Text style={[s.clientStatText, { color: '#1565C0' }]}>{cl.visitCount} زيارة</Text>
+                  </View>
+                  {cl.lastVisit ? (
+                    <View style={s.clientStatItem}>
+                      <Ionicons name="time-outline" size={13} color="#888" />
+                      <Text style={[s.clientStatText, { color: '#888' }]}>
+                        {new Date(cl.lastVisit).toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+                {/* System list */}
+                {cl.systems.map((sys, j) => (
+                  <TouchableOpacity key={j} style={s.clientSysRow} onPress={() => setSelectedSystem(sys)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.clientSysName} numberOfLines={1}>{sys.systemName}</Text>
+                    </View>
+                    <StageBadge name={sys.stageName} sortOrder={sys.sortOrder} />
+                    <ProgressMini pct={sys.progressPct} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {/* ════════════ PERFORMANCE TAB ════════════════════════════════════════ */}
+      {tab === 'perf' && (
+        <ScrollView
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1565C0']} />}
+          contentContainerStyle={{ padding: 10, paddingBottom: 30 }}
+        >
+          {/* WhatsApp share button */}
+          <TouchableOpacity style={s.waBtn} onPress={sendWhatsApp}>
+            <Ionicons name="logo-whatsapp" size={18} color="#fff" />
+            <Text style={s.waBtnText}>إرسال تقرير أسبوعي عبر واتساب</Text>
+          </TouchableOpacity>
+
+          {/* Summary chips */}
+          <View style={s.perfSummary}>
+            <View style={[s.perfChip, { backgroundColor: '#E3F2FD' }]}>
+              <Text style={[s.perfChipNum, { color: '#1565C0' }]}>{roleSystems.length}</Text>
+              <Text style={s.perfChipLabel}>نظام</Text>
+            </View>
+            <View style={[s.perfChip, { backgroundColor: '#E8F5E9' }]}>
+              <Text style={[s.perfChipNum, { color: '#2E7D32' }]}>{roleSystems.filter(s => (s.stageName||'').includes('✅')).length}</Text>
+              <Text style={s.perfChipLabel}>منجز</Text>
+            </View>
+            <View style={[s.perfChip, { backgroundColor: '#FFF3E0' }]}>
+              <Text style={[s.perfChipNum, { color: '#E65100' }]}>{filterByPeriod(roleVisits, 'week').length}</Text>
+              <Text style={s.perfChipLabel}>زيارة أسبوع</Text>
+            </View>
+            <View style={[s.perfChip, { backgroundColor: '#F3E5F5' }]}>
+              <Text style={[s.perfChipNum, { color: '#6A1B9A' }]}>{empList.length}</Text>
+              <Text style={s.perfChipLabel}>موظف</Text>
+            </View>
+          </View>
+
+          {empList.length === 0 && (
+            <View style={s.emptyWrap}><Ionicons name="people-outline" size={48} color="#ddd" /><Text style={s.emptyText}>لا يوجد موظفون</Text></View>
+          )}
+          {empList.map((e, i) => {
+            const avgPct = e.systems ? Math.round(e.totalPct / e.systems) : 0;
+            const pctColor = avgPct >= 80 ? '#2E7D32' : avgPct >= 50 ? '#1565C0' : '#E65100';
+            return (
+              <View key={i} style={s.empCard}>
+                <View style={s.empRank}>
+                  <Text style={s.empRankText}>{i + 1}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.empName} numberOfLines={1}>{e.name}</Text>
+                  <View style={s.empMetaRow}>
+                    <View style={s.empMeta}>
+                      <Ionicons name="layers-outline" size={11} color="#1565C0" />
+                      <Text style={[s.empMetaText, { color: '#1565C0' }]}>{e.systems} نظام</Text>
+                    </View>
+                    <View style={s.empMeta}>
+                      <Ionicons name="checkmark-circle-outline" size={11} color="#2E7D32" />
+                      <Text style={[s.empMetaText, { color: '#2E7D32' }]}>{e.completed} منجز</Text>
+                    </View>
+                    <View style={s.empMeta}>
+                      <Ionicons name="car-outline" size={11} color="#E65100" />
+                      <Text style={[s.empMetaText, { color: '#E65100' }]}>{e.visits} زيارة</Text>
+                    </View>
+                  </View>
+                  <View style={s.empPctRow}>
+                    <View style={s.empPctBar}>
+                      <View style={[s.empPctFill, { width: `${avgPct}%`, backgroundColor: pctColor }]} />
+                    </View>
+                    <Text style={[s.empPctLabel, { color: pctColor }]}>{avgPct}%</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       <SystemModal item={selectedSystem} onClose={() => setSelectedSystem(null)} />
       <VisitModal  item={selectedVisit}  onClose={() => setSelectedVisit(null)} />
@@ -937,4 +1144,39 @@ const s = StyleSheet.create({
   // Empty
   emptyWrap: { alignItems: 'center', paddingVertical: 60 },
   emptyText: { color: '#ccc', marginTop: 10, fontSize: 14 },
+
+  // Client progress tab
+  clientCard: { backgroundColor: '#fff', borderRadius: 14, marginBottom: 10, padding: 14, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
+  clientCardTop: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  clientAvatarWrap: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#1565C0', justifyContent: 'center', alignItems: 'center' },
+  clientAvatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  clientName: { fontSize: 15, fontWeight: '800', color: '#1a1a1a' },
+  clientSub:  { fontSize: 11, color: '#aaa', marginTop: 1 },
+  clientPct:  { fontSize: 22, fontWeight: '800' },
+  clientPctBar: { height: 4, backgroundColor: '#eee', borderRadius: 2, marginBottom: 10, overflow: 'hidden' },
+  clientPctFill: { height: 4, borderRadius: 2 },
+  clientStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  clientStatItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  clientStatText: { fontSize: 11, fontWeight: '700' },
+  clientSysRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderTopWidth: 1, borderTopColor: '#f5f5f5' },
+  clientSysName: { fontSize: 12, fontWeight: '600', color: '#333' },
+
+  // Performance tab
+  waBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#25D366', borderRadius: 12, padding: 13, marginBottom: 12 },
+  waBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  perfSummary: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  perfChip: { flex: 1, alignItems: 'center', borderRadius: 12, paddingVertical: 10 },
+  perfChipNum: { fontSize: 20, fontWeight: '800' },
+  perfChipLabel: { fontSize: 10, color: '#888', marginTop: 1 },
+  empCard: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, gap: 10, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
+  empRank: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#E3F2FD', justifyContent: 'center', alignItems: 'center' },
+  empRankText: { fontSize: 13, fontWeight: '800', color: '#1565C0' },
+  empName: { fontSize: 14, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
+  empMetaRow: { flexDirection: 'row', gap: 10, marginBottom: 6, flexWrap: 'wrap' },
+  empMeta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  empMetaText: { fontSize: 11, fontWeight: '600' },
+  empPctRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  empPctBar: { flex: 1, height: 4, backgroundColor: '#eee', borderRadius: 2, overflow: 'hidden' },
+  empPctFill: { height: 4, borderRadius: 2 },
+  empPctLabel: { fontSize: 11, fontWeight: '800', minWidth: 30, textAlign: 'right' },
 });

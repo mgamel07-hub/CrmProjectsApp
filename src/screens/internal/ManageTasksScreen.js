@@ -105,8 +105,10 @@ export default function ManageTasksScreen({ route, navigation }) {
     return true;
   });
 
+  const today = new Date().toISOString().split('T')[0];
   const pendingCount = tasks.filter(t => t.status === 'pending').length;
   const doneCount = tasks.filter(t => t.status === 'done').length;
+  const overdueCount = tasks.filter(t => t.status === 'pending' && t.due_date && t.due_date < today).length;
 
   const toggle = (task) => {
     if (task.status === 'pending') {
@@ -228,6 +230,21 @@ export default function ManageTasksScreen({ route, navigation }) {
             {!myRecord || myRecord.role === 'admin' ? ' — جميع الأعضاء' : myRecord.role === 'manager' ? ' — فريقك' : ''}
           </Text>
         </View>
+      )}
+
+      {/* Overdue alert banner */}
+      {overdueCount > 0 && (
+        <TouchableOpacity
+          style={styles.overdueBanner}
+          onPress={() => setStatusFilter('pending')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="alert-circle" size={16} color="#C62828" />
+          <Text style={styles.overdueText}>
+            {overdueCount} مهمة متأخرة — اضغط للعرض
+          </Text>
+          <Ionicons name="chevron-back" size={14} color="#C62828" />
+        </TouchableOpacity>
       )}
 
       {/* Stats */}
@@ -415,6 +432,8 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F5F7FA' },
   roleBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8 },
   roleBannerText: { fontSize: 12, fontWeight: '600', flex: 1 },
+  overdueBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFEBEE', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#FFCDD2' },
+  overdueText: { flex: 1, fontSize: 12, fontWeight: '700', color: '#C62828' },
   stats: { flexDirection: 'row', padding: 10, gap: 8 },
   statBox: {
     flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 10, alignItems: 'center',

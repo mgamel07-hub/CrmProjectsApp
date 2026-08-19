@@ -40,6 +40,7 @@ import TeamScheduleScreen          from './src/screens/internal/TeamScheduleScre
 import InternalNotificationsScreen from './src/screens/internal/InternalNotificationsScreen';
 import TeamSetupScreen             from './src/screens/internal/TeamSetupScreen';
 import ImplReportsScreen           from './src/screens/ImplReportsScreen';
+import ActivityFeedScreen          from './src/screens/internal/ActivityFeedScreen';
 
 I18nManager.forceRTL(true);
 
@@ -215,6 +216,11 @@ function AppNavigator() {
               name="ImplReports"
               component={ImplReportsScreen}
               options={{ title: 'تقارير التنفيذ' }}
+            />
+            <Stack.Screen
+              name="ActivityFeed"
+              component={ActivityFeedScreen}
+              options={{ title: 'سجل النشاط' }}
             />
           </>
         )}
