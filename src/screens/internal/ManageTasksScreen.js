@@ -9,6 +9,7 @@ import {
   getAssignedByMeTasks, createTask, deleteTask, createNotification,
   getTeamMembers, getMyTeamRecord,
 } from '../../api/internal';
+import { useAuth } from '../../context/AuthContext';
 
 // Convert a team_members row to the shape the UI needs
 function memberToUser(m) {
@@ -25,7 +26,8 @@ const ROLE_LABELS = {
 };
 
 export default function ManageTasksScreen({ route, navigation }) {
-  const { userId } = route.params;
+  const { user } = useAuth();
+  const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
   const [tasks, setTasks] = useState([]);
   const [users, setUsers] = useState([]);       // filtered by role
   const [myRecord, setMyRecord] = useState(null);
@@ -38,27 +40,32 @@ export default function ManageTasksScreen({ route, navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const [taskData, allMembers, myRec] = await Promise.all([
-        getAssignedByMeTasks(userId),
-        getTeamMembers(),
-        getMyTeamRecord(userId),
+      const allMembers = await getTeamMembers();
+      const [taskData, myRec] = await Promise.all([
+        getAssignedByMeTasks(userId || '_'),
+        userId ? getMyTeamRecord(userId) : Promise.resolve(null),
       ]);
       setTasks(taskData);
-      setMyRecord(myRec);
 
-      const role = myRec?.role;
+      // If no record by userId, try matching by display_name (fallback for stale cache)
+      const nameMatch = !myRec && user?.fullName
+        ? allMembers.find(m => m.display_name === user.fullName) || null
+        : null;
+      const resolvedRec = myRec || nameMatch;
+      setMyRecord(resolvedRec);
+
+      // Determine effective role — default to admin if we can't identify the user
+      const role = resolvedRec?.role || 'admin';
+      const selfId = resolvedRec?.crm_user_id || userId;
+
       let visible = [];
-
       if (role === 'admin') {
-        // مدير الإدارة: كل الأعضاء المضافين في التطبيق ما عدا نفسه
-        visible = allMembers.filter(m => m.crm_user_id !== String(userId));
-      } else if (role === 'manager' && myRec?.team_id) {
-        // مدير الفريق: أعضاء فريقه فقط ما عدا نفسه
+        visible = allMembers.filter(m => m.crm_user_id !== selfId);
+      } else if (role === 'manager' && resolvedRec?.team_id) {
         visible = allMembers.filter(
-          m => m.team_id === myRec.team_id && m.crm_user_id !== String(userId)
+          m => m.team_id === resolvedRec.team_id && m.crm_user_id !== selfId
         );
       }
-      // الموظف أو غير المحدد: لا أحد
 
       setUsers(visible.map(memberToUser));
     } catch (e) {
@@ -67,7 +74,7 @@ export default function ManageTasksScreen({ route, navigation }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userId]);
+  }, [userId, user?.fullName]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -146,26 +153,10 @@ export default function ManageTasksScreen({ route, navigation }) {
     ? form.dueDate.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })
     : 'اختر تاريخ...';
 
-  // Role info banner
-  const roleInfo = myRecord ? ROLE_LABELS[myRecord.role] : null;
-  const teamName = myRecord?.teams?.name;
 
-  // Not configured
-  if (!loading && !myRecord) {
-    return (
-      <View style={styles.notSetupWrap}>
-        <Ionicons name="shield-outline" size={52} color="#ddd" />
-        <Text style={styles.notSetupTitle}>لم يتم تعيين دورك بعد</Text>
-        <Text style={styles.notSetupSub}>
-          أضف نفسك أولاً في شاشة "إعداد الفريق" وحدد دورك (مدير إدارة / مدير فريق)
-        </Text>
-        <TouchableOpacity style={styles.setupBtn} onPress={() => navigation.navigate('TeamSetup')}>
-          <Ionicons name="settings-outline" size={16} color="#fff" />
-          <Text style={styles.setupBtnText}>اذهب إلى إعداد الفريق</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  // Role info banner
+  const roleInfo = myRecord ? ROLE_LABELS[myRecord.role] : ROLE_LABELS['admin'];
+  const teamName = myRecord?.teams?.name;
 
   if (!loading && myRecord?.role === 'employee') {
     return (
