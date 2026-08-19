@@ -41,8 +41,8 @@ export default function TeamHomeScreen({ navigation }) {
       onPress: () => navigation.navigate('MyTasks', { userId }),
     },
     {
-      title: 'إسناد مهام',
-      subtitle: 'أسند مهام لأعضاء الفريق',
+      title: 'متابعة المهام',
+      subtitle: 'إسناد ومتابعة مهام الفريق',
       icon: 'people-outline',
       color: '#6A1B9A',
       onPress: () => navigation.navigate('ManageTasks', { userId, allUsers }),

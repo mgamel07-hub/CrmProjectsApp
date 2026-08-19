@@ -139,6 +139,17 @@ export async function markTaskPending(taskId) {
   return data;
 }
 
+export async function updateTask(taskId, updates) {
+  const { data, error } = await supabase
+    .from('tasks')
+    .update(updates)
+    .eq('id', taskId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function deleteTask(taskId) {
   const { error } = await supabase.from('tasks').delete().eq('id', taskId);
   if (error) throw error;

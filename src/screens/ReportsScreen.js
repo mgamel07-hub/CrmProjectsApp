@@ -873,6 +873,28 @@ export default function ReportsScreen() {
             const stopped   = cl.systems.filter(s => s.isStopped).length;
             const avgPct    = totalSys ? Math.round(cl.systems.reduce((a, s) => a + s.progressPct, 0) / totalSys) : 0;
             const pctColor  = avgPct >= 80 ? '#2E7D32' : avgPct >= 50 ? '#1565C0' : '#E65100';
+            const daysSinceVisit = cl.lastVisit
+              ? Math.floor((Date.now() - new Date(cl.lastVisit).getTime()) / 86400000)
+              : null;
+            const unvisited = !cl.lastVisit || daysSinceVisit > 30;
+            const shareClient = async () => {
+              const sysLines = cl.systems.map(sys =>
+                `  • ${sys.systemName}: ${sys.stageName} (${Math.round(sys.progressPct)}%)`
+              ).join('\n');
+              const msg = [
+                `📋 تقرير عميل: ${cl.name}`,
+                `📅 ${new Date().toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+                '',
+                `🔵 الأنظمة: ${totalSys}  |  ✅ منجز: ${completed}  |  التقدم: ${avgPct}%`,
+                stopped ? `⛔ متوقف: ${stopped}` : null,
+                cl.visitCount ? `🚗 الزيارات: ${cl.visitCount}` : null,
+                cl.lastVisit ? `📆 آخر زيارة: ${new Date(cl.lastVisit).toLocaleDateString('ar-EG')}` : '⚠️ لا توجد زيارات مسجلة',
+                '',
+                'تفاصيل الأنظمة:',
+                sysLines,
+              ].filter(l => l !== null).join('\n');
+              try { await Share.share({ message: msg }); } catch (e) { /* user cancelled */ }
+            };
             return (
               <View key={i} style={s.clientCard}>
                 <View style={s.clientCardTop}>
@@ -884,7 +906,21 @@ export default function ReportsScreen() {
                     <Text style={s.clientSub}>{totalSys} نظام</Text>
                   </View>
                   <Text style={[s.clientPct, { color: pctColor }]}>{avgPct}%</Text>
+                  <TouchableOpacity onPress={shareClient} style={s.clientShareBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="share-social-outline" size={18} color="#1565C0" />
+                  </TouchableOpacity>
                 </View>
+                {/* Unvisited alert */}
+                {unvisited && (
+                  <View style={s.unvisitedBanner}>
+                    <Ionicons name="alert-circle-outline" size={12} color="#E65100" />
+                    <Text style={s.unvisitedText}>
+                      {cl.lastVisit
+                        ? `لم يُزَر منذ ${daysSinceVisit} يوم`
+                        : 'لا توجد زيارات مسجلة'}
+                    </Text>
+                  </View>
+                )}
                 <View style={s.clientPctBar}>
                   <View style={[s.clientPctFill, { width: `${avgPct}%`, backgroundColor: pctColor }]} />
                 </View>
@@ -1160,6 +1196,9 @@ const s = StyleSheet.create({
   clientStatText: { fontSize: 11, fontWeight: '700' },
   clientSysRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderTopWidth: 1, borderTopColor: '#f5f5f5' },
   clientSysName: { fontSize: 12, fontWeight: '600', color: '#333' },
+  clientShareBtn: { padding: 4, marginLeft: 6 },
+  unvisitedBanner: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FFF3E0', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, marginBottom: 6, alignSelf: 'flex-start' },
+  unvisitedText: { fontSize: 11, color: '#E65100', fontWeight: '700' },
 
   // Performance tab
   waBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#25D366', borderRadius: 12, padding: 13, marginBottom: 12 },

@@ -30,9 +30,13 @@ export default function MyTasksScreen({ route }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const today    = new Date().toISOString().split('T')[0];
+  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })();
   const filtered = tasks.filter(t => filter === 'all' ? true : t.status === filter);
   const pending = tasks.filter(t => t.status === 'pending').length;
   const done = tasks.filter(t => t.status === 'done').length;
+  const overdueCount  = tasks.filter(t => t.status === 'pending' && t.due_date && t.due_date < today).length;
+  const dueSoonCount  = tasks.filter(t => t.status === 'pending' && t.due_date && t.due_date >= today && t.due_date <= tomorrow).length;
 
   const toggle = (task) => {
     if (task.status === 'pending') {
@@ -101,6 +105,21 @@ export default function MyTasksScreen({ route }) {
 
   return (
     <View style={styles.root}>
+      {/* Overdue alert */}
+      {overdueCount > 0 && (
+        <TouchableOpacity style={styles.overdueBanner} onPress={() => setFilter('pending')} activeOpacity={0.8}>
+          <Ionicons name="alert-circle" size={15} color="#C62828" />
+          <Text style={styles.overdueText}>{overdueCount} مهمة متأخرة</Text>
+          <Ionicons name="chevron-back" size={13} color="#C62828" />
+        </TouchableOpacity>
+      )}
+      {/* Due soon alert */}
+      {dueSoonCount > 0 && (
+        <View style={styles.soonBanner}>
+          <Ionicons name="time-outline" size={15} color="#E65100" />
+          <Text style={styles.soonText}>{dueSoonCount} مهمة تستحق اليوم أو غداً</Text>
+        </View>
+      )}
       {/* Stats */}
       <View style={styles.stats}>
         <View style={styles.statBox}>
@@ -179,6 +198,10 @@ export default function MyTasksScreen({ route }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F5F7FA' },
+  overdueBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFEBEE', paddingHorizontal: 14, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#FFCDD2' },
+  overdueText: { flex: 1, fontSize: 12, fontWeight: '700', color: '#C62828' },
+  soonBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF3E0', paddingHorizontal: 14, paddingVertical: 7 },
+  soonText: { fontSize: 12, fontWeight: '700', color: '#E65100' },
   stats: { flexDirection: 'row', padding: 12, gap: 8 },
   statBox: {
     flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 12, alignItems: 'center',
