@@ -46,6 +46,9 @@ export default function ManageTasksScreen({ route, navigation }) {
   const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
+  // Completion notes modal
+  const [doneModal, setDoneModal] = useState({ visible: false, task: null, notes: '' });
+
   const load = useCallback(async () => {
     try {
       const members = await getTeamMembers();
@@ -105,10 +108,20 @@ export default function ManageTasksScreen({ route, navigation }) {
   const pendingCount = tasks.filter(t => t.status === 'pending').length;
   const doneCount = tasks.filter(t => t.status === 'done').length;
 
-  const toggle = async (task) => {
+  const toggle = (task) => {
+    if (task.status === 'pending') {
+      // Show notes modal before marking done
+      setDoneModal({ visible: true, task, notes: '' });
+    } else {
+      // Reopen: no notes needed
+      markTaskPending(task.id).then(load).catch(e => Alert.alert('خطأ', e.message));
+    }
+  };
+
+  const confirmDone = async () => {
     try {
-      if (task.status === 'pending') await markTaskDone(task.id);
-      else await markTaskPending(task.id);
+      await markTaskDone(doneModal.task.id, doneModal.notes.trim() || null);
+      setDoneModal({ visible: false, task: null, notes: '' });
       load();
     } catch (e) { Alert.alert('خطأ', e.message); }
   };
@@ -129,6 +142,7 @@ export default function ManageTasksScreen({ route, navigation }) {
 
   const save = async () => {
     if (!form.title.trim()) { Alert.alert('', 'أدخل عنوان المهمة'); return; }
+    if (!form.description.trim()) { Alert.alert('', 'الملاحظات إجبارية — أدخل تفاصيل المهمة'); return; }
     if (!form.assignedTo) { Alert.alert('', 'اختر موظفاً'); return; }
     setSaving(true);
     try {
@@ -292,6 +306,38 @@ export default function ManageTasksScreen({ route, navigation }) {
         />
       )}
 
+      {/* Completion notes modal */}
+      <Modal visible={doneModal.visible} transparent animationType="slide" onRequestClose={() => setDoneModal(s => ({ ...s, visible: false }))}>
+        <View style={styles.overlay}>
+          <View style={[styles.sheet, { paddingBottom: 30 }]}>
+            <Text style={styles.sheetTitle}>إغلاق المهمة</Text>
+            {doneModal.task && (
+              <Text style={{ fontSize: 13, color: '#555', marginBottom: 12, textAlign: 'center' }} numberOfLines={2}>
+                {doneModal.task.title}
+              </Text>
+            )}
+            <Text style={styles.label}>ملاحظات الإنجاز (اختياري)</Text>
+            <TextInput
+              style={[styles.input, { height: 80 }]}
+              multiline
+              placeholder="اكتب ملاحظات عن ما تم إنجازه..."
+              value={doneModal.notes}
+              onChangeText={v => setDoneModal(s => ({ ...s, notes: v }))}
+              autoFocus
+            />
+            <View style={styles.sheetBtns}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setDoneModal(s => ({ ...s, visible: false }))}>
+                <Text style={styles.cancelText}>إلغاء</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveBtn, { backgroundColor: '#388E3C' }]} onPress={confirmDone}>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                <Text style={[styles.saveText, { marginLeft: 4 }]}>إغلاق المهمة</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Create task modal */}
       <Modal visible={modal} transparent animationType="slide" onRequestClose={() => setModal(false)}>
         <View style={styles.overlay}>
@@ -302,8 +348,8 @@ export default function ManageTasksScreen({ route, navigation }) {
               <Text style={styles.label}>العنوان *</Text>
               <TextInput style={styles.input} placeholder="عنوان المهمة..." value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))} />
 
-              <Text style={styles.label}>التفاصيل</Text>
-              <TextInput style={[styles.input, { height: 60 }]} multiline placeholder="تفاصيل اختيارية..." value={form.description} onChangeText={v => setForm(f => ({ ...f, description: v }))} />
+              <Text style={styles.label}>الملاحظات *</Text>
+              <TextInput style={[styles.input, { height: 72 }]} multiline placeholder="اكتب ملاحظات وتفاصيل المهمة..." value={form.description} onChangeText={v => setForm(f => ({ ...f, description: v }))} />
 
               <Text style={styles.label}>تاريخ الاستحقاق (اختياري)</Text>
               <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>

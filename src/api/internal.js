@@ -117,10 +117,10 @@ export async function createTask(task) {
   return data;
 }
 
-export async function markTaskDone(taskId) {
+export async function markTaskDone(taskId, completionNotes = null) {
   const { data, error } = await supabase
     .from('tasks')
-    .update({ status: 'done', done_at: new Date().toISOString() })
+    .update({ status: 'done', done_at: new Date().toISOString(), completion_notes: completionNotes })
     .eq('id', taskId)
     .select()
     .single();

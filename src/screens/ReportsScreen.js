@@ -35,7 +35,7 @@ async function loadAllSystemsWithStages() {
         clientName: proj.customerName || '', projectId: proj.id,
         projectTitle: proj.title || '', progressPct: sc.progressPercent ?? 0,
         isStopped: proj.stopped ?? false,
-        employees: scopeUsers.length ? scopeUsers : projUsers,
+        employees: scopeUsers,   // scope-specific only; stage implementers added below
         projectUserIds: projUserIds,
       });
     }
@@ -63,14 +63,22 @@ async function loadAllSystemsWithStages() {
   });
 }
 
-async function loadVisits(projectIds) {
+async function loadVisits(projectIds, projectClientMap = {}) {
   if (!projectIds.length) return [];
-  const results = await Promise.allSettled(projectIds.map(id => api.get(`/PlanExecution/GetByFilter?projectId=${id}`)));
+  const results = await Promise.allSettled(
+    projectIds.map(id =>
+      api.get(`/PlanExecution/GetByFilter?projectId=${id}`).then(r => ({ r, id }))
+    )
+  );
   const all = [];
-  for (const r of results) {
-    if (r.status !== 'fulfilled') continue;
-    const list = r.value?.data?.data ?? r.value?.data ?? [];
-    if (Array.isArray(list)) all.push(...list);
+  for (const res of results) {
+    if (res.status !== 'fulfilled') continue;
+    const { r, id } = res.value;
+    const list = r?.data?.data ?? r?.data ?? [];
+    if (Array.isArray(list)) {
+      const clientName = projectClientMap[String(id)] || '';
+      all.push(...list.map(v => ({ ...v, _projectId: id, _clientName: clientName })));
+    }
   }
   return all;
 }
@@ -111,7 +119,7 @@ function groupVisits(visits, by) {
   const map = {};
   for (const v of visits) {
     const key = by === 'client'
-      ? (v.projectTitle || v.projectName || '—')
+      ? (v._clientName || v.customerName || v.projectTitle || v.projectName || '—')
       : (v.scopeName || v.productName || '—');
     if (!map[key]) map[key] = { title: key, data: [], count: 0 };
     map[key].data.push(v);
@@ -535,8 +543,13 @@ export default function ReportsScreen() {
       const data = await loadAllSystemsWithStages();
       setSystems(data);
       const projectIds = [...new Set(data.map(s => s.projectId))].filter(Boolean);
+      // Build projectId→clientName map so visits can be grouped by client
+      const clientMap = {};
+      for (const sys of data) {
+        if (sys.projectId) clientMap[String(sys.projectId)] = sys.clientName;
+      }
       setVisitsLoading(true);
-      loadVisits(projectIds).then(v => setVisits(v)).finally(() => setVisitsLoading(false));
+      loadVisits(projectIds, clientMap).then(v => setVisits(v)).finally(() => setVisitsLoading(false));
     } catch (e) {
       console.warn('ReportsScreen load error:', e?.message);
     } finally {

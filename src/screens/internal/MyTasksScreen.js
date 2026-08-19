@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, Alert,
-  RefreshControl, ActivityIndicator,
+  RefreshControl, ActivityIndicator, Modal, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getMyTasks, markTaskDone, markTaskPending, deleteTask } from '../../api/internal';
@@ -14,6 +14,7 @@ export default function MyTasksScreen({ route }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('pending'); // 'pending' | 'done' | 'all'
+  const [doneModal, setDoneModal] = useState({ visible: false, task: null, notes: '' });
 
   const load = useCallback(async () => {
     try {
@@ -33,17 +34,20 @@ export default function MyTasksScreen({ route }) {
   const pending = tasks.filter(t => t.status === 'pending').length;
   const done = tasks.filter(t => t.status === 'done').length;
 
-  const toggle = async (task) => {
-    try {
-      if (task.status === 'pending') {
-        await markTaskDone(task.id);
-      } else {
-        await markTaskPending(task.id);
-      }
-      load();
-    } catch (e) {
-      Alert.alert('خطأ', e.message);
+  const toggle = (task) => {
+    if (task.status === 'pending') {
+      setDoneModal({ visible: true, task, notes: '' });
+    } else {
+      markTaskPending(task.id).then(load).catch(e => Alert.alert('خطأ', e.message));
     }
+  };
+
+  const confirmDone = async () => {
+    try {
+      await markTaskDone(doneModal.task.id, doneModal.notes.trim() || null);
+      setDoneModal({ visible: false, task: null, notes: '' });
+      load();
+    } catch (e) { Alert.alert('خطأ', e.message); }
   };
 
   const del = (task) => {
@@ -65,6 +69,12 @@ export default function MyTasksScreen({ route }) {
         <View style={styles.taskBody}>
           <Text style={[styles.taskTitle, isDone && styles.doneText]}>{item.title}</Text>
           {item.description ? <Text style={styles.taskDesc} numberOfLines={2}>{item.description}</Text> : null}
+          {item.completion_notes ? (
+            <View style={styles.completionNoteBox}>
+              <Ionicons name="chatbubble-outline" size={11} color="#388E3C" />
+              <Text style={styles.completionNoteText} numberOfLines={2}>{item.completion_notes}</Text>
+            </View>
+          ) : null}
           <View style={styles.meta}>
             {item.due_date && (
               <View style={styles.metaChip}>
@@ -115,6 +125,36 @@ export default function MyTasksScreen({ route }) {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Completion notes modal */}
+      <Modal visible={doneModal.visible} transparent animationType="slide" onRequestClose={() => setDoneModal(s => ({ ...s, visible: false }))}>
+        <View style={styles.overlay}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>إغلاق المهمة</Text>
+            {doneModal.task && (
+              <Text style={styles.sheetTaskTitle} numberOfLines={2}>{doneModal.task.title}</Text>
+            )}
+            <Text style={styles.sheetLabel}>ملاحظات الإنجاز (اختياري)</Text>
+            <TextInput
+              style={styles.sheetInput}
+              multiline
+              placeholder="اكتب ما تم إنجازه..."
+              value={doneModal.notes}
+              onChangeText={v => setDoneModal(s => ({ ...s, notes: v }))}
+              autoFocus
+            />
+            <View style={styles.sheetBtns}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setDoneModal(s => ({ ...s, visible: false }))}>
+                <Text style={styles.cancelText}>إلغاء</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.doneBtn} onPress={confirmDone}>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                <Text style={styles.doneBtnText}>تأكيد الإنجاز</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color="#1565C0" size="large" />
@@ -174,4 +214,17 @@ const styles = StyleSheet.create({
   delBtn: { padding: 4, marginLeft: 6 },
   empty: { alignItems: 'center', paddingVertical: 60 },
   emptyText: { color: '#aaa', marginTop: 10, fontSize: 14 },
+  completionNoteBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginTop: 4, backgroundColor: '#E8F5E9', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  completionNoteText: { fontSize: 11, color: '#388E3C', flex: 1, lineHeight: 16 },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
+  sheetTitle: { fontSize: 16, fontWeight: '800', color: '#1a1a1a', marginBottom: 8, textAlign: 'center' },
+  sheetTaskTitle: { fontSize: 13, color: '#555', textAlign: 'center', marginBottom: 14, lineHeight: 20 },
+  sheetLabel: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 6 },
+  sheetInput: { backgroundColor: '#f5f5f5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 16, height: 80, textAlignVertical: 'top' },
+  sheetBtns: { flexDirection: 'row', gap: 10 },
+  cancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', alignItems: 'center' },
+  cancelText: { fontSize: 14, color: '#666', fontWeight: '600' },
+  doneBtn: { flex: 2, paddingVertical: 12, borderRadius: 10, backgroundColor: '#388E3C', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  doneBtnText: { fontSize: 14, color: '#fff', fontWeight: '700' },
 });
