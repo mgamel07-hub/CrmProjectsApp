@@ -5,9 +5,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getMyTasks, markTaskDone, markTaskPending, deleteTask } from '../../api/internal';
+import { useAuth } from '../../context/AuthContext';
 
 export default function MyTasksScreen({ route }) {
-  const { userId } = route.params;
+  const { user } = useAuth();
+  const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
