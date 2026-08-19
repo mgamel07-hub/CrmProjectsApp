@@ -75,6 +75,58 @@ export async function upsertOfficeReport(report) {
   return data;
 }
 
+// ── Daily Logs ────────────────────────────────────────────────────────────────
+
+export async function getMyDailyLogs(userId, date) {
+  const { data, error } = await supabase
+    .from('daily_logs')
+    .select('*')
+    .eq('crm_user_id', userId)
+    .eq('date', date)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getTeamDailyLogs(userIds, fromDate) {
+  const { data, error } = await supabase
+    .from('daily_logs')
+    .select('*')
+    .in('crm_user_id', userIds)
+    .gte('date', fromDate)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createDailyLog(log) {
+  const { data, error } = await supabase
+    .from('daily_logs')
+    .insert(log)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteDailyLog(id) {
+  const { error } = await supabase.from('daily_logs').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function getMyWeekStats(userId) {
+  const from = (() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split('T')[0]; })();
+  const [tasks, logs] = await Promise.all([
+    supabase.from('tasks').select('status,done_at,priority').eq('assigned_to', userId),
+    supabase.from('daily_logs').select('type,date').eq('crm_user_id', userId).gte('date', from),
+  ]);
+  return {
+    tasks:    tasks.data  || [],
+    logs:     logs.data   || [],
+    fromDate: from,
+  };
+}
+
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
 export async function getMyTasks(userId) {

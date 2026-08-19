@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useLang } from '../../context/LangContext';
 import { getMyTasks, getUnreadCount } from '../../api/internal';
+import { useInternalNotif } from '../../context/InternalNotifContext';
 import { getUsers } from '../../api/projects';
 import { extractList } from '../../utils/helpers';
 
@@ -13,6 +14,7 @@ export default function TeamHomeScreen({ navigation }) {
   const [pendingTasks, setPendingTasks] = useState(0);
   const [unread, setUnread] = useState(0);
   const [allUsers, setAllUsers] = useState([]);
+  const { unreadInt } = useInternalNotif() || {};
 
   useEffect(() => {
     const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
@@ -23,14 +25,22 @@ export default function TeamHomeScreen({ navigation }) {
   }, [user]);
 
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
+  const totalUnread = (unread || 0) + (unreadInt || 0);
 
   const cards = [
     {
-      title: 'جدولي الأسبوعي',
-      subtitle: 'خطط أسبوعك وسجّل زياراتك',
-      icon: 'calendar-outline',
+      title: 'داشبورد إنجازاتي',
+      subtitle: 'ملخص نشاطك ومهامك وأدائك',
+      icon: 'stats-chart-outline',
       color: '#1565C0',
-      onPress: () => navigation.navigate('WeeklySchedule', { userId }),
+      onPress: () => navigation.navigate('MyDashboard'),
+    },
+    {
+      title: 'نشاطي اليومي',
+      subtitle: 'سجّل زياراتك وبلاغاتك ومذاكرتك',
+      icon: 'clipboard-outline',
+      color: '#00695C',
+      onPress: () => navigation.navigate('DailyLog'),
     },
     {
       title: 'مهامي',
@@ -48,17 +58,24 @@ export default function TeamHomeScreen({ navigation }) {
       onPress: () => navigation.navigate('ManageTasks', { userId, allUsers }),
     },
     {
+      title: 'جدولي الأسبوعي',
+      subtitle: 'خطط أسبوعك وسجّل جدول الزيارات',
+      icon: 'calendar-outline',
+      color: '#0288D1',
+      onPress: () => navigation.navigate('WeeklySchedule', { userId }),
+    },
+    {
       title: 'جدول الفريق',
       subtitle: 'شوف جدول كل الفريق للأسبوع',
       icon: 'grid-outline',
-      color: '#00695C',
+      color: '#00838F',
       onPress: () => navigation.navigate('TeamSchedule', { userId, allUsers }),
     },
     {
       title: 'سجل النشاط',
       subtitle: 'مهام منجزة • زيارات • جداول الفريق',
       icon: 'pulse-outline',
-      color: '#0288D1',
+      color: '#5E35B1',
       onPress: () => navigation.navigate('ActivityFeed'),
     },
     {
@@ -74,10 +91,10 @@ export default function TeamHomeScreen({ navigation }) {
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <View style={styles.greeting}>
         <Text style={styles.greetingText}>أهلاً، {user?.fullName || 'مستخدم'}</Text>
-        {unread > 0 && (
+        {totalUnread > 0 && (
           <TouchableOpacity style={styles.notifBadge} onPress={() => navigation.navigate('InternalNotifications', { userId })}>
             <Ionicons name="notifications" size={18} color="#fff" />
-            <Text style={styles.notifCount}>{unread}</Text>
+            <Text style={styles.notifCount}>{totalUnread}</Text>
           </TouchableOpacity>
         )}
       </View>

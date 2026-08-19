@@ -41,6 +41,9 @@ import InternalNotificationsScreen from './src/screens/internal/InternalNotifica
 import TeamSetupScreen             from './src/screens/internal/TeamSetupScreen';
 import ImplReportsScreen           from './src/screens/ImplReportsScreen';
 import ActivityFeedScreen          from './src/screens/internal/ActivityFeedScreen';
+import DailyLogScreen              from './src/screens/internal/DailyLogScreen';
+import MyDashboardScreen           from './src/screens/internal/MyDashboardScreen';
+import { InternalNotifProvider }   from './src/context/InternalNotifContext';
 
 I18nManager.forceRTL(true);
 
@@ -222,6 +225,16 @@ function AppNavigator() {
               component={ActivityFeedScreen}
               options={{ title: 'سجل النشاط' }}
             />
+            <Stack.Screen
+              name="DailyLog"
+              component={DailyLogScreen}
+              options={{ title: 'نشاطي اليومي' }}
+            />
+            <Stack.Screen
+              name="MyDashboard"
+              component={MyDashboardScreen}
+              options={{ title: 'داشبورد إنجازاتي' }}
+            />
           </>
         )}
       </Stack.Navigator>
@@ -248,7 +261,9 @@ export default function App() {
       <AuthProvider>
         <RoleProvider>
           <NotificationsProvider>
-            <AppNavigator />
+            <InternalNotifProvider>
+              <AppNavigator />
+            </InternalNotifProvider>
           </NotificationsProvider>
         </RoleProvider>
       </AuthProvider>
