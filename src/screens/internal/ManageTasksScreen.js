@@ -6,17 +6,13 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  getAssignedByMeTasks, createTask, deleteTask, createNotification,
-  getTeamMembers, getMyTeamRecord,
+  getTeamTasks, createTask, deleteTask, markTaskDone, markTaskPending,
+  createNotification, getTeamMembers, getMyTeamRecord,
 } from '../../api/internal';
 import { useAuth } from '../../context/AuthContext';
 
-// Convert a team_members row to the shape the UI needs
 function memberToUser(m) {
-  return {
-    key: m.crm_user_id,
-    value: m.display_name || m.crm_user_id,
-  };
+  return { key: String(m.crm_user_id), value: m.display_name || String(m.crm_user_id) };
 }
 
 const ROLE_LABELS = {
@@ -28,11 +24,23 @@ const ROLE_LABELS = {
 export default function ManageTasksScreen({ route, navigation }) {
   const { user } = useAuth();
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
-  const [tasks, setTasks] = useState([]);
-  const [users, setUsers] = useState([]);       // filtered by role
+
+  // All team members (for display names)
+  const [allMembers, setAllMembers] = useState([]);
+  // Members the current user can assign to (role-filtered, excludes self)
+  const [assignableUsers, setAssignableUsers] = useState([]);
   const [myRecord, setMyRecord] = useState(null);
+
+  // Task list
+  const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Filters
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'done'
+  const [assigneeFilter, setAssigneeFilter] = useState(null); // crm_user_id string or null
+
+  // New task modal
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', assignedTo: null, dueDate: null });
   const [saving, setSaving] = useState(false);
@@ -40,34 +48,36 @@ export default function ManageTasksScreen({ route, navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const allMembers = await getTeamMembers();
-      const [taskData, myRec] = await Promise.all([
-        getAssignedByMeTasks(userId || '_'),
-        userId ? getMyTeamRecord(userId) : Promise.resolve(null),
-      ]);
-      setTasks(taskData);
+      const members = await getTeamMembers();
+      setAllMembers(members);
 
-      // If no record by userId, try matching by display_name (fallback for stale cache)
+      const myRec = userId ? await getMyTeamRecord(userId) : null;
       const nameMatch = !myRec && user?.fullName
-        ? allMembers.find(m => m.display_name === user.fullName) || null
+        ? members.find(m => m.display_name === user.fullName) || null
         : null;
       const resolvedRec = myRec || nameMatch;
       setMyRecord(resolvedRec);
 
-      // Determine effective role — default to admin if we can't identify the user
       const role = resolvedRec?.role || 'admin';
-      const selfId = resolvedRec?.crm_user_id || userId;
+      const selfId = resolvedRec?.crm_user_id ? String(resolvedRec.crm_user_id) : userId;
 
       let visible = [];
       if (role === 'admin') {
-        visible = allMembers.filter(m => m.crm_user_id !== selfId);
+        visible = members;
       } else if (role === 'manager' && resolvedRec?.team_id) {
-        visible = allMembers.filter(
-          m => m.team_id === resolvedRec.team_id && m.crm_user_id !== selfId
-        );
+        visible = members.filter(m => m.team_id === resolvedRec.team_id);
+      } else {
+        // employee: show all anyway for task visibility (manager can see them)
+        visible = members;
       }
 
-      setUsers(visible.map(memberToUser));
+      setAssignableUsers(visible.filter(m => String(m.crm_user_id) !== selfId).map(memberToUser));
+
+      // Fetch all tasks for visible members
+      const memberIds = visible.map(m => String(m.crm_user_id));
+      const allIds = selfId && !memberIds.includes(selfId) ? [selfId, ...memberIds] : memberIds;
+      const taskData = allIds.length ? await getTeamTasks(allIds) : [];
+      setTasks(taskData);
     } catch (e) {
       Alert.alert('خطأ', e.message);
     } finally {
@@ -77,6 +87,40 @@ export default function ManageTasksScreen({ route, navigation }) {
   }, [userId, user?.fullName]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Build name lookup
+  const nameOf = (id) => {
+    if (!id) return '—';
+    const m = allMembers.find(m => String(m.crm_user_id) === String(id));
+    return m ? (m.display_name || String(id)) : String(id);
+  };
+
+  // Filtered tasks
+  const filtered = tasks.filter(t => {
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+    if (assigneeFilter && String(t.assigned_to) !== assigneeFilter) return false;
+    return true;
+  });
+
+  const pendingCount = tasks.filter(t => t.status === 'pending').length;
+  const doneCount = tasks.filter(t => t.status === 'done').length;
+
+  const toggle = async (task) => {
+    try {
+      if (task.status === 'pending') await markTaskDone(task.id);
+      else await markTaskPending(task.id);
+      load();
+    } catch (e) { Alert.alert('خطأ', e.message); }
+  };
+
+  const del = (task) => {
+    Alert.alert('حذف', `حذف "${task.title}"؟`, [
+      { text: 'إلغاء', style: 'cancel' },
+      { text: 'حذف', style: 'destructive', onPress: async () => {
+        try { await deleteTask(task.id); load(); } catch (e) { Alert.alert('خطأ', e.message); }
+      }},
+    ]);
+  };
 
   const openModal = () => {
     setForm({ title: '', description: '', assignedTo: null, dueDate: null });
@@ -92,7 +136,7 @@ export default function ManageTasksScreen({ route, navigation }) {
       await createTask({
         title: form.title.trim(),
         description: form.description.trim() || null,
-        assigned_by: String(userId),
+        assigned_by: userId,
         assigned_to: form.assignedTo.key,
         due_date: dueDateStr,
       });
@@ -111,95 +155,138 @@ export default function ManageTasksScreen({ route, navigation }) {
     }
   };
 
-  const del = (task) => {
-    Alert.alert('حذف', `حذف "${task.title}"؟`, [
-      { text: 'إلغاء', style: 'cancel' },
-      { text: 'حذف', style: 'destructive', onPress: async () => {
-        try { await deleteTask(task.id); load(); } catch (e) { Alert.alert('خطأ', e.message); }
-      }},
-    ]);
-  };
-
-  const renderItem = ({ item }) => {
-    const isDone = item.status === 'done';
-    const assignedUser = users.find(u => u.key === item.assigned_to);
-    return (
-      <View style={styles.card}>
-        <View style={[styles.statusDot, { backgroundColor: isDone ? '#388E3C' : '#E65100' }]} />
-        <View style={styles.taskBody}>
-          <Text style={styles.taskTitle}>{item.title}</Text>
-          <View style={styles.metaRow}>
-            <Ionicons name="person-outline" size={11} color="#888" />
-            <Text style={styles.metaText}>{assignedUser?.value || item.assigned_to}</Text>
-            {item.due_date && <>
-              <Ionicons name="calendar-outline" size={11} color="#888" />
-              <Text style={styles.metaText}>{item.due_date}</Text>
-            </>}
-          </View>
-          <View style={[styles.statusBadge, { backgroundColor: isDone ? '#E8F5E9' : '#FFF3E0' }]}>
-            <Text style={{ fontSize: 11, color: isDone ? '#388E3C' : '#E65100', fontWeight: '600' }}>
-              {isDone ? 'منجزة' : 'معلقة'}
-            </Text>
-          </View>
-        </View>
-        <TouchableOpacity onPress={() => del(item)} style={styles.delBtn}>
-          <Ionicons name="trash-outline" size={18} color="#ccc" />
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
   const dueDateLabel = form.dueDate
     ? form.dueDate.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })
     : 'اختر تاريخ...';
 
-
-  // Role info banner
   const roleInfo = myRecord ? ROLE_LABELS[myRecord.role] : ROLE_LABELS['admin'];
   const teamName = myRecord?.teams?.name;
 
-  if (!loading && myRecord?.role === 'employee') {
+  const renderItem = ({ item }) => {
+    const isDone = item.status === 'done';
+    const isOverdue = !isDone && item.due_date && item.due_date < new Date().toISOString().split('T')[0];
     return (
-      <View style={styles.notSetupWrap}>
-        <Ionicons name="lock-closed-outline" size={52} color="#ddd" />
-        <Text style={styles.notSetupTitle}>لا تملك صلاحية إسناد مهام</Text>
-        <Text style={styles.notSetupSub}>صلاحية الإسناد متاحة لمديري الفرق ومديري الإدارة فقط</Text>
+      <View style={styles.card}>
+        <TouchableOpacity style={styles.checkBtn} onPress={() => toggle(item)}>
+          <View style={[styles.check, isDone && styles.checked]}>
+            {isDone && <Ionicons name="checkmark" size={14} color="#fff" />}
+          </View>
+        </TouchableOpacity>
+        <View style={styles.taskBody}>
+          <Text style={[styles.taskTitle, isDone && styles.doneTitle]} numberOfLines={2}>{item.title}</Text>
+          {item.description ? (
+            <Text style={styles.taskDesc} numberOfLines={1}>{item.description}</Text>
+          ) : null}
+          <View style={styles.metaRow}>
+            <View style={styles.metaChip}>
+              <Ionicons name="person-outline" size={10} color="#888" />
+              <Text style={styles.metaText}>{nameOf(item.assigned_to)}</Text>
+            </View>
+            {item.due_date && (
+              <View style={[styles.metaChip, isOverdue && { backgroundColor: '#FFEBEE' }]}>
+                <Ionicons name="calendar-outline" size={10} color={isOverdue ? '#C62828' : '#888'} />
+                <Text style={[styles.metaText, isOverdue && { color: '#C62828' }]}>{item.due_date}</Text>
+              </View>
+            )}
+            <View style={[styles.statusBadge, isDone ? styles.badgeDone : styles.badgePending]}>
+              <Text style={[styles.badgeText, { color: isDone ? '#388E3C' : '#E65100' }]}>
+                {isDone ? 'منجزة' : 'معلقة'}
+              </Text>
+            </View>
+          </View>
+        </View>
+        <TouchableOpacity onPress={() => del(item)} style={styles.delBtn}>
+          <Ionicons name="trash-outline" size={17} color="#ddd" />
+        </TouchableOpacity>
       </View>
     );
-  }
+  };
 
   return (
     <View style={styles.root}>
       {/* Role banner */}
       {roleInfo && (
         <View style={[styles.roleBanner, { backgroundColor: roleInfo.bg }]}>
-          <Ionicons name="information-circle-outline" size={14} color={roleInfo.color} />
+          <Ionicons name="shield-checkmark-outline" size={14} color={roleInfo.color} />
           <Text style={[styles.roleBannerText, { color: roleInfo.color }]}>
             {roleInfo.label}
             {myRecord?.role === 'manager' && teamName ? ` — ${teamName}` : ''}
-            {myRecord?.role === 'admin' ? ' — ترى جميع الأعضاء' : myRecord?.role === 'manager' ? ' — ترى فريقك فقط' : ''}
+            {!myRecord || myRecord.role === 'admin' ? ' — جميع الأعضاء' : myRecord.role === 'manager' ? ' — فريقك' : ''}
           </Text>
         </View>
       )}
 
-      <TouchableOpacity style={styles.addBtn} onPress={openModal}>
-        <Ionicons name="add-circle-outline" size={18} color="#fff" />
-        <Text style={styles.addText}>إسناد مهمة جديدة</Text>
-      </TouchableOpacity>
+      {/* Stats */}
+      <View style={styles.stats}>
+        <View style={styles.statBox}>
+          <Text style={styles.statNum}>{tasks.length}</Text>
+          <Text style={styles.statLabel}>الكل</Text>
+        </View>
+        <View style={[styles.statBox, { borderColor: '#E65100' }]}>
+          <Text style={[styles.statNum, { color: '#E65100' }]}>{pendingCount}</Text>
+          <Text style={styles.statLabel}>معلقة</Text>
+        </View>
+        <View style={[styles.statBox, { borderColor: '#388E3C' }]}>
+          <Text style={[styles.statNum, { color: '#388E3C' }]}>{doneCount}</Text>
+          <Text style={styles.statLabel}>منجزة</Text>
+        </View>
+        <TouchableOpacity style={[styles.statBox, styles.assignBox]} onPress={openModal}>
+          <Ionicons name="add-circle-outline" size={20} color="#6A1B9A" />
+          <Text style={[styles.statLabel, { color: '#6A1B9A', fontWeight: '700' }]}>إسناد</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Status filter tabs */}
+      <View style={styles.tabs}>
+        {[['all', 'الكل'], ['pending', 'معلقة'], ['done', 'منجزة']].map(([k, v]) => (
+          <TouchableOpacity key={k} style={[styles.tab, statusFilter === k && styles.activeTab]} onPress={() => setStatusFilter(k)}>
+            <Text style={[styles.tabText, statusFilter === k && styles.activeTabText]}>{v}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Assignee filter chips */}
+      {allMembers.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chipRow}>
+          <TouchableOpacity
+            style={[styles.chip, !assigneeFilter && styles.chipActive]}
+            onPress={() => setAssigneeFilter(null)}
+          >
+            <Text style={[styles.chipText, !assigneeFilter && styles.chipActiveText]}>الجميع</Text>
+          </TouchableOpacity>
+          {allMembers.map(m => {
+            const id = String(m.crm_user_id);
+            const active = assigneeFilter === id;
+            return (
+              <TouchableOpacity
+                key={id}
+                style={[styles.chip, active && styles.chipActive]}
+                onPress={() => setAssigneeFilter(active ? null : id)}
+              >
+                <Text style={[styles.chipText, active && styles.chipActiveText]} numberOfLines={1}>
+                  {m.display_name || id}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color="#1565C0" size="large" />
       ) : (
         <FlatList
-          data={tasks}
+          data={filtered}
           keyExtractor={i => i.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={['#1565C0']} />}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="people-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>لم تسند مهام بعد</Text>
+              <Ionicons name="checkmark-done-circle-outline" size={52} color="#ddd" />
+              <Text style={styles.emptyText}>
+                {tasks.length === 0 ? 'لا توجد مهام للفريق بعد' : 'لا توجد مهام بهذا الفلتر'}
+              </Text>
             </View>
           }
         />
@@ -210,7 +297,7 @@ export default function ManageTasksScreen({ route, navigation }) {
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.sheetScroll} keyboardShouldPersistTaps="handled">
             <View style={styles.sheet}>
-              <Text style={styles.sheetTitle}>إسناد مهمة</Text>
+              <Text style={styles.sheetTitle}>إسناد مهمة جديدة</Text>
 
               <Text style={styles.label}>العنوان *</Text>
               <TextInput style={styles.input} placeholder="عنوان المهمة..." value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))} />
@@ -237,9 +324,7 @@ export default function ManageTasksScreen({ route, navigation }) {
                   minimumDate={new Date()}
                   onChange={(event, selectedDate) => {
                     setShowDatePicker(Platform.OS === 'ios');
-                    if (event.type !== 'dismissed' && selectedDate) {
-                      setForm(f => ({ ...f, dueDate: selectedDate }));
-                    }
+                    if (event.type !== 'dismissed' && selectedDate) setForm(f => ({ ...f, dueDate: selectedDate }));
                     if (Platform.OS === 'android') setShowDatePicker(false);
                   }}
                 />
@@ -247,24 +332,16 @@ export default function ManageTasksScreen({ route, navigation }) {
 
               <Text style={styles.label}>
                 إسناد إلى *
-                {users.length === 0 && !loading ? '  (لا يوجد أعضاء في فريقك)' : ''}
+                {assignableUsers.length === 0 ? '  (لا يوجد أعضاء)' : ''}
               </Text>
-              {users.length === 0 ? (
-                <Text style={styles.noUsersText}>
-                  {myRecord?.role === 'manager'
-                    ? 'لا يوجد أعضاء في فريقك — أضف أعضاء من شاشة "إعداد الفريق"'
-                    : 'لا يوجد أعضاء مضافون في التطبيق بعد'}
-                </Text>
+              {assignableUsers.length === 0 ? (
+                <Text style={styles.noUsersText}>لا يوجد أعضاء مضافون — أضف أعضاء من "إعداد الفريق"</Text>
               ) : (
                 <View style={styles.userList}>
-                  {users.map((u) => {
+                  {assignableUsers.map((u) => {
                     const selected = form.assignedTo?.key === u.key;
                     return (
-                      <TouchableOpacity
-                        key={u.key}
-                        style={[styles.userChip, selected && styles.userChipSelected]}
-                        onPress={() => setForm(f => ({ ...f, assignedTo: u }))}
-                      >
+                      <TouchableOpacity key={u.key} style={[styles.userChip, selected && styles.userChipSelected]} onPress={() => setForm(f => ({ ...f, assignedTo: u }))}>
                         <Text style={[styles.userChipText, selected && { color: '#fff' }]}>{u.value}</Text>
                       </TouchableOpacity>
                     );
@@ -290,41 +367,59 @@ export default function ManageTasksScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F5F7FA' },
-  roleBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10 },
+  roleBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8 },
   roleBannerText: { fontSize: 12, fontWeight: '600', flex: 1 },
-  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 12, backgroundColor: '#6A1B9A', borderRadius: 10, padding: 14, justifyContent: 'center' },
-  addText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  stats: { flexDirection: 'row', padding: 10, gap: 8 },
+  statBox: {
+    flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 10, alignItems: 'center',
+    borderWidth: 1.5, borderColor: '#1565C0', elevation: 1,
+  },
+  statNum: { fontSize: 20, fontWeight: '800', color: '#1565C0' },
+  statLabel: { fontSize: 10, color: '#888', marginTop: 1 },
+  assignBox: { borderColor: '#6A1B9A', justifyContent: 'center', gap: 2 },
+  tabs: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#eee' },
+  tab: { flex: 1, paddingVertical: 11, alignItems: 'center' },
+  activeTab: { borderBottomWidth: 2, borderBottomColor: '#1565C0' },
+  tabText: { fontSize: 13, color: '#888', fontWeight: '600' },
+  activeTabText: { color: '#1565C0' },
+  chipScroll: { maxHeight: 46, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f0f0f0' },
+  chipRow: { flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 8, gap: 6 },
+  chip: { paddingHorizontal: 12, paddingVertical: 5, backgroundColor: '#f0f0f0', borderRadius: 16, borderWidth: 1, borderColor: '#e0e0e0' },
+  chipActive: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  chipText: { fontSize: 12, color: '#555', fontWeight: '600' },
+  chipActiveText: { color: '#fff' },
   list: { padding: 12, paddingBottom: 32, gap: 8 },
   card: {
     flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#fff', borderRadius: 12, padding: 14,
     elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3,
   },
-  statusDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4, marginRight: 10 },
+  checkBtn: { marginRight: 12, marginTop: 2 },
+  check: {
+    width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#1565C0',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  checked: { backgroundColor: '#388E3C', borderColor: '#388E3C' },
   taskBody: { flex: 1 },
   taskTitle: { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4, flexWrap: 'wrap' },
-  metaText: { fontSize: 11, color: '#888' },
-  statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginTop: 6 },
-  delBtn: { padding: 4, marginLeft: 6 },
+  doneTitle: { textDecorationLine: 'line-through', color: '#aaa' },
+  taskDesc: { fontSize: 12, color: '#888', marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, flexWrap: 'wrap' },
+  metaChip: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#f3f3f3', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10 },
+  metaText: { fontSize: 10, color: '#888' },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  badgePending: { backgroundColor: '#FFF3E0' },
+  badgeDone: { backgroundColor: '#E8F5E9' },
+  badgeText: { fontSize: 10, fontWeight: '700' },
+  delBtn: { padding: 4, marginLeft: 4 },
   empty: { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { color: '#aaa', marginTop: 10, fontSize: 14 },
-  notSetupWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 12 },
-  notSetupTitle: { fontSize: 16, fontWeight: '800', color: '#555', textAlign: 'center' },
-  notSetupSub: { fontSize: 13, color: '#aaa', textAlign: 'center', lineHeight: 20 },
-  setupBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#6A1B9A', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12, marginTop: 8 },
-  setupBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  // Modal
+  emptyText: { color: '#aaa', marginTop: 10, fontSize: 14, textAlign: 'center' },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheetScroll: { justifyContent: 'flex-end', flexGrow: 1 },
   sheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
   sheetTitle: { fontSize: 16, fontWeight: '800', color: '#1a1a1a', marginBottom: 16, textAlign: 'center' },
   label: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 6 },
   input: { backgroundColor: '#f5f5f5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 14 },
-  dateBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#f5f5f5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12,
-    marginBottom: 14,
-  },
+  dateBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f5f5f5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, marginBottom: 14 },
   dateBtnText: { flex: 1, fontSize: 14, color: '#aaa' },
   noUsersText: { fontSize: 13, color: '#aaa', marginBottom: 14, fontStyle: 'italic', lineHeight: 20 },
   userList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },

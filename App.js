@@ -194,7 +194,7 @@ function AppNavigator() {
             <Stack.Screen
               name="ManageTasks"
               component={ManageTasksScreen}
-              options={{ title: 'إسناد مهام' }}
+              options={{ title: 'متابعة مهام الفريق' }}
             />
             <Stack.Screen
               name="TeamSchedule"
