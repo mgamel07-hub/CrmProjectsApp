@@ -3,9 +3,8 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getTeamWeekSchedule } from '../../api/internal';
-import { getUsers } from '../../api/projects';
-import { extractList } from '../../utils/helpers';
+import { getTeamWeekSchedule, getTeamMembers } from '../../api/internal';
+import { useRole } from '../../context/RoleContext';
 
 const DAYS_SHORT = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمس', 'جمع', 'سبت'];
 const TYPE_COLORS = { visit: '#1565C0', office: '#388E3C', vacation: '#E65100' };
@@ -25,7 +24,7 @@ function getWeekDates(offset = 0) {
 function fmt(date) { return date.toISOString().split('T')[0]; }
 
 export default function TeamScheduleScreen({ route }) {
-  const { userId } = route.params;
+  const { visibleCrmIds } = useRole();
   const [weekOffset, setWeekOffset] = useState(0);
   const [days, setDays] = useState([]);
   const [users, setUsers] = useState([]);
@@ -37,25 +36,31 @@ export default function TeamScheduleScreen({ route }) {
     const week = getWeekDates(weekOffset);
     setDays(week);
     try {
-      const userRes = await getUsers().catch(() => null);
-      const userList = userRes ? (extractList(userRes) || []) : [];
+      const members = await getTeamMembers();
+      // Apply role-based filtering: managers/employees see only their slice
+      const filtered = visibleCrmIds
+        ? members.filter(function(m) { return visibleCrmIds.includes(String(m.crm_user_id)); })
+        : members;
+      const userList = filtered.map(function(m) {
+        return { id: m.crm_user_id, fullName: m.display_name || String(m.crm_user_id) };
+      });
       setUsers(userList);
       if (userList.length) {
-        const ids = userList.map(u => String(u.id || u.userId));
+        const ids = userList.map(function(u) { return String(u.id); });
         const data = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));
         setEntries(data);
       }
     } catch (e) {
-      Alert.alert('خطأ', e.message);
+      Alert.alert('خطأ', e.message || 'حدث خطأ');
     } finally {
       setLoading(false);
     }
-  }, [weekOffset]);
+  }, [weekOffset, visibleCrmIds]);
 
   useEffect(() => { load(); }, [load]);
 
-  const getEntry = (userId, dateStr) =>
-    entries.find(e => String(e.crm_user_id) === String(userId) && e.date === dateStr);
+  const getEntry = (uid, dateStr) =>
+    entries.find(e => String(e.crm_user_id) === String(uid) && e.date === dateStr);
 
   const weekLabel = () => {
     if (!days.length) return '';

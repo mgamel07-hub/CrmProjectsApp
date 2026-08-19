@@ -450,6 +450,7 @@ export default function ImplReportsScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [sortDesc, setSortDesc]       = useState(false);
   const [selectedSystem, setSelectedSystem] = useState(null);
+  const [empSearch, setEmpSearch]           = useState('');
 
   // Date filter states
   const [dateMode,    setDateMode]    = useState(null);
@@ -518,24 +519,25 @@ export default function ImplReportsScreen() {
       if (stageFilter  && s.stageName  !== stageFilter)  return false;
       if (clientFilter && s.clientName !== clientFilter)  return false;
       if (empFilter    && !(s.employees ?? []).includes(empFilter)) return false;
-      // Date filter: use currentStage.startedOn or any completed stage's date
       if (filterFrom || filterTo) {
         const dateRef = s.currentStage?.startedOn
           || (s.allStages ?? []).find(st => st.startedOn)?.startedOn;
         if (!inDateRange(dateRef, filterFrom, filterTo)) return false;
       }
       if (search) {
-        const q = search.toLowerCase();
-        return s.clientName.toLowerCase().includes(q) || s.systemName.toLowerCase().includes(q);
+        const q = search.trim().toLowerCase();
+        if (!q) return true;
+        return (s.clientName || '').toLowerCase().includes(q)
+            || (s.systemName || '').toLowerCase().includes(q);
       }
       return true;
     })
     .sort((a, b) => sortDesc ? b.progressPct - a.progressPct : a.progressPct - b.progressPct);
 
-  const clearAllFilters = () => { setStageFilter(null); setClientFilter(null); setEmpFilter(null); };
+  const clearAllFilters = () => { setStageFilter(null); setClientFilter(null); setEmpFilter(null); setEmpSearch(''); };
 
-  // Stage cards: group by stageName
-  const stageGroups = roleSystems.reduce((acc, s) => {
+  // Stage cards — from filteredSystems so search/filters apply here too
+  const stageGroups = filteredSystems.reduce((acc, s) => {
     const key = s.stageName;
     if (!acc[key]) acc[key] = { name: key, sortOrder: s.sortOrder, count: 0 };
     acc[key].count++;
@@ -664,17 +666,28 @@ export default function ImplReportsScreen() {
               {uniqueEmployees.length > 0 && (
                 <>
                   <Text style={st.filterGroupLabel}>الموظف</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={st.filterRow}>
+                  {uniqueEmployees.length > 5 && (
+                    <TextInput
+                      style={st.empSearchInput}
+                      placeholder="ابحث باسم الموظف..."
+                      placeholderTextColor="#bbb"
+                      value={empSearch}
+                      onChangeText={setEmpSearch}
+                    />
+                  )}
+                  <View style={st.empGrid}>
                     <TouchableOpacity style={[st.chip, !empFilter && st.chipActive]} onPress={() => setEmpFilter(null)}>
                       <Text style={[st.chipText, !empFilter && st.chipTextActive]}>الكل</Text>
                     </TouchableOpacity>
-                    {uniqueEmployees.map(name => (
-                      <TouchableOpacity key={name} style={[st.chip, empFilter === name && { backgroundColor: '#6A1B9A', borderColor: '#6A1B9A' }]}
-                        onPress={() => setEmpFilter(empFilter === name ? null : name)}>
-                        <Text style={[st.chipText, empFilter === name && { color: '#fff' }]}>{name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                    {uniqueEmployees
+                      .filter(n => !empSearch.trim() || n.includes(empSearch.trim()))
+                      .map(name => (
+                        <TouchableOpacity key={name} style={[st.chip, empFilter === name && { backgroundColor: '#6A1B9A', borderColor: '#6A1B9A' }]}
+                          onPress={() => { setEmpFilter(empFilter === name ? null : name); setEmpSearch(''); }}>
+                          <Text style={[st.chipText, empFilter === name && { color: '#fff' }]}>{name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                  </View>
                 </>
               )}
             </View>
@@ -709,9 +722,9 @@ export default function ImplReportsScreen() {
             ))}
           </View>
 
-          {/* Systems under each stage as collapsible list */}
+          {/* Systems under each stage */}
           {stageCards.map(card => {
-            const items = systems.filter(s => s.stageName === card.name);
+            const items = filteredSystems.filter(s => s.stageName === card.name);
             const color = stageColor(card.sortOrder, card.name);
             const short = (card.name || '').replace(/ (Call|✅|⛔)$/i,'').trim();
             return (
@@ -823,6 +836,11 @@ const st = StyleSheet.create({
     elevation: 2, shadowColor: '#000', shadowOffset:{width:0,height:1}, shadowOpacity:0.07, shadowRadius:4,
   },
   filterGroupLabel: { fontSize: 11, color: '#999', fontWeight: '700', paddingHorizontal: 12, marginBottom: 4, marginTop: 4 },
+  empGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 12, paddingBottom: 6 },
+  empSearchInput: {
+    marginHorizontal: 12, marginBottom: 6, backgroundColor: '#f5f5f5', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 7, fontSize: 13,
+  },
 
   sysRow: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
