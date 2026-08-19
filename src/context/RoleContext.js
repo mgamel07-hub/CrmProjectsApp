@@ -21,7 +21,7 @@ export function RoleProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
-    const uid = user && (user.userId || user.UserId || user.id);
+    const uid = user && (user.userId != null ? user.userId : (user.UserId != null ? user.UserId : user.id));
     if (!uid) return;
 
     setLoading(true);

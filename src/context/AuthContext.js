@@ -41,7 +41,7 @@ function parseProfile(raw) {
     isAdmin:   !!(d.isAdmin || d.IsAdmin  || d.isSuperAdmin || false),
     isManager: !!(d.isManager || d.IsManager || false),
     avatar:    d.photo     || d.Photo     || d.avatar    || d.Avatar    || d.profileImage || d.profilePicture || '',
-    userId:    d.userId    || d.UserId    || d.id          || '',
+    userId:    d.userId    ?? d.UserId    ?? d.id          ?? '',
   };
 }
 

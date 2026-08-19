@@ -15,14 +15,14 @@ export default function TeamHomeScreen({ navigation }) {
   const [allUsers, setAllUsers] = useState([]);
 
   useEffect(() => {
-    const userId = String(user?.userId || user?.id || '');
+    const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
     if (!userId) return;
     getMyTasks(userId).then(tasks => setPendingTasks(tasks.filter(t => t.status === 'pending').length)).catch(() => {});
     getUnreadCount(userId).then(setUnread).catch(() => {});
     getUsers().then(res => setAllUsers(extractList(res) || [])).catch(() => {});
   }, [user]);
 
-  const userId = String(user?.userId || user?.id || '');
+  const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
 
   const cards = [
     {
