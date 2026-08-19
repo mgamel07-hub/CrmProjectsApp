@@ -1,20 +1,16 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  ActivityIndicator, Alert,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getTeamWeekSchedule, getTeamMembers } from '../../api/internal';
 import { useRole } from '../../context/RoleContext';
 
-const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const DAYS_SHORT = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمس', 'جمع', 'سبت'];
-
-const TYPE_META = {
-  visit:    { label: 'زيارة',  color: '#1565C0', bg: '#E3F2FD', icon: 'car-outline' },
-  office:   { label: 'مكتب',   color: '#2E7D32', bg: '#E8F5E9', icon: 'business-outline' },
-  vacation: { label: 'إجازة',  color: '#E65100', bg: '#FFF3E0', icon: 'sunny-outline' },
-};
+const TYPE_COLORS = { visit: '#1565C0', office: '#388E3C', vacation: '#E65100' };
+const TYPE_LABELS = { visit: 'زيارة', office: 'مكتب', vacation: 'إجازة' };
+const TYPE_SHORT  = { visit: 'ز', office: 'م', vacation: 'إ' };
+const TYPE_ICONS  = { visit: 'car-outline', office: 'business-outline', vacation: 'umbrella-outline' };
 
 function getWeekDates(offset = 0) {
   const now = new Date();
@@ -29,54 +25,32 @@ function getWeekDates(offset = 0) {
 
 function fmt(date) { return date.toISOString().split('T')[0]; }
 
-function isToday(date) {
-  return fmt(date) === fmt(new Date());
-}
-
-// Avatar initials
-function Avatar({ name, size = 28 }) {
-  const initials = (name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-  return (
-    <View style={[avatarStyle.wrap, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Text style={[avatarStyle.text, { fontSize: size * 0.38 }]}>{initials}</Text>
-    </View>
-  );
-}
-const avatarStyle = StyleSheet.create({
-  wrap: { backgroundColor: '#1565C0', justifyContent: 'center', alignItems: 'center' },
-  text: { color: '#fff', fontWeight: '800' },
-});
+const todayStr = new Date().toISOString().split('T')[0];
 
 export default function TeamScheduleScreen() {
   const { visibleCrmIds } = useRole();
-  const [weekOffset, setWeekOffset]   = useState(0);
-  const [days, setDays]               = useState([]);
-  const [users, setUsers]             = useState([]);
-  const [entries, setEntries]         = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [selectedDay, setSelectedDay] = useState(null); // fmt string of focused day
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [days,       setDays]       = useState([]);
+  const [users,      setUsers]      = useState([]);
+  const [entries,    setEntries]    = useState([]);
+  const [loading,    setLoading]    = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     const week = getWeekDates(weekOffset);
     setDays(week);
-    // Default selected day = today if in this week, else first day
-    const todayStr = fmt(new Date());
-    const todayInWeek = week.find(d => fmt(d) === todayStr);
-    setSelectedDay(fmt(todayInWeek || week[0]));
     try {
       const members = await getTeamMembers();
-      // Only filter if visibleCrmIds has actual entries (empty array ≠ null)
       const filtered = visibleCrmIds && visibleCrmIds.length > 0
         ? members.filter(m => visibleCrmIds.includes(String(m.crm_user_id)))
         : members;
       const userList = filtered.map(m => ({
-        id: String(m.crm_user_id),
+        id:       m.crm_user_id,
         fullName: m.display_name || String(m.crm_user_id),
       }));
       setUsers(userList);
       if (userList.length) {
-        const ids = userList.map(u => u.id);
+        const ids  = userList.map(u => String(u.id));
         const data = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));
         setEntries(data);
       }
@@ -94,206 +68,181 @@ export default function TeamScheduleScreen() {
 
   const weekLabel = () => {
     if (!days.length) return '';
-    const s = days[0].toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' });
-    const e = days[6].toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' });
+    const s = days[0].toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
+    const e = days[6].toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' });
     return `${s} – ${e}`;
   };
 
-  // Stats for the selected day
-  const selectedEntries = entries.filter(e => e.date === selectedDay);
-  const typeCounts = selectedEntries.reduce((acc, e) => {
-    acc[e.type] = (acc[e.type] || 0) + 1;
+  // Summary: count per type this week
+  const summary = Object.keys(TYPE_COLORS).reduce((acc, t) => {
+    acc[t] = entries.filter(e => e.type === t).length;
     return acc;
   }, {});
 
   return (
-    <View style={s.root}>
-      {/* ── Week navigator ─────────────────────────────────────────── */}
-      <View style={s.nav}>
-        <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={s.navBtn}>
-          <Ionicons name="chevron-forward" size={22} color="#1565C0" />
+    <View style={styles.root}>
+      {/* Week navigator */}
+      <View style={styles.nav}>
+        <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={styles.navBtn}>
+          <Ionicons name="chevron-back" size={26} color="#1565C0" />
         </TouchableOpacity>
         <View style={{ alignItems: 'center' }}>
-          <Text style={s.navLabel}>{weekLabel()}</Text>
-          {weekOffset !== 0 && (
-            <TouchableOpacity onPress={() => setWeekOffset(0)}>
-              <Text style={s.todayLink}>العودة للأسبوع الحالي</Text>
-            </TouchableOpacity>
-          )}
+          <Text style={styles.navLabel}>{weekLabel()}</Text>
+          {weekOffset === 0 && <Text style={styles.navSub}>الأسبوع الحالي</Text>}
         </View>
-        <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={s.navBtn}>
-          <Ionicons name="chevron-back" size={22} color="#1565C0" />
+        <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={styles.navBtn}>
+          <Ionicons name="chevron-forward" size={26} color="#1565C0" />
         </TouchableOpacity>
+      </View>
+
+      {/* Summary chips */}
+      <View style={styles.summaryRow}>
+        {Object.entries(TYPE_COLORS).map(([k, c]) => (
+          <View key={k} style={[styles.summaryChip, { borderColor: c + '44', backgroundColor: c + '12' }]}>
+            <Ionicons name={TYPE_ICONS[k]} size={13} color={c} />
+            <Text style={[styles.summaryChipText, { color: c }]}>{summary[k]}</Text>
+            <Text style={[styles.summaryChipLabel, { color: c }]}>{TYPE_LABELS[k]}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Legend */}
+      <View style={styles.legend}>
+        {Object.entries(TYPE_COLORS).map(([k, c]) => (
+          <View key={k} style={styles.legendItem}>
+            <View style={[styles.legendCell, { backgroundColor: c }]}>
+              <Text style={styles.legendCellText}>{TYPE_SHORT[k]}</Text>
+            </View>
+            <Text style={styles.legendText}>{TYPE_LABELS[k]}</Text>
+          </View>
+        ))}
       </View>
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} color="#1565C0" size="large" />
+      ) : users.length === 0 ? (
+        <View style={styles.empty}>
+          <Ionicons name="people-outline" size={56} color="#ddd" />
+          <Text style={styles.emptyText}>لا يوجد أعضاء في الفريق</Text>
+        </View>
       ) : (
-        <>
-          {/* ── Day picker (calendar header) ───────────────────────── */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            style={s.dayPicker} contentContainerStyle={s.dayPickerContent}>
-            {days.map((d, i) => {
-              const dateStr = fmt(d);
-              const today   = isToday(d);
-              const active  = selectedDay === dateStr;
-              const dayEntries = entries.filter(e => e.date === dateStr);
-              const hasDots = dayEntries.length > 0;
-              return (
-                <TouchableOpacity
-                  key={i}
-                  style={[s.dayBtn, active && s.dayBtnActive, today && !active && s.dayBtnToday]}
-                  onPress={() => setSelectedDay(dateStr)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[s.dayName, active && s.dayTextActive]}>{DAYS_SHORT[d.getDay()]}</Text>
-                  <Text style={[s.dayNum, active && s.dayTextActive, today && !active && { color: '#1565C0', fontWeight: '800' }]}>
-                    {d.getDate()}
-                  </Text>
-                  {/* Dot indicators per type */}
-                  <View style={s.dotRow}>
-                    {Object.keys(TYPE_META).map(type => {
-                      const count = dayEntries.filter(e => e.type === type).length;
-                      if (!count) return null;
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View>
+            {/* Header row */}
+            <View style={styles.headerRow}>
+              <View style={styles.nameCol}>
+                <Text style={styles.headerCell}>الموظف</Text>
+              </View>
+              {days.map((d, i) => {
+                const isToday = fmt(d) === todayStr;
+                return (
+                  <View key={i} style={[styles.dayCol, isToday && styles.todayCol]}>
+                    <Text style={[styles.headerCell, isToday && styles.todayHeaderText]}>
+                      {DAYS_SHORT[d.getDay()]}
+                    </Text>
+                    <Text style={[styles.headerDate, isToday && styles.todayHeaderDate]}>
+                      {d.getDate()}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* User rows */}
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {users.map((u, ui) => {
+                const uid  = u.id;
+                const name = u.fullName || String(uid);
+                return (
+                  <View key={uid != null ? String(uid) : `u-${ui}`} style={[styles.userRow, ui % 2 === 1 && styles.userRowAlt]}>
+                    <View style={styles.nameCol}>
+                      <View style={styles.avatarWrap}>
+                        <Text style={styles.avatarText}>{(name || '?')[0]}</Text>
+                      </View>
+                      <Text style={styles.userName} numberOfLines={1}>{name}</Text>
+                    </View>
+                    {days.map((d, di) => {
+                      const dateStr = fmt(d);
+                      const entry   = getEntry(uid, dateStr);
+                      const isToday = dateStr === todayStr;
                       return (
-                        <View key={type} style={[s.dot, { backgroundColor: active ? 'rgba(255,255,255,0.8)' : TYPE_META[type].color }]} />
+                        <View key={`${ui}-${di}`} style={[styles.dayCol, isToday && styles.todayDayCol]}>
+                          {entry ? (
+                            <View style={[styles.cell, { backgroundColor: TYPE_COLORS[entry.type] }]}>
+                              <Text style={styles.cellText}>{TYPE_SHORT[entry.type]}</Text>
+                            </View>
+                          ) : (
+                            <View style={[styles.emptyCell, isToday && styles.emptyCellToday]} />
+                          )}
+                        </View>
                       );
                     })}
                   </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* ── Selected day label + stats ──────────────────────────── */}
-          {selectedDay && (
-            <View style={s.dayHeader}>
-              <Text style={s.dayHeaderTitle}>
-                {DAYS_AR[days.find(d => fmt(d) === selectedDay)?.getDay() ?? 0]}{' '}
-                {days.find(d => fmt(d) === selectedDay)?.toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' })}
-                {isToday(days.find(d => fmt(d) === selectedDay) || new Date()) && (
-                  <Text style={s.todayBadge}> · اليوم</Text>
-                )}
-              </Text>
-              <View style={s.statRow}>
-                {Object.entries(typeCounts).map(([type, count]) => {
-                  const m = TYPE_META[type] || {};
-                  return (
-                    <View key={type} style={[s.statChip, { backgroundColor: m.bg }]}>
-                      <Ionicons name={m.icon} size={12} color={m.color} />
-                      <Text style={[s.statChipText, { color: m.color }]}>{count} {m.label}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
-          {/* ── Team member cards for selected day ─────────────────── */}
-          <ScrollView style={s.memberList} contentContainerStyle={s.memberListContent} showsVerticalScrollIndicator={false}>
-            {users.length === 0 ? (
-              <View style={s.empty}>
-                <Ionicons name="people-outline" size={52} color="#ddd" />
-                <Text style={s.emptyTitle}>لا يوجد أعضاء</Text>
-                <Text style={s.emptySub}>أضف أعضاء الفريق من شاشة "إعداد الفريق"</Text>
-              </View>
-            ) : (
-              users.map(u => {
-                const entry = getEntry(u.id, selectedDay);
-                const meta  = entry ? (TYPE_META[entry.type] || {}) : null;
-                return (
-                  <View key={u.id} style={[s.memberCard, entry && { borderLeftColor: meta?.color, borderLeftWidth: 4 }]}>
-                    <Avatar name={u.fullName} size={42} />
-                    <View style={s.memberInfo}>
-                      <Text style={s.memberName}>{u.fullName}</Text>
-                      {entry ? (
-                        <View style={[s.typePill, { backgroundColor: meta.bg }]}>
-                          <Ionicons name={meta.icon} size={13} color={meta.color} />
-                          <Text style={[s.typePillText, { color: meta.color }]}>{meta.label}</Text>
-                        </View>
-                      ) : (
-                        <Text style={s.memberNoEntry}>لم يسجل جدوله بعد</Text>
-                      )}
-                    </View>
-                    {entry && (
-                      <View style={[s.entryBadge, { backgroundColor: meta.bg }]}>
-                        <Ionicons name={meta.icon} size={20} color={meta.color} />
-                      </View>
-                    )}
-                  </View>
                 );
-              })
-            )}
-          </ScrollView>
-
-          {/* ── Legend ─────────────────────────────────────────────── */}
-          <View style={s.legend}>
-            {Object.entries(TYPE_META).map(([k, m]) => (
-              <View key={k} style={s.legendItem}>
-                <View style={[s.legendDot, { backgroundColor: m.color }]} />
-                <Text style={s.legendText}>{m.label}</Text>
-              </View>
-            ))}
+              })}
+            </ScrollView>
           </View>
-        </>
+        </ScrollView>
       )}
     </View>
   );
 }
 
-const s = StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F5F7FA' },
 
-  // Nav
-  nav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#eee' },
-  navBtn: { padding: 6 },
-  navLabel: { fontSize: 14, fontWeight: '700', color: '#1a1a1a', textAlign: 'center' },
-  todayLink: { fontSize: 11, color: '#1565C0', marginTop: 2, fontWeight: '600' },
-
-  // Day picker
-  dayPicker: { backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#eee', maxHeight: 90 },
-  dayPickerContent: { paddingHorizontal: 8, paddingVertical: 10, gap: 6 },
-  dayBtn: { width: 52, alignItems: 'center', paddingVertical: 8, borderRadius: 14, backgroundColor: '#F5F7FA' },
-  dayBtnActive: { backgroundColor: '#1565C0' },
-  dayBtnToday: { backgroundColor: '#E3F2FD', borderWidth: 1.5, borderColor: '#1565C0' },
-  dayName: { fontSize: 11, color: '#888', fontWeight: '600', marginBottom: 2 },
-  dayNum:  { fontSize: 18, fontWeight: '700', color: '#333' },
-  dayTextActive: { color: '#fff' },
-  dotRow: { flexDirection: 'row', gap: 3, marginTop: 4, minHeight: 6 },
-  dot: { width: 5, height: 5, borderRadius: 3 },
-
-  // Day header
-  dayHeader: { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderColor: '#eee' },
-  dayHeaderTitle: { fontSize: 15, fontWeight: '800', color: '#1a1a1a' },
-  todayBadge: { color: '#1565C0', fontWeight: '700' },
-  statRow: { flexDirection: 'row', gap: 8, marginTop: 6, flexWrap: 'wrap' },
-  statChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  statChipText: { fontSize: 11, fontWeight: '700' },
-
-  // Member list
-  memberList: { flex: 1 },
-  memberListContent: { padding: 12, gap: 8, paddingBottom: 24 },
-  memberCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
-    borderRadius: 14, padding: 14, gap: 12,
-    elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3,
-    borderLeftWidth: 0, borderLeftColor: 'transparent',
+  nav: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 14,
+    backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#eee',
   },
-  memberInfo: { flex: 1 },
-  memberName: { fontSize: 14, fontWeight: '700', color: '#1a1a1a', marginBottom: 4 },
-  memberNoEntry: { fontSize: 12, color: '#ccc', fontStyle: 'italic' },
-  typePill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, alignSelf: 'flex-start' },
-  typePillText: { fontSize: 12, fontWeight: '700' },
-  entryBadge: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  navBtn:  { padding: 6 },
+  navLabel:{ fontSize: 17, fontWeight: '800', color: '#1a1a1a' },
+  navSub:  { fontSize: 11, color: '#1565C0', marginTop: 1 },
 
-  // Empty
-  empty: { alignItems: 'center', paddingVertical: 60 },
-  emptyTitle: { fontSize: 15, fontWeight: '700', color: '#ccc', marginTop: 12 },
-  emptySub: { fontSize: 12, color: '#ddd', marginTop: 4, textAlign: 'center' },
+  summaryRow: {
+    flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#eee',
+  },
+  summaryChip: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderWidth: 1, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6,
+  },
+  summaryChipText:  { fontSize: 16, fontWeight: '800' },
+  summaryChipLabel: { fontSize: 10, fontWeight: '600' },
 
-  // Legend
-  legend: { flexDirection: 'row', justifyContent: 'center', gap: 20, padding: 12, backgroundColor: '#fff', borderTopWidth: 1, borderColor: '#eee' },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot: { width: 10, height: 10, borderRadius: 5 },
-  legendText: { fontSize: 11, color: '#666', fontWeight: '600' },
+  legend: {
+    flexDirection: 'row', gap: 16, paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: '#f8f8f8', borderBottomWidth: 1, borderColor: '#eee',
+  },
+  legendItem:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendCell:    { width: 22, height: 22, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
+  legendCellText:{ color: '#fff', fontSize: 11, fontWeight: '800' },
+  legendText:    { fontSize: 12, color: '#555', fontWeight: '600' },
+
+  headerRow:    { flexDirection: 'row', backgroundColor: '#1565C0', paddingVertical: 10 },
+  headerCell:   { color: '#fff', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  headerDate:   { color: 'rgba(255,255,255,0.75)', fontSize: 11, textAlign: 'center', marginTop: 1 },
+  todayCol:     { backgroundColor: '#0D47A1' },
+  todayHeaderText: { color: '#FFD54F' },
+  todayHeaderDate: { color: '#FFD54F' },
+
+  nameCol: { width: 110, paddingHorizontal: 8, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dayCol:  { width: 54, alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
+  todayDayCol: { backgroundColor: '#E3F2FD' },
+
+  userRow:    { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#f0f0f0', backgroundColor: '#fff' },
+  userRowAlt: { backgroundColor: '#FAFAFA' },
+
+  avatarWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#1565C0', justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  userName:   { fontSize: 12, color: '#333', fontWeight: '600', flex: 1 },
+
+  cell:      { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  cellText:  { color: '#fff', fontSize: 15, fontWeight: '800' },
+  emptyCell: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#f0f0f0' },
+  emptyCellToday: { backgroundColor: '#BBDEFB' },
+
+  empty:     { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  emptyText: { fontSize: 14, color: '#bbb' },
 });
