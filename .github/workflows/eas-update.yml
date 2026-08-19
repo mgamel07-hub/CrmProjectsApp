@@ -25,4 +25,4 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Publish update
-        run: eas update --branch main --message "${{ github.event.head_commit.message }}" --non-interactive
+        run: eas update --branch preview --message "${{ github.event.head_commit.message }}" --non-interactive

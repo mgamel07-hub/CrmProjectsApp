@@ -20,12 +20,19 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {
         "projectId": "b7f82206-bc3a-4086-982e-0173cfe8735f"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b7f82206-bc3a-4086-982e-0173cfe8735f"
     }
   }
 }
