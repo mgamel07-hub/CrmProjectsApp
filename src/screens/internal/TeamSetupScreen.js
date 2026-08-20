@@ -6,10 +6,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   getTeams, createTeam, renameTeam, deleteTeam,
-  getTeamMembers, upsertTeamMember, deleteTeamMember,
+  getTeamMembers, upsertTeamMember, deleteTeamMember, getMyTeamRecord,
 } from '../../api/internal';
 import { getUsers } from '../../api/projects';
 import { extractList } from '../../utils/helpers';
+import { useAuth } from '../../context/AuthContext';
 
 const TABS = [
   { key: 'teams', label: 'الفرق', icon: 'layers-outline' },
@@ -34,6 +35,25 @@ function getCrmName(u) {
 }
 
 export default function TeamSetupScreen() {
+  const { user } = useAuth();
+  const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
+  const [myRole, setMyRole] = useState(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    getMyTeamRecord(userId).then(rec => setMyRole(rec?.role || 'admin')).catch(() => setMyRole('admin'));
+  }, [userId]);
+
+  // Access guard — only admin
+  if (myRole && myRole !== 'admin') {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: '#F5F7FA' }}>
+        <Ionicons name="lock-closed-outline" size={60} color="#ddd" />
+        <Text style={{ fontSize: 16, fontWeight: '700', color: '#bbb' }}>هذه الشاشة للمدير فقط</Text>
+      </View>
+    );
+  }
+
   const [tab, setTab] = useState('teams');
   const [crmUsers, setCrmUsers] = useState([]);
   const [members, setMembers] = useState([]);

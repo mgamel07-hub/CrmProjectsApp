@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useLang } from '../../context/LangContext';
-import { getMyTasks, getUnreadCount } from '../../api/internal';
+import { getMyTasks, getUnreadCount, getMyTeamRecord } from '../../api/internal';
 import { useInternalNotif } from '../../context/InternalNotifContext';
 import { getUsers } from '../../api/projects';
 import { extractList } from '../../utils/helpers';
@@ -14,25 +14,27 @@ export default function TeamHomeScreen({ navigation }) {
   const [pendingTasks, setPendingTasks] = useState(0);
   const [unread, setUnread] = useState(0);
   const [allUsers, setAllUsers] = useState([]);
+  const [myRole,   setMyRole]   = useState('admin'); // 'admin'|'manager'|'employee'
   const { unreadInt } = useInternalNotif() || {};
-
-  useEffect(() => {
-    const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
-    if (!userId) return;
-    getMyTasks(userId).then(tasks => setPendingTasks(tasks.filter(t => t.status === 'pending').length)).catch(() => {});
-    getUnreadCount(userId).then(setUnread).catch(() => {});
-    getUsers().then(res => setAllUsers(extractList(res) || [])).catch(() => {});
-  }, [user]);
 
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
   const totalUnread = (unread || 0) + (unreadInt || 0);
 
-  const cards = [
+  useEffect(() => {
+    if (!userId) return;
+    getMyTasks(userId).then(tasks => setPendingTasks(tasks.filter(t => t.status === 'pending').length)).catch(() => {});
+    getUnreadCount(userId).then(setUnread).catch(() => {});
+    getUsers().then(res => setAllUsers(extractList(res) || [])).catch(() => {});
+    getMyTeamRecord(userId).then(rec => { if (rec?.role) setMyRole(rec.role); }).catch(() => {});
+  }, [userId]);
+
+  const allCards = [
     {
       title: 'داشبورد إنجازاتي',
       subtitle: 'ملخص نشاطك ومهامك وأدائك',
       icon: 'stats-chart-outline',
       color: '#1565C0',
+      roles: ['admin', 'manager', 'employee'],
       onPress: () => navigation.navigate('MyDashboard'),
     },
     {
@@ -40,6 +42,7 @@ export default function TeamHomeScreen({ navigation }) {
       subtitle: 'سجّل زياراتك وبلاغاتك ومذاكرتك',
       icon: 'clipboard-outline',
       color: '#00695C',
+      roles: ['admin', 'manager', 'employee'],
       onPress: () => navigation.navigate('DailyLog'),
     },
     {
@@ -48,6 +51,7 @@ export default function TeamHomeScreen({ navigation }) {
       icon: 'checkmark-done-outline',
       color: pendingTasks > 0 ? '#E65100' : '#388E3C',
       badge: pendingTasks > 0 ? pendingTasks : null,
+      roles: ['admin', 'manager', 'employee'],
       onPress: () => navigation.navigate('MyTasks', { userId }),
     },
     {
@@ -55,6 +59,7 @@ export default function TeamHomeScreen({ navigation }) {
       subtitle: 'إسناد ومتابعة مهام الفريق',
       icon: 'people-outline',
       color: '#6A1B9A',
+      roles: ['admin', 'manager'],
       onPress: () => navigation.navigate('ManageTasks', { userId, allUsers }),
     },
     {
@@ -62,20 +67,23 @@ export default function TeamHomeScreen({ navigation }) {
       subtitle: 'خطط أسبوعك وسجّل جدول الزيارات',
       icon: 'calendar-outline',
       color: '#0288D1',
+      roles: ['admin', 'manager', 'employee'],
       onPress: () => navigation.navigate('WeeklySchedule', { userId }),
     },
     {
       title: 'جدول الفريق',
-      subtitle: 'شوف جدول كل الفريق للأسبوع',
+      subtitle: myRole === 'employee' ? 'جدولك الأسبوعي' : 'جدول الفريق للأسبوع',
       icon: 'grid-outline',
       color: '#00838F',
+      roles: ['admin', 'manager', 'employee'],
       onPress: () => navigation.navigate('TeamSchedule', { userId, allUsers }),
     },
     {
       title: 'سجل النشاط',
-      subtitle: 'مهام منجزة • زيارات • جداول الفريق',
+      subtitle: myRole === 'employee' ? 'نشاطك المنجز' : 'مهام منجزة • زيارات • جداول الفريق',
       icon: 'pulse-outline',
       color: '#5E35B1',
+      roles: ['admin', 'manager', 'employee'],
       onPress: () => navigation.navigate('ActivityFeed'),
     },
     {
@@ -83,9 +91,12 @@ export default function TeamHomeScreen({ navigation }) {
       subtitle: 'أسماء الأعضاء • الأدوار • الصلاحيات',
       icon: 'settings-outline',
       color: '#37474F',
+      roles: ['admin'],
       onPress: () => navigation.navigate('TeamSetup'),
     },
   ];
+
+  const cards = allCards.filter(c => c.roles.includes(myRole));
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>

@@ -3,8 +3,8 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getTeamWeekSchedule, getTeamMembers } from '../../api/internal';
-import { useRole } from '../../context/RoleContext';
+import { getTeamWeekSchedule, getTeamMembers, getMyTeamRecord } from '../../api/internal';
+import { useAuth } from '../../context/AuthContext';
 
 const DAYS_SHORT = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمس', 'جمع', 'سبت'];
 const TYPE_COLORS = { visit: '#1565C0', office: '#388E3C', vacation: '#E65100' };
@@ -28,22 +28,40 @@ function fmt(date) { return date.toISOString().split('T')[0]; }
 const todayStr = new Date().toISOString().split('T')[0];
 
 export default function TeamScheduleScreen() {
-  const { visibleCrmIds } = useRole();
+  const { user } = useAuth();
+  const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
+
   const [weekOffset, setWeekOffset] = useState(0);
   const [days,       setDays]       = useState([]);
   const [users,      setUsers]      = useState([]);
   const [entries,    setEntries]    = useState([]);
   const [loading,    setLoading]    = useState(true);
+  const [myRole,     setMyRole]     = useState(null); // 'admin' | 'manager' | 'employee'
 
   const load = useCallback(async () => {
     setLoading(true);
     const week = getWeekDates(weekOffset);
     setDays(week);
     try {
-      const members = await getTeamMembers();
-      const filtered = visibleCrmIds && visibleCrmIds.length > 0
-        ? members.filter(m => visibleCrmIds.includes(String(m.crm_user_id)))
-        : members;
+      const [members, myRec] = await Promise.all([
+        getTeamMembers(),
+        userId ? getMyTeamRecord(userId) : Promise.resolve(null),
+      ]);
+      const role   = myRec?.role || 'admin';
+      const teamId = myRec?.team_id;
+      setMyRole(role);
+
+      let filtered;
+      if (role === 'admin') {
+        filtered = members;
+      } else if (role === 'manager' && teamId) {
+        filtered = members.filter(m => m.team_id === teamId);
+      } else {
+        // employee: only self
+        const self = members.find(m => String(m.crm_user_id) === userId);
+        filtered = self ? [self] : [];
+      }
+
       const userList = filtered.map(m => ({
         id:       m.crm_user_id,
         fullName: m.display_name || String(m.crm_user_id),
@@ -59,7 +77,7 @@ export default function TeamScheduleScreen() {
     } finally {
       setLoading(false);
     }
-  }, [weekOffset, visibleCrmIds]);
+  }, [weekOffset, userId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -94,6 +112,20 @@ export default function TeamScheduleScreen() {
           <Ionicons name="chevron-forward" size={26} color="#1565C0" />
         </TouchableOpacity>
       </View>
+
+      {/* Role badge */}
+      {myRole === 'employee' && (
+        <View style={styles.roleBanner}>
+          <Ionicons name="person-outline" size={13} color="#1565C0" />
+          <Text style={styles.roleBannerText}>جدولك الشخصي فقط</Text>
+        </View>
+      )}
+      {myRole === 'manager' && (
+        <View style={[styles.roleBanner, { backgroundColor: '#FFF3E0' }]}>
+          <Ionicons name="people-outline" size={13} color="#E65100" />
+          <Text style={[styles.roleBannerText, { color: '#E65100' }]}>جدول فريقك</Text>
+        </View>
+      )}
 
       {/* Summary chips */}
       <View style={styles.summaryRow}>
@@ -243,6 +275,8 @@ const styles = StyleSheet.create({
   emptyCell: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#f0f0f0' },
   emptyCellToday: { backgroundColor: '#BBDEFB' },
 
+  roleBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#E3F2FD', paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: 1, borderColor: '#BBDEFB' },
+  roleBannerText: { fontSize: 12, fontWeight: '700', color: '#1565C0' },
   empty:     { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   emptyText: { fontSize: 14, color: '#bbb' },
 });

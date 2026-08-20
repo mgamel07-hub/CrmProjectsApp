@@ -8,8 +8,8 @@ import {
   ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getTeamMembers, getTeamTasks, getTeamWeekSchedule } from '../../api/internal';
-import { useRole } from '../../context/RoleContext';
+import { getTeamMembers, getTeamTasks, getTeamWeekSchedule, getMyTeamRecord } from '../../api/internal';
+import { useAuth } from '../../context/AuthContext';
 
 const TYPE_META = {
   visit:    { icon: 'car-outline',      color: '#1565C0', bg: '#E3F2FD', label: 'زيارة' },
@@ -54,7 +54,9 @@ function FeedCard({ item }) {
 }
 
 export default function ActivityFeedScreen() {
-  const { visibleCrmIds } = useRole();
+  const { user } = useAuth();
+  const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
+
   const [feed,      setFeed]      = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [refreshing,setRefreshing]= useState(false);
@@ -62,10 +64,23 @@ export default function ActivityFeedScreen() {
 
   const load = useCallback(async () => {
     try {
-      const members = await getTeamMembers();
-      const filtered = visibleCrmIds && visibleCrmIds.length > 0
-        ? members.filter(m => visibleCrmIds.includes(String(m.crm_user_id)))
-        : members;
+      const [members, myRec] = await Promise.all([
+        getTeamMembers(),
+        userId ? getMyTeamRecord(userId) : Promise.resolve(null),
+      ]);
+      const role   = myRec?.role || 'admin';
+      const teamId = myRec?.team_id;
+
+      let filtered;
+      if (role === 'admin') {
+        filtered = members;
+      } else if (role === 'manager' && teamId) {
+        filtered = members.filter(m => m.team_id === teamId);
+      } else {
+        // employee: only self
+        const self = members.find(m => String(m.crm_user_id) === userId);
+        filtered = self ? [self] : [];
+      }
 
       const nameMap = {};
       filtered.forEach(m => { nameMap[String(m.crm_user_id)] = m.display_name || String(m.crm_user_id); });
@@ -122,7 +137,7 @@ export default function ActivityFeedScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [days, visibleCrmIds]);
+  }, [days, userId]);
 
   useEffect(() => { load(); }, [load]);
 
