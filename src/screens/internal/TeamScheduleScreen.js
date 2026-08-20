@@ -67,11 +67,20 @@ export default function TeamScheduleScreen() {
         id:       m.crm_user_id,
         fullName: m.display_name || String(m.crm_user_id),
       }));
-      setUsers(userList);
+
       if (userList.length) {
         const ids  = userList.map(u => String(u.id));
         const data = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));
         setEntries(data);
+
+        // For admin/manager: hide rows where the member has no entries this week
+        // For employee: always show self even if no entries
+        const usersWithEntries = role === 'employee'
+          ? userList
+          : userList.filter(u => data.some(e => String(e.crm_user_id) === String(u.id)));
+        setUsers(usersWithEntries);
+      } else {
+        setUsers([]);
       }
     } catch (e) {
       Alert.alert('خطأ', e.message || 'حدث خطأ');
