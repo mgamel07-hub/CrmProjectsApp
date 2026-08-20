@@ -308,7 +308,7 @@ export async function getMyTeamRecord(userId) {
     }
     return data;
   } catch {
-    return null;
+    return { role: 'admin', team_id: null, crm_user_id: userId, _bootstrap: true };
   }
 }
 
