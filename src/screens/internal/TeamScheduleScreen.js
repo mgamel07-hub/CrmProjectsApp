@@ -226,9 +226,22 @@ export default function TeamScheduleScreen({ route }) {
                       return (
                         <View key={`${ui}-${di}`} style={[styles.dayCol, isToday && styles.todayDayCol]}>
                           {entry ? (
-                            <View style={[styles.cell, { backgroundColor: TYPE_COLORS[entry.type] }]}>
-                              <Text style={styles.cellText}>{TYPE_SHORT[entry.type]}</Text>
-                            </View>
+                            <TouchableOpacity
+                              onPress={() => {
+                                const label = TYPE_LABELS[entry.type];
+                                const detail = entry.client_name
+                                  ? `${label}\n📍 ${entry.client_name}`
+                                  : entry.vacation_type
+                                  ? `${label} — ${entry.vacation_type}`
+                                  : label;
+                                Alert.alert(name, detail);
+                              }}
+                              activeOpacity={0.75}
+                            >
+                              <View style={[styles.cell, { backgroundColor: TYPE_COLORS[entry.type] }]}>
+                                <Text style={styles.cellText}>{TYPE_SHORT[entry.type]}</Text>
+                              </View>
+                            </TouchableOpacity>
                           ) : (
                             <View style={[styles.emptyCell, isToday && styles.emptyCellToday]} />
                           )}
