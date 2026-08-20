@@ -63,32 +63,22 @@ export default function TeamScheduleScreen() {
         filtered = self ? [self] : [];
       }
 
-      // Fallback: if team_members is empty/inaccessible, load from CRM API
+      // Build userList from team_members; if empty, just show current user
       let userList;
-      if (filtered.length === 0 && (role === 'admin' || role === 'manager')) {
-        const crmRes = await getUsers().catch(() => null);
-        const crmUsers = extractList(crmRes) || [];
-        userList = crmUsers.map(u => ({
-          id:       u.key ?? u.id,
-          fullName: u.value || u.fullName || u.userName || String(u.key ?? u.id),
-        }));
-      } else {
+      if (filtered.length > 0) {
         userList = filtered.map(m => ({
           id:       m.crm_user_id,
           fullName: m.display_name || String(m.crm_user_id),
         }));
+      } else {
+        // No team_members defined yet — show only current user
+        userList = [];
       }
 
-      // Always include the current user in the list (handles bootstrap/not-in-team case)
+      // Always include the current user (their entries should always be visible)
       if (userId && !userList.some(u => String(u.id) === userId)) {
-        userList = [{ id: userId, fullName: user?.fullName || String(userId) }, ...userList];
+        userList = [{ id: userId, fullName: user?.fullName || userId }, ...userList];
       }
-
-      // Filter out any entries with invalid IDs to avoid breaking the Supabase query
-      userList = userList.filter(u => {
-        const s = String(u.id ?? '');
-        return s && s !== 'undefined' && s !== 'null';
-      });
 
       if (userList.length) {
         const ids  = userList.map(u => String(u.id));
