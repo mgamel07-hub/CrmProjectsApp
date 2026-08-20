@@ -29,9 +29,11 @@ function fmt(date) { return date.toISOString().split('T')[0]; }
 
 const todayStr = new Date().toISOString().split('T')[0];
 
-export default function TeamScheduleScreen() {
+export default function TeamScheduleScreen({ route }) {
   const { user } = useAuth();
-  const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
+  const authUserId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
+  // Use route.params.userId (same value WeeklyScheduleScreen uses) for consistency
+  const userId = route?.params?.userId || authUserId;
 
   const [weekOffset, setWeekOffset] = useState(0);
   const [days,       setDays]       = useState([]);

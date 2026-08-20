@@ -3,10 +3,12 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal,
   TextInput, Alert, ActivityIndicator, FlatList,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { getWeekSchedule, upsertScheduleEntry, deleteScheduleEntry } from '../../api/internal';
 import { getCustomersByUser } from '../../api/projects';
 import { extractList } from '../../utils/helpers';
+import { useAuth } from '../../context/AuthContext';
 
 const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const TYPE_COLORS = { visit: '#1565C0', office: '#388E3C', vacation: '#E65100' };
@@ -36,7 +38,10 @@ function getCustName(c) {
 }
 
 export default function WeeklyScheduleScreen({ route }) {
-  const { userId } = route.params;
+  const { user } = useAuth();
+  const authUserId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
+  // Always prefer the live auth userId; fall back to route.params for legacy nav paths
+  const userId = authUserId || route?.params?.userId || '';
   const [weekOffset, setWeekOffset] = useState(0);
   const [days, setDays] = useState([]);
   const [entries, setEntries] = useState({});
@@ -81,6 +86,9 @@ export default function WeeklyScheduleScreen({ route }) {
   }, [userId, weekOffset]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reload on screen focus so switching users always shows fresh data
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const openModal = (date, entry) => {
     setModal({ date: fmt(date), entry });

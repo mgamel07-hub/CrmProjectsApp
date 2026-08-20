@@ -34,15 +34,17 @@ function parsePermissions(raw) {
 function parseProfile(raw) {
   const d = raw?.data ?? raw;
   if (!d || typeof d !== 'object') return {};
-  return {
+  const uid = d.userId ?? d.UserId ?? d.id ?? null;
+  const result = {
     fullName:  d.fullName  || d.FullName  || d.userName   || d.UserName  || '',
     email:     d.email     || d.Email     || '',
     roleName:  d.roleName  || d.RoleName  || d.role       || d.Role      || '',
     isAdmin:   !!(d.isAdmin || d.IsAdmin  || d.isSuperAdmin || false),
     isManager: !!(d.isManager || d.IsManager || false),
     avatar:    d.photo     || d.Photo     || d.avatar    || d.Avatar    || d.profileImage || d.profilePicture || '',
-    userId:    d.userId    ?? d.UserId    ?? d.id          ?? '',
   };
+  if (uid != null && uid !== '') result.userId = uid;
+  return result;
 }
 
 export function AuthProvider({ children }) {
