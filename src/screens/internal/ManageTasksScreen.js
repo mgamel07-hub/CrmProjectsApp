@@ -71,8 +71,8 @@ export default function ManageTasksScreen({ route, navigation }) {
       const selfId = resolvedRec?.crm_user_id ? String(resolvedRec.crm_user_id) : userId;
       let visible = [];
       if (role === 'admin') visible = members;
-      else if (role === 'manager' && resolvedRec?.team_id)
-        visible = members.filter(m => m.team_id === resolvedRec.team_id);
+      else if (role === 'manager')
+        visible = resolvedRec?.team_id ? members.filter(m => m.team_id === resolvedRec.team_id) : members;
       else visible = members;
       setAssignableUsers(visible.filter(m => String(m.crm_user_id) !== selfId).map(memberToUser));
       const memberIds = visible.map(m => String(m.crm_user_id));

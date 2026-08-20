@@ -44,12 +44,12 @@ export default function TeamSetupScreen() {
     getMyTeamRecord(userId).then(rec => setMyRole(rec?.role || 'employee')).catch(() => setMyRole('employee'));
   }, [userId]);
 
-  // Access guard — only admin
-  if (myRole && myRole !== 'admin') {
+  // Access guard — admin and manager only
+  if (myRole && myRole === 'employee') {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: '#F5F7FA' }}>
         <Ionicons name="lock-closed-outline" size={60} color="#ddd" />
-        <Text style={{ fontSize: 16, fontWeight: '700', color: '#bbb' }}>هذه الشاشة للمدير فقط</Text>
+        <Text style={{ fontSize: 16, fontWeight: '700', color: '#bbb' }}>هذه الشاشة للمديرين فقط</Text>
       </View>
     );
   }
