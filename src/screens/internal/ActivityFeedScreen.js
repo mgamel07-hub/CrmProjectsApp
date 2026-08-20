@@ -1,14 +1,10 @@
-/**
- * ActivityFeedScreen — سجل النشاط
- * Unified timeline of: completed tasks + schedule entries
- */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl,
+  ActivityIndicator, RefreshControl, ScrollView, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getTeamMembers, getTeamTasks, getTeamWeekSchedule, getMyTeamRecord } from '../../api/internal';
+import { getTeamMembers, getTeamTasks, getTeamWeekSchedule, getMyTeamRecord, getTeams } from '../../api/internal';
 import { useAuth } from '../../context/AuthContext';
 
 const TYPE_META = {
@@ -26,9 +22,9 @@ const PERIODS = [
 
 function relativeTime(dateStr) {
   if (!dateStr) return '';
-  const now   = new Date();
-  const d     = new Date(dateStr);
-  const diff  = Math.floor((now - d) / 1000);
+  const now  = new Date();
+  const d    = new Date(dateStr);
+  const diff = Math.floor((now - d) / 1000);
   if (diff < 60)     return 'الآن';
   if (diff < 3600)   return `منذ ${Math.floor(diff / 60)} د`;
   if (diff < 86400)  return `منذ ${Math.floor(diff / 3600)} س`;
@@ -53,23 +49,71 @@ function FeedCard({ item }) {
   );
 }
 
+function PickerModal({ visible, onClose, items, value, onSelect, title }) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={s.overlay}>
+        <View style={s.sheet}>
+          <View style={s.sheetHeader}>
+            <Text style={s.sheetTitle}>{title}</Text>
+            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color="#888" /></TouchableOpacity>
+          </View>
+          <ScrollView>
+            <TouchableOpacity
+              style={[s.pickerRow, !value && s.pickerRowActive]}
+              onPress={() => { onSelect(null); onClose(); }}
+            >
+              <Text style={[s.pickerText, !value && s.pickerTextActive]}>الكل</Text>
+              {!value && <Ionicons name="checkmark" size={18} color="#1565C0" />}
+            </TouchableOpacity>
+            {items.map(it => (
+              <TouchableOpacity
+                key={it.id}
+                style={[s.pickerRow, value === it.id && s.pickerRowActive]}
+                onPress={() => { onSelect(it.id); onClose(); }}
+              >
+                <Text style={[s.pickerText, value === it.id && s.pickerTextActive]}>{it.name}</Text>
+                {value === it.id && <Ionicons name="checkmark" size={18} color="#1565C0" />}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function ActivityFeedScreen() {
   const { user } = useAuth();
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
 
-  const [feed,      setFeed]      = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [refreshing,setRefreshing]= useState(false);
-  const [days,      setDays]      = useState(7);
+  const [allFeed,    setAllFeed]    = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [days,       setDays]       = useState(7);
+
+  // Members & teams for filter
+  const [allMembers, setAllMembers] = useState([]); // { id, name, team_id }
+  const [teams,      setTeams]      = useState([]); // { id, name }
+  const [myRole,     setMyRole]     = useState('employee');
+
+  // Active filters
+  const [selTeam,   setSelTeam]   = useState(null);
+  const [selMember, setSelMember] = useState(null);
+  const [showTeamPicker,   setShowTeamPicker]   = useState(false);
+  const [showMemberPicker, setShowMemberPicker] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [members, myRec] = await Promise.all([
+      const [members, myRec, teamsData] = await Promise.all([
         getTeamMembers(),
         userId ? getMyTeamRecord(userId) : Promise.resolve(null),
+        getTeams().catch(() => []),
       ]);
       const role   = myRec?.role || 'admin';
       const teamId = myRec?.team_id;
+      setMyRole(role);
+      setTeams(teamsData.map(t => ({ id: t.id, name: t.name })));
 
       let filtered;
       if (role === 'admin') {
@@ -77,31 +121,32 @@ export default function ActivityFeedScreen() {
       } else if (role === 'manager') {
         filtered = teamId ? members.filter(m => m.team_id === teamId) : members;
       } else {
-        // employee: only self
         const self = members.find(m => String(m.crm_user_id) === userId);
         filtered = self ? [self] : [];
       }
 
+      setAllMembers(filtered.map(m => ({
+        id:      String(m.crm_user_id),
+        name:    m.display_name || String(m.crm_user_id),
+        team_id: m.team_id,
+      })));
+
       const nameMap = {};
       filtered.forEach(m => { nameMap[String(m.crm_user_id)] = m.display_name || String(m.crm_user_id); });
       const ids = filtered.map(m => String(m.crm_user_id));
-      if (!ids.length) { setFeed([]); return; }
+      if (!ids.length) { setAllFeed([]); return; }
 
-      // Date range
-      const now   = new Date();
-      const from  = new Date(now); from.setDate(now.getDate() - days);
+      const now     = new Date();
+      const from    = new Date(now); from.setDate(now.getDate() - days);
       const fromStr = from.toISOString().split('T')[0];
       const toStr   = now.toISOString().split('T')[0];
 
-      // Load in parallel
       const [tasks, schedules] = await Promise.all([
         getTeamTasks(ids),
         getTeamWeekSchedule(ids, fromStr, toStr),
       ]);
 
       const events = [];
-
-      // Completed tasks in range
       for (const t of tasks) {
         if (t.status !== 'done' || !t.done_at) continue;
         if (t.done_at.slice(0, 10) < fromStr) continue;
@@ -110,12 +155,11 @@ export default function ActivityFeedScreen() {
           date:   t.done_at,
           action: `أغلق مهمة: ${t.title}`,
           actor:  nameMap[String(t.assigned_to)] || String(t.assigned_to),
+          actorId: String(t.assigned_to),
           note:   t.completion_notes || '',
           _sort:  t.done_at,
         });
       }
-
-      // Schedule entries in range
       for (const se of schedules) {
         const m = TYPE_META[se.type];
         if (!m) continue;
@@ -124,15 +168,15 @@ export default function ActivityFeedScreen() {
           date:   se.date,
           action: m.label,
           actor:  nameMap[String(se.crm_user_id)] || String(se.crm_user_id),
+          actorId: String(se.crm_user_id),
           note:   '',
           _sort:  se.date,
         });
       }
-
       events.sort((a, b) => b._sort.localeCompare(a._sort));
-      setFeed(events);
-    } catch (e) {
-      // silent — user sees empty list
+      setAllFeed(events);
+    } catch {
+      // silent
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -141,7 +185,28 @@ export default function ActivityFeedScreen() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Members filtered by selected team (for the member picker)
+  const membersForTeam = useMemo(() =>
+    selTeam ? allMembers.filter(m => m.team_id === selTeam) : allMembers,
+  [allMembers, selTeam]);
+
+  // IDs visible after team filter
+  const visibleIds = useMemo(() => new Set(membersForTeam.map(m => m.id)), [membersForTeam]);
+
+  // Feed filtered by team + member
+  const feed = useMemo(() => {
+    let f = allFeed;
+    if (selTeam)   f = f.filter(e => visibleIds.has(e.actorId));
+    if (selMember) f = f.filter(e => e.actorId === selMember);
+    return f;
+  }, [allFeed, selTeam, selMember, visibleIds]);
+
   const typeCounts = feed.reduce((acc, e) => { acc[e.type] = (acc[e.type] || 0) + 1; return acc; }, {});
+
+  const selectedTeamName   = teams.find(t => t.id === selTeam)?.name;
+  const selectedMemberName = allMembers.find(m => m.id === selMember)?.name;
+
+  const isFiltered = selTeam || selMember;
 
   return (
     <View style={s.root}>
@@ -157,6 +222,42 @@ export default function ActivityFeedScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Filter bar — visible for admin/manager */}
+      {myRole !== 'employee' && (
+        <View style={s.filterBar}>
+          <TouchableOpacity
+            style={[s.filterBtn, selTeam && s.filterBtnActive]}
+            onPress={() => setShowTeamPicker(true)}
+          >
+            <Ionicons name="layers-outline" size={14} color={selTeam ? '#1565C0' : '#888'} />
+            <Text style={[s.filterBtnText, selTeam && s.filterBtnTextActive]} numberOfLines={1}>
+              {selectedTeamName || 'كل الفرق'}
+            </Text>
+            <Ionicons name="chevron-down" size={12} color={selTeam ? '#1565C0' : '#aaa'} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[s.filterBtn, selMember && s.filterBtnActive]}
+            onPress={() => setShowMemberPicker(true)}
+          >
+            <Ionicons name="person-outline" size={14} color={selMember ? '#1565C0' : '#888'} />
+            <Text style={[s.filterBtnText, selMember && s.filterBtnTextActive]} numberOfLines={1}>
+              {selectedMemberName || 'كل الموظفين'}
+            </Text>
+            <Ionicons name="chevron-down" size={12} color={selMember ? '#1565C0' : '#aaa'} />
+          </TouchableOpacity>
+
+          {isFiltered && (
+            <TouchableOpacity
+              style={s.clearBtn}
+              onPress={() => { setSelTeam(null); setSelMember(null); }}
+            >
+              <Ionicons name="close-circle" size={18} color="#D32F2F" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
       {/* Stats row */}
       <View style={s.statsRow}>
@@ -187,11 +288,30 @@ export default function ActivityFeedScreen() {
             <View style={s.empty}>
               <Ionicons name="pulse-outline" size={52} color="#ddd" />
               <Text style={s.emptyTitle}>لا يوجد نشاط</Text>
-              <Text style={s.emptySub}>لم يُسجَّل أي نشاط في هذه الفترة</Text>
+              <Text style={s.emptySub}>
+                {isFiltered ? 'لا توجد نتائج للفلتر المحدد' : 'لم يُسجَّل أي نشاط في هذه الفترة'}
+              </Text>
             </View>
           }
         />
       )}
+
+      <PickerModal
+        visible={showTeamPicker}
+        onClose={() => setShowTeamPicker(false)}
+        items={teams}
+        value={selTeam}
+        onSelect={(id) => { setSelTeam(id); setSelMember(null); }}
+        title="اختر الفريق"
+      />
+      <PickerModal
+        visible={showMemberPicker}
+        onClose={() => setShowMemberPicker(false)}
+        items={membersForTeam}
+        value={selMember}
+        onSelect={setSelMember}
+        title="اختر الموظف"
+      />
     </View>
   );
 }
@@ -204,6 +324,21 @@ const s = StyleSheet.create({
   pillActive: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
   pillText: { fontSize: 13, color: '#666', fontWeight: '600' },
   pillTextActive: { color: '#fff' },
+
+  filterBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#eee',
+  },
+  filterBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#e0e0e0',
+  },
+  filterBtnActive: { backgroundColor: '#E3F2FD', borderColor: '#1565C0' },
+  filterBtnText: { flex: 1, fontSize: 12, color: '#888', fontWeight: '600' },
+  filterBtnTextActive: { color: '#1565C0' },
+  clearBtn: { padding: 4 },
 
   statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#f0f0f0' },
   statChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
@@ -225,5 +360,14 @@ const s = StyleSheet.create({
 
   empty: { alignItems: 'center', paddingVertical: 60 },
   emptyTitle: { fontSize: 15, fontWeight: '700', color: '#ccc', marginTop: 12 },
-  emptySub: { fontSize: 12, color: '#ddd', marginTop: 4 },
+  emptySub: { fontSize: 12, color: '#ddd', marginTop: 4, textAlign: 'center' },
+
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%' },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderColor: '#eee' },
+  sheetTitle: { fontSize: 15, fontWeight: '800', color: '#1a1a1a' },
+  pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderColor: '#f5f5f5' },
+  pickerRowActive: { backgroundColor: '#E3F2FD' },
+  pickerText: { fontSize: 14, color: '#333', fontWeight: '600' },
+  pickerTextActive: { color: '#1565C0' },
 });

@@ -318,20 +318,7 @@ export default function TeamSetupScreen() {
     );
   };
 
-  // Access guard — after all hooks
-  if (myRole === null) {
-    return <ActivityIndicator style={{ flex: 1, marginTop: 80 }} color="#1565C0" size="large" />;
-  }
-  if (myRole === 'employee') {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: '#F5F7FA' }}>
-        <Ionicons name="lock-closed-outline" size={60} color="#ddd" />
-        <Text style={{ fontSize: 16, fontWeight: '700', color: '#bbb' }}>هذه الشاشة للمديرين فقط</Text>
-      </View>
-    );
-  }
-
-  if (loading) {
+  if (loading || myRole === null) {
     return <ActivityIndicator style={{ flex: 1, marginTop: 80 }} color="#1565C0" size="large" />;
   }
 

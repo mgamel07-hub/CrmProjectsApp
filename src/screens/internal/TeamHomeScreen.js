@@ -99,7 +99,7 @@ export default function TeamHomeScreen({ navigation }) {
       subtitle: 'أسماء الأعضاء • الأدوار • الصلاحيات',
       icon: 'settings-outline',
       color: '#37474F',
-      roles: ['admin', 'manager'],
+      roles: ['admin', 'manager', 'employee'],
       onPress: () => navigation.navigate('TeamSetup'),
     },
   ];
