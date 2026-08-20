@@ -287,12 +287,25 @@ export async function getTeamMembers() {
 }
 
 export async function getMyTeamRecord(userId) {
-  const { data } = await supabase
-    .from('team_members')
-    .select('*, teams(id, name)')
-    .eq('crm_user_id', String(userId))
-    .maybeSingle();
-  return data || null;
+  try {
+    // First check if table has any members at all (RLS or empty table detection)
+    const { data: allData, error: allErr } = await supabase
+      .from('team_members')
+      .select('crm_user_id, role, team_id', { count: 'exact' })
+      .limit(1);
+    // If table is inaccessible or empty → treat caller as admin (chicken-and-egg bootstrap)
+    if (allErr || !allData || allData.length === 0) {
+      return { role: 'admin', team_id: null, crm_user_id: userId, _bootstrap: true };
+    }
+    const { data } = await supabase
+      .from('team_members')
+      .select('*, teams(id, name)')
+      .eq('crm_user_id', String(userId))
+      .maybeSingle();
+    return data || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function upsertTeamMember({ crm_user_id, display_name, role, team_id }) {

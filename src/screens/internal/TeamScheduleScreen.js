@@ -4,6 +4,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getTeamWeekSchedule, getTeamMembers, getMyTeamRecord } from '../../api/internal';
+import { getUsers } from '../../api/projects';
+import { extractList } from '../../utils/helpers';
 import { useAuth } from '../../context/AuthContext';
 
 const DAYS_SHORT = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمس', 'جمع', 'سبت'];
@@ -55,18 +57,27 @@ export default function TeamScheduleScreen() {
       if (role === 'admin') {
         filtered = members;
       } else if (role === 'manager') {
-        // If assigned a team, show that team; otherwise show all (manager without team assignment)
         filtered = teamId ? members.filter(m => m.team_id === teamId) : members;
       } else {
-        // employee: only self
         const self = members.find(m => String(m.crm_user_id) === userId);
         filtered = self ? [self] : [];
       }
 
-      const userList = filtered.map(m => ({
-        id:       m.crm_user_id,
-        fullName: m.display_name || String(m.crm_user_id),
-      }));
+      // Fallback: if team_members is empty/inaccessible, load from CRM API
+      let userList;
+      if (filtered.length === 0 && (role === 'admin' || role === 'manager')) {
+        const crmRes = await getUsers().catch(() => null);
+        const crmUsers = extractList(crmRes) || [];
+        userList = crmUsers.map(u => ({
+          id:       u.key ?? u.id,
+          fullName: u.value || u.fullName || u.userName || String(u.key ?? u.id),
+        }));
+      } else {
+        userList = filtered.map(m => ({
+          id:       m.crm_user_id,
+          fullName: m.display_name || String(m.crm_user_id),
+        }));
+      }
 
       if (userList.length) {
         const ids  = userList.map(u => String(u.id));

@@ -25,7 +25,7 @@ export default function TeamHomeScreen({ navigation }) {
     getMyTasks(userId).then(tasks => setPendingTasks(tasks.filter(t => t.status === 'pending').length)).catch(() => {});
     getUnreadCount(userId).then(setUnread).catch(() => {});
     getUsers().then(res => setAllUsers(extractList(res) || [])).catch(() => {});
-    getMyTeamRecord(userId).then(rec => { if (rec?.role) setMyRole(rec.role); }).catch(() => {});
+    getMyTeamRecord(userId).then(rec => { if (rec?.role) setMyRole(rec.role); }).catch(() => setMyRole('admin'));
   }, [userId]);
 
   const allCards = [
