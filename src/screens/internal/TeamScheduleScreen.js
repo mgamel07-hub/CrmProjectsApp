@@ -84,11 +84,13 @@ export default function TeamScheduleScreen() {
         const data = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));
         setEntries(data);
 
-        // For admin/manager: hide rows where the member has no entries this week
-        // For employee: always show self even if no entries
+        // For admin/manager: hide rows with no entries — but only if SOMEONE has entries
+        // If nobody has entries this week, show everyone so the grid isn't blank
         const usersWithEntries = role === 'employee'
           ? userList
-          : userList.filter(u => data.some(e => String(e.crm_user_id) === String(u.id)));
+          : data.length > 0
+            ? userList.filter(u => data.some(e => String(e.crm_user_id) === String(u.id)))
+            : userList;
         setUsers(usersWithEntries);
       } else {
         setUsers([]);

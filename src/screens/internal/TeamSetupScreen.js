@@ -37,44 +37,31 @@ function getCrmName(u) {
 export default function TeamSetupScreen() {
   const { user } = useAuth();
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
-  const [myRole, setMyRole] = useState('employee');
+
+  // All hooks must come before any conditional returns (Rules of Hooks)
+  const [myRole, setMyRole]   = useState(null); // null = loading
+  const [tab, setTab]         = useState('teams');
+  const [crmUsers, setCrmUsers] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [teams, setTeams]     = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [search, setSearch]   = useState('');
+  const [editUser, setEditUser] = useState(null);
+  const [editForm, setEditForm] = useState({ role: 'employee', teamId: null });
+  const [saving, setSaving]   = useState(false);
+  const [teamModal, setTeamModal] = useState(false);
+  const [teamName, setTeamName]   = useState('');
+  const [editingTeam, setEditingTeam] = useState(null);
+  const [addToTeam, setAddToTeam]   = useState(null);
+  const [addSearch, setAddSearch]   = useState('');
 
   useEffect(() => {
     if (!userId) return;
-    getMyTeamRecord(userId).then(rec => setMyRole(rec?.role || 'employee')).catch(() => setMyRole('employee'));
+    getMyTeamRecord(userId)
+      .then(rec => setMyRole(rec?.role || 'admin'))
+      .catch(() => setMyRole('admin'));
   }, [userId]);
-
-  // Access guard — admin and manager only
-  if (myRole && myRole === 'employee') {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: '#F5F7FA' }}>
-        <Ionicons name="lock-closed-outline" size={60} color="#ddd" />
-        <Text style={{ fontSize: 16, fontWeight: '700', color: '#bbb' }}>هذه الشاشة للمديرين فقط</Text>
-      </View>
-    );
-  }
-
-  const [tab, setTab] = useState('teams');
-  const [crmUsers, setCrmUsers] = useState([]);
-  const [members, setMembers] = useState([]);
-  const [teams, setTeams] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState('');
-
-  // Edit member sheet (used for both تعديل from الأعضاء tab AND إضافة from الفرق tab)
-  const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ role: 'employee', teamId: null });
-  const [saving, setSaving] = useState(false);
-
-  // New / rename team modal
-  const [teamModal, setTeamModal] = useState(false);
-  const [teamName, setTeamName] = useState('');
-  const [editingTeam, setEditingTeam] = useState(null);
-
-  // Add-member-to-team picker (shown when pressing + on a team card)
-  const [addToTeam, setAddToTeam] = useState(null); // the team object
-  const [addSearch, setAddSearch] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -330,6 +317,19 @@ export default function TeamSetupScreen() {
       </View>
     );
   };
+
+  // Access guard — after all hooks
+  if (myRole === null) {
+    return <ActivityIndicator style={{ flex: 1, marginTop: 80 }} color="#1565C0" size="large" />;
+  }
+  if (myRole === 'employee') {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: '#F5F7FA' }}>
+        <Ionicons name="lock-closed-outline" size={60} color="#ddd" />
+        <Text style={{ fontSize: 16, fontWeight: '700', color: '#bbb' }}>هذه الشاشة للمديرين فقط</Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return <ActivityIndicator style={{ flex: 1, marginTop: 80 }} color="#1565C0" size="large" />;
