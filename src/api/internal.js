@@ -30,10 +30,10 @@ export async function getTeamWeekSchedule(userIds, weekStart, weekEnd) {
   return results.flat().sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export async function upsertScheduleEntry(entry) {
+export async function upsertScheduleEntry(entry, autoApprove = false) {
   const { data, error } = await supabase
     .from('schedule_entries')
-    .upsert(entry, { onConflict: 'crm_user_id,date' })
+    .upsert({ ...entry, status: autoApprove ? 'approved' : 'pending' }, { onConflict: 'crm_user_id,date' })
     .select()
     .single();
   if (error) throw error;
@@ -42,6 +42,76 @@ export async function upsertScheduleEntry(entry) {
 
 export async function deleteScheduleEntry(id) {
   const { error } = await supabase.from('schedule_entries').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ── Schedule Approval ─────────────────────────────────────────────────────────
+
+export async function getPendingScheduleEntries(userIds) {
+  if (!userIds.length) return [];
+  const results = await Promise.all(
+    userIds.map(id =>
+      supabase.from('schedule_entries').select('*')
+        .eq('crm_user_id', id).eq('status', 'pending')
+        .order('date').then(({ data }) => data || [])
+    )
+  );
+  return results.flat().sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export async function approveScheduleEntry(id) {
+  const { error } = await supabase.from('schedule_entries')
+    .update({ status: 'approved', rejected_reason: null }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function rejectScheduleEntry(id, reason) {
+  const { error } = await supabase.from('schedule_entries')
+    .update({ status: 'rejected', rejected_reason: reason || null }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function getPendingModifications(userIds) {
+  if (!userIds.length) return [];
+  const results = await Promise.all(
+    userIds.map(id =>
+      supabase.from('schedule_modification_requests').select('*')
+        .eq('crm_user_id', id).eq('status', 'pending')
+        .order('date').then(({ data }) => data || [])
+    )
+  );
+  return results.flat().sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export async function getMyModifications(userId) {
+  const { data, error } = await supabase
+    .from('schedule_modification_requests').select('*')
+    .eq('crm_user_id', userId).order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function approveModificationRequest(req) {
+  const { error: e1 } = await supabase.from('schedule_entries')
+    .update({ type: req.type, client_name: req.client_name || null, vacation_type: req.vacation_type || null, notes: req.notes || null })
+    .eq('id', req.entry_id);
+  if (e1) throw e1;
+  const { error: e2 } = await supabase.from('schedule_modification_requests')
+    .update({ status: 'approved' }).eq('id', req.id);
+  if (e2) throw e2;
+}
+
+export async function rejectModificationRequest(id, reason) {
+  const { error } = await supabase.from('schedule_modification_requests')
+    .update({ status: 'rejected', rejected_reason: reason || null }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function createModificationRequest({ entryId, crm_user_id, employeeName, date, type, client_name, vacation_type, notes }) {
+  const { error } = await supabase.from('schedule_modification_requests').insert({
+    entry_id: entryId, crm_user_id: String(crm_user_id), employee_name: employeeName || null,
+    date, type, client_name: client_name || null, vacation_type: vacation_type || null, notes: notes || null,
+  });
   if (error) throw error;
 }
 

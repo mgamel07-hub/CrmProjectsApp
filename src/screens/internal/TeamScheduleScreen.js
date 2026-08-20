@@ -84,7 +84,11 @@ export default function TeamScheduleScreen({ route }) {
 
       if (userList.length) {
         const ids  = userList.map(u => String(u.id));
-        const data = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));
+        const rawData = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));
+        // For team grid: admin/manager see only approved; employees see own (any status)
+        const data = role === 'employee'
+          ? rawData
+          : rawData.filter(e => !e.status || e.status === 'approved');
         setEntries(data);
 
         // For admin/manager: hide rows with no entries — but only if SOMEONE has entries

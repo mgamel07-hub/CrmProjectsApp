@@ -5,7 +5,10 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { getWeekSchedule, upsertScheduleEntry, deleteScheduleEntry } from '../../api/internal';
+import {
+  getWeekSchedule, upsertScheduleEntry, deleteScheduleEntry,
+  getMyTeamRecord, createModificationRequest,
+} from '../../api/internal';
 import { getCustomersByUser } from '../../api/projects';
 import { extractList } from '../../utils/helpers';
 import { useAuth } from '../../context/AuthContext';
@@ -37,11 +40,14 @@ function getCustName(c) {
   return c.value || c.fullName || c.localName || c.name || getCustKey(c);
 }
 
+const STATUS_ICON = { pending: 'time-outline', approved: 'checkmark-circle', rejected: 'close-circle' };
+const STATUS_COLOR = { pending: '#FFA000', approved: '#388E3C', rejected: '#D32F2F' };
+
 export default function WeeklyScheduleScreen({ route }) {
   const { user } = useAuth();
   const authUserId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
-  // Always prefer the live auth userId; fall back to route.params for legacy nav paths
   const userId = authUserId || route?.params?.userId || '';
+  const [myRole, setMyRole] = useState('employee');
   const [weekOffset, setWeekOffset] = useState(0);
   const [days, setDays] = useState([]);
   const [entries, setEntries] = useState({});
@@ -55,6 +61,12 @@ export default function WeeklyScheduleScreen({ route }) {
   const [custLoading, setCustLoading] = useState(false);
   const [custModal, setCustModal] = useState(false);
   const [custSearch, setCustSearch] = useState('');
+
+  // Load role once
+  useEffect(() => {
+    if (!userId) return;
+    getMyTeamRecord(userId).then(rec => setMyRole(rec?.role || 'employee')).catch(() => {});
+  }, [userId]);
 
   // Load customers once on mount
   useEffect(() => {
@@ -105,15 +117,33 @@ export default function WeeklyScheduleScreen({ route }) {
     }
     setSaving(true);
     try {
-      await upsertScheduleEntry({
-        ...(modal.entry ? { id: modal.entry.id } : {}),
-        crm_user_id: userId,
-        date: modal.date,
-        type: form.type,
-        client_name: form.type === 'visit' ? form.client_name.trim() : null,
-        vacation_type: form.type === 'vacation' ? form.vacation_type : null,
-        notes: form.notes || null,
-      });
+      const autoApprove = myRole === 'admin' || myRole === 'manager';
+      const isEditingApproved = modal.entry?.status === 'approved';
+
+      if (!autoApprove && isEditingApproved) {
+        // Employee modifying approved entry → create modification request
+        await createModificationRequest({
+          entryId: modal.entry.id,
+          crm_user_id: userId,
+          employeeName: user?.fullName || userId,
+          date: modal.date,
+          type: form.type,
+          client_name: form.type === 'visit' ? form.client_name.trim() : null,
+          vacation_type: form.type === 'vacation' ? form.vacation_type : null,
+          notes: form.notes || null,
+        });
+        Alert.alert('تم الإرسال', 'تم إرسال طلب التعديل للمدير للاعتماد');
+      } else {
+        await upsertScheduleEntry({
+          ...(modal.entry ? { id: modal.entry.id } : {}),
+          crm_user_id: userId,
+          date: modal.date,
+          type: form.type,
+          client_name: form.type === 'visit' ? form.client_name.trim() : null,
+          vacation_type: form.type === 'vacation' ? form.vacation_type : null,
+          notes: form.notes || null,
+        }, autoApprove);
+      }
       setModal(null);
       load();
     } catch (e) {
@@ -175,11 +205,26 @@ export default function WeeklyScheduleScreen({ route }) {
                 </View>
                 {entry ? (
                   <View style={styles.entryWrap}>
-                    <View style={[styles.typePill, { backgroundColor: TYPE_COLORS[entry.type] }]}>
-                      <Text style={styles.typeText}>{TYPE_LABELS[entry.type]}</Text>
+                    <View style={styles.entryTopRow}>
+                      <View style={[styles.typePill, { backgroundColor: TYPE_COLORS[entry.type] }]}>
+                        <Text style={styles.typeText}>{TYPE_LABELS[entry.type]}</Text>
+                      </View>
+                      {entry.status ? (
+                        <Ionicons
+                          name={STATUS_ICON[entry.status] || 'ellipse-outline'}
+                          size={15}
+                          color={STATUS_COLOR[entry.status] || '#aaa'}
+                        />
+                      ) : null}
                     </View>
                     {entry.client_name ? <Text style={styles.clientName} numberOfLines={2}>{entry.client_name}</Text> : null}
                     {entry.vacation_type ? <Text style={styles.vacType}>{entry.vacation_type}</Text> : null}
+                    {entry.status === 'rejected' && entry.rejected_reason ? (
+                      <Text style={styles.rejectedReason} numberOfLines={2}>✗ {entry.rejected_reason}</Text>
+                    ) : null}
+                    {entry.status === 'pending' ? (
+                      <Text style={styles.pendingLabel}>بانتظار الاعتماد</Text>
+                    ) : null}
                     <TouchableOpacity style={styles.delBtn} onPress={() => del(entry)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Ionicons name="trash-outline" size={14} color="#aaa" />
                     </TouchableOpacity>
@@ -265,7 +310,13 @@ export default function WeeklyScheduleScreen({ route }) {
                 <Text style={styles.cancelText}>إلغاء</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveBtn} onPress={save} disabled={saving}>
-                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.saveText}>حفظ</Text>}
+                {saving
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.saveText}>
+                      {(!( myRole === 'admin' || myRole === 'manager') && modal?.entry?.status === 'approved')
+                        ? 'إرسال طلب تعديل' : 'حفظ'}
+                    </Text>
+                }
               </TouchableOpacity>
             </View>
           </View>
@@ -348,10 +399,13 @@ const styles = StyleSheet.create({
   dayNum: { fontSize: 18, fontWeight: '800', color: '#333' },
   todayDayNum: { color: '#1565C0' },
   entryWrap: { flex: 1, position: 'relative' },
-  typePill: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 4 },
+  entryTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  typePill: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   typeText: { fontSize: 10, color: '#fff', fontWeight: '700' },
   clientName: { fontSize: 11, color: '#444', marginTop: 2, lineHeight: 14 },
   vacType: { fontSize: 11, color: '#E65100', marginTop: 2 },
+  rejectedReason: { fontSize: 10, color: '#D32F2F', marginTop: 2 },
+  pendingLabel: { fontSize: 9, color: '#FFA000', fontWeight: '600', marginTop: 2 },
   delBtn: { position: 'absolute', bottom: 0, left: 0 },
   emptyDay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   // Entry modal

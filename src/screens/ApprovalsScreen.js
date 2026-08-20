@@ -1,13 +1,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Alert,
-  ActivityIndicator, TextInput, Modal, Platform,
+  ActivityIndicator, TextInput, Modal, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getUnitsRequests, approveUnitsRequest, rejectUnitsRequest,
   getPendingPlans, approvePlan, rejectPlan,
 } from '../api/projects';
+import {
+  getTeamMembers, getMyTeamRecord,
+  getPendingScheduleEntries, approveScheduleEntry, rejectScheduleEntry,
+  getPendingModifications, approveModificationRequest, rejectModificationRequest,
+} from '../api/internal';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +27,10 @@ import LoadingScreen from '../components/LoadingScreen';
 import ErrorMessage from '../components/ErrorMessage';
 import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
+
+const TYPE_LABELS = { visit: 'زيارة عميل', office: 'مكتب', vacation: 'إجازة' };
+const TYPE_COLORS = { visit: '#1565C0', office: '#388E3C', vacation: '#E65100' };
+const DAYS_AR = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
 
 // ── Unit Requests Section ────────────────────────────────────────────────────
 
@@ -371,21 +380,239 @@ function PlansTab({ lang, navigation }) {
   );
 }
 
+// ── Schedule Entry Approval Tab ───────────────────────────────────────────────
+
+function ScheduleApprovalTab({ userId }) {
+  const [entries, setEntries]   = useState([]);
+  const [nameMap, setNameMap]   = useState({});
+  const [loading, setLoading]   = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [acting, setActing]     = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [members, myRec] = await Promise.all([getTeamMembers(), getMyTeamRecord(userId)]);
+      const role = myRec?.role || 'admin';
+      let team = role === 'manager'
+        ? members.filter(m => m.team_id === myRec.team_id)
+        : members;
+      const empIds = team.filter(m => m.role === 'employee').map(m => String(m.crm_user_id));
+      const nm = {};
+      team.forEach(m => { nm[String(m.crm_user_id)] = m.display_name || String(m.crm_user_id); });
+      setNameMap(nm);
+      setEntries(await getPendingScheduleEntries(empIds));
+    } catch (e) { Alert.alert('خطأ', e.message); }
+    finally { setLoading(false); setRefreshing(false); }
+  }, [userId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleApprove = async (entry) => {
+    setActing(entry.id + '-approve');
+    try { await approveScheduleEntry(entry.id); load(); }
+    catch (e) { Alert.alert('خطأ', e.message); }
+    finally { setActing(null); }
+  };
+
+  const handleReject = (entry) => {
+    Alert.prompt('سبب الرفض', 'اكتب سبب الرفض للموظف', async (reason) => {
+      if (!reason) return;
+      setActing(entry.id + '-reject');
+      try { await rejectScheduleEntry(entry.id, reason); load(); }
+      catch (e) { Alert.alert('خطأ', e.message); }
+      finally { setActing(null); }
+    }, 'plain-text');
+  };
+
+  if (loading) return <LoadingScreen />;
+  return (
+    <FlatList
+      data={entries}
+      keyExtractor={i => i.id}
+      contentContainerStyle={styles.list}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={['#1565C0']} />}
+      ListEmptyComponent={
+        <View style={styles.empty}>
+          <Ionicons name="calendar-outline" size={48} color="#ccc" />
+          <Text style={styles.emptyText}>لا توجد خطط بانتظار الاعتماد</Text>
+        </View>
+      }
+      renderItem={({ item }) => {
+        const dayName = DAYS_AR[new Date(item.date).getDay()];
+        const emp = nameMap[String(item.crm_user_id)] || item.crm_user_id;
+        return (
+          <Card style={styles.reqCard}>
+            <View style={styles.reqHeader}>
+              <View style={styles.reqLeft}>
+                <Text style={styles.reqTitle}>{emp}</Text>
+                <Text style={styles.reqSub}>{dayName} {item.date}</Text>
+              </View>
+              <View style={[styles.typePill, { backgroundColor: TYPE_COLORS[item.type] }]}>
+                <Text style={styles.typePillText}>{TYPE_LABELS[item.type]}</Text>
+              </View>
+            </View>
+            {item.client_name ? (
+              <View style={styles.detailRow}>
+                <Ionicons name="location-outline" size={13} color="#888" />
+                <Text style={styles.detailText}>{item.client_name}</Text>
+              </View>
+            ) : null}
+            {item.vacation_type ? (
+              <Text style={styles.detailText}>نوع الإجازة: {item.vacation_type}</Text>
+            ) : null}
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.approveBtn]}
+                onPress={() => handleApprove(item)}
+                disabled={!!acting}
+              >
+                {acting === item.id + '-approve'
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <><Ionicons name="checkmark-outline" size={15} color="#fff" /><Text style={styles.actionText}>اعتماد</Text></>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.rejectBtn]}
+                onPress={() => handleReject(item)}
+                disabled={!!acting}
+              >
+                {acting === item.id + '-reject'
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <><Ionicons name="close-outline" size={15} color="#fff" /><Text style={styles.actionText}>رفض</Text></>
+                }
+              </TouchableOpacity>
+            </View>
+          </Card>
+        );
+      }}
+    />
+  );
+}
+
+// ── Schedule Modification Tab ─────────────────────────────────────────────────
+
+function ScheduleModTab({ userId }) {
+  const [mods, setMods]         = useState([]);
+  const [nameMap, setNameMap]   = useState({});
+  const [loading, setLoading]   = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [acting, setActing]     = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [members, myRec] = await Promise.all([getTeamMembers(), getMyTeamRecord(userId)]);
+      const role = myRec?.role || 'admin';
+      let team = role === 'manager'
+        ? members.filter(m => m.team_id === myRec.team_id)
+        : members;
+      const empIds = team.filter(m => m.role === 'employee').map(m => String(m.crm_user_id));
+      const nm = {};
+      team.forEach(m => { nm[String(m.crm_user_id)] = m.display_name || String(m.crm_user_id); });
+      setNameMap(nm);
+      setMods(await getPendingModifications(empIds));
+    } catch (e) { Alert.alert('خطأ', e.message); }
+    finally { setLoading(false); setRefreshing(false); }
+  }, [userId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleApprove = async (mod) => {
+    setActing(mod.id + '-approve');
+    try { await approveModificationRequest(mod); load(); }
+    catch (e) { Alert.alert('خطأ', e.message); }
+    finally { setActing(null); }
+  };
+
+  const handleReject = (mod) => {
+    Alert.prompt('سبب الرفض', '', async (reason) => {
+      if (!reason) return;
+      setActing(mod.id + '-reject');
+      try { await rejectModificationRequest(mod.id, reason); load(); }
+      catch (e) { Alert.alert('خطأ', e.message); }
+      finally { setActing(null); }
+    }, 'plain-text');
+  };
+
+  if (loading) return <LoadingScreen />;
+  return (
+    <FlatList
+      data={mods}
+      keyExtractor={i => i.id}
+      contentContainerStyle={styles.list}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={['#1565C0']} />}
+      ListEmptyComponent={
+        <View style={styles.empty}>
+          <Ionicons name="create-outline" size={48} color="#ccc" />
+          <Text style={styles.emptyText}>لا توجد طلبات تعديل</Text>
+        </View>
+      }
+      renderItem={({ item }) => {
+        const dayName = DAYS_AR[new Date(item.date).getDay()];
+        const emp = item.employee_name || nameMap[String(item.crm_user_id)] || item.crm_user_id;
+        return (
+          <Card style={styles.reqCard}>
+            <View style={styles.reqHeader}>
+              <View style={styles.reqLeft}>
+                <Text style={styles.reqTitle}>{emp}</Text>
+                <Text style={styles.reqSub}>{dayName} {item.date}</Text>
+              </View>
+              <View style={[styles.typePill, { backgroundColor: TYPE_COLORS[item.type] }]}>
+                <Text style={styles.typePillText}>{TYPE_LABELS[item.type]}</Text>
+              </View>
+            </View>
+            {item.client_name ? (
+              <View style={styles.detailRow}>
+                <Ionicons name="location-outline" size={13} color="#888" />
+                <Text style={styles.detailText}>{item.client_name}</Text>
+              </View>
+            ) : null}
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.approveBtn]}
+                onPress={() => handleApprove(item)}
+                disabled={!!acting}
+              >
+                {acting === item.id + '-approve'
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <><Ionicons name="checkmark-outline" size={15} color="#fff" /><Text style={styles.actionText}>اعتماد التعديل</Text></>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.rejectBtn]}
+                onPress={() => handleReject(item)}
+                disabled={!!acting}
+              >
+                {acting === item.id + '-reject'
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <><Ionicons name="close-outline" size={15} color="#fff" /><Text style={styles.actionText}>رفض</Text></>
+                }
+              </TouchableOpacity>
+            </View>
+          </Card>
+        );
+      }}
+    />
+  );
+}
+
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function ApprovalsScreen({ navigation }) {
   const { lang } = useLang();
-  const { isDemo } = useAuth();
-  const [activeTab, setActiveTab] = useState('plans');
+  const { isDemo, user } = useAuth();
+  const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
+  const [activeTab, setActiveTab] = useState('schedule');
 
   const tabs = [
-    { key: 'plans', label: lang === 'ar' ? 'الخطط' : 'Plans', icon: 'document-text-outline' },
-    { key: 'units', label: lang === 'ar' ? 'طلبات الوحدات' : 'Unit Requests', icon: 'cube-outline' },
+    { key: 'schedule',     label: 'اعتماد الخطة',    icon: 'calendar-outline' },
+    { key: 'schedule_mod', label: 'تعديل الخطة',     icon: 'create-outline' },
+    { key: 'plans',        label: lang === 'ar' ? 'الخطط' : 'Plans', icon: 'document-text-outline' },
+    { key: 'units',        label: lang === 'ar' ? 'الوحدات' : 'Units', icon: 'cube-outline' },
   ];
 
   return (
     <View style={styles.root}>
-      <View style={styles.tabsRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll} contentContainerStyle={styles.tabsRow}>
         {tabs.map((tab) => (
           <TouchableOpacity
             key={tab.key}
@@ -396,29 +623,32 @@ export default function ApprovalsScreen({ navigation }) {
             <Text style={[styles.tabBtnText, activeTab === tab.key && styles.tabBtnTextActive]}>{tab.label}</Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
-      {activeTab === 'plans'
-        ? <PlansTab lang={lang} navigation={navigation} />
-        : <UnitsTab lang={lang} isDemo={isDemo} />
-      }
+      {activeTab === 'schedule'     && <ScheduleApprovalTab userId={userId} />}
+      {activeTab === 'schedule_mod' && <ScheduleModTab userId={userId} />}
+      {activeTab === 'plans'        && <PlansTab lang={lang} navigation={navigation} />}
+      {activeTab === 'units'        && <UnitsTab lang={lang} isDemo={isDemo} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F5F7FA' },
-  tabsRow: {
-    flexDirection: 'row', backgroundColor: '#fff',
-    borderBottomWidth: 1, borderBottomColor: '#E8EEF8',
-  },
+  tabsScroll: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#E8EEF8', flexGrow: 0 },
+  tabsRow: { flexDirection: 'row', paddingHorizontal: 4 },
   tabBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 12, gap: 6, borderBottomWidth: 2, borderBottomColor: 'transparent',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, paddingHorizontal: 14, gap: 5,
+    borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
   tabBtnActive: { borderBottomColor: '#1565C0' },
   tabBtnText: { fontSize: 13, color: '#888', fontWeight: '500' },
   tabBtnTextActive: { color: '#1565C0', fontWeight: '700' },
+  typePill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  typePillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  detailText: { fontSize: 12, color: '#666' },
   chips: { flexDirection: 'row', padding: 12, paddingBottom: 8, gap: 8 },
   chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: '#E8EEF8' },
   chipActive: { backgroundColor: '#1565C0' },
