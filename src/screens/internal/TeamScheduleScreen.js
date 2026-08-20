@@ -79,6 +79,11 @@ export default function TeamScheduleScreen() {
         }));
       }
 
+      // Always include the current user in the list (handles bootstrap/not-in-team case)
+      if (userId && !userList.some(u => String(u.id) === userId)) {
+        userList = [{ id: userId, fullName: user?.fullName || String(userId) }, ...userList];
+      }
+
       if (userList.length) {
         const ids  = userList.map(u => String(u.id));
         const data = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));
