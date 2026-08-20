@@ -281,15 +281,27 @@ export default function ProjectDetailScreen({ navigation, route }) {
         projectPlanItemIds: selectedPlanItemIds,
         hideItemsInEmail: false,
       });
-      const executionId = res?.data?.data ?? res?.data;
-      // Upload attachments if any
+      // Extract the numeric/string execution ID from whatever shape the API returns
+      const raw = res?.data;
+      const executionId = typeof raw?.data === 'object' ? raw?.data?.id : (raw?.data ?? raw?.id ?? raw);
+      // Upload attachments
       if (visitAttachments.length > 0 && executionId) {
+        const failed = [];
         for (const file of visitAttachments) {
           try {
             const fd = new FormData();
             fd.append('file', { uri: file.uri, name: file.name, type: file.mimeType || 'application/octet-stream' });
             await uploadPlanExecutionAttachment(executionId, fd);
-          } catch { /* attachment upload failure is non-fatal */ }
+          } catch (attachErr) {
+            failed.push(file.name);
+            console.warn('Attachment upload failed:', file.name, attachErr?.response?.status, attachErr?.message);
+          }
+        }
+        if (failed.length > 0) {
+          Alert.alert(
+            lang === 'ar' ? 'تنبيه' : 'Warning',
+            (lang === 'ar' ? 'لم يرفع بعض المرفقات: ' : 'Failed to upload: ') + failed.join(', ')
+          );
         }
       }
       setVisitModalVisible(false);
@@ -903,17 +915,17 @@ export default function ProjectDetailScreen({ navigation, route }) {
                 getLabel={(p) => p.value || p.title || `Plan #${p.id ?? p.key}`}
               />
 
-              {/* Plan Items (أصناف) */}
+              {/* Plan Items (إجراءات) */}
               {loadingPlanItems && (
                 <View style={vstyles.itemsLoading}>
                   <ActivityIndicator size="small" color="#1565C0" />
-                  <Text style={vstyles.itemsLoadingText}>{lang === 'ar' ? 'جاري تحميل الأصناف...' : 'Loading items...'}</Text>
+                  <Text style={vstyles.itemsLoadingText}>{lang === 'ar' ? 'جاري تحميل الإجراءات...' : 'Loading actions...'}</Text>
                 </View>
               )}
               {visitPlanItems.length > 0 && (
                 <View style={vstyles.field}>
                   <View style={vstyles.itemsHeader}>
-                    <Text style={vstyles.label}>{lang === 'ar' ? 'الأصناف' : 'Items'}</Text>
+                    <Text style={vstyles.label}>{lang === 'ar' ? 'الإجراءات' : 'Actions'}</Text>
                     <TouchableOpacity onPress={() => {
                       if (selectedPlanItemIds.length === visitPlanItems.length) {
                         setSelectedPlanItemIds([]);
@@ -952,6 +964,24 @@ export default function ProjectDetailScreen({ navigation, route }) {
                   })}
                 </View>
               )}
+
+              {/* Attachments — shown right below إجراءات */}
+              <View style={vstyles.field}>
+                <Text style={vstyles.label}>{lang === 'ar' ? 'المرفقات' : 'Attachments'}</Text>
+                {visitAttachments.map((f, i) => (
+                  <View key={i} style={vstyles.attachmentRow}>
+                    <Ionicons name="document-outline" size={16} color="#1565C0" />
+                    <Text style={vstyles.attachmentName} numberOfLines={1}>{f.name}</Text>
+                    <TouchableOpacity onPress={() => setVisitAttachments((prev) => prev.filter((_, j) => j !== i))}>
+                      <Ionicons name="close-circle" size={18} color="#D32F2F" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                <TouchableOpacity style={vstyles.attachPickBtn} onPress={pickAttachment}>
+                  <Ionicons name="attach-outline" size={18} color="#1565C0" />
+                  <Text style={vstyles.attachPickText}>{lang === 'ar' ? 'إضافة مرفق' : 'Add Attachment'}</Text>
+                </TouchableOpacity>
+              </View>
 
               {/* Date */}
               <View style={vstyles.field}>
@@ -1007,24 +1037,6 @@ export default function ProjectDetailScreen({ navigation, route }) {
                   textAlignVertical="top"
                   textAlign={lang === 'ar' ? 'right' : 'left'}
                 />
-              </View>
-
-              {/* Attachments */}
-              <View style={vstyles.field}>
-                <Text style={vstyles.label}>{lang === 'ar' ? 'المرفقات' : 'Attachments'}</Text>
-                {visitAttachments.map((f, i) => (
-                  <View key={i} style={vstyles.attachmentRow}>
-                    <Ionicons name="document-outline" size={16} color="#1565C0" />
-                    <Text style={vstyles.attachmentName} numberOfLines={1}>{f.name}</Text>
-                    <TouchableOpacity onPress={() => setVisitAttachments((prev) => prev.filter((_, j) => j !== i))}>
-                      <Ionicons name="close-circle" size={18} color="#D32F2F" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-                <TouchableOpacity style={vstyles.attachPickBtn} onPress={pickAttachment}>
-                  <Ionicons name="attach-outline" size={18} color="#1565C0" />
-                  <Text style={vstyles.attachPickText}>{lang === 'ar' ? 'إضافة مرفق' : 'Add Attachment'}</Text>
-                </TouchableOpacity>
               </View>
 
               {/* Save button */}
