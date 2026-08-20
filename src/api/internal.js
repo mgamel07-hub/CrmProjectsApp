@@ -15,15 +15,19 @@ export async function getWeekSchedule(userId, weekStart, weekEnd) {
 }
 
 export async function getTeamWeekSchedule(userIds, weekStart, weekEnd) {
-  const { data, error } = await supabase
-    .from('schedule_entries')
-    .select('*')
-    .in('crm_user_id', userIds)
-    .gte('date', weekStart)
-    .lte('date', weekEnd)
-    .order('date');
-  if (error) throw error;
-  return data || [];
+  // Use individual .eq() calls instead of .in() to avoid type-casting issues
+  const results = await Promise.all(
+    userIds.map(id =>
+      supabase
+        .from('schedule_entries')
+        .select('*')
+        .eq('crm_user_id', id)
+        .gte('date', weekStart)
+        .lte('date', weekEnd)
+        .then(({ data }) => data || [])
+    )
+  );
+  return results.flat().sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export async function upsertScheduleEntry(entry) {
