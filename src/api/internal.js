@@ -302,7 +302,11 @@ export async function getMyTeamRecord(userId) {
       .select('*, teams(id, name)')
       .eq('crm_user_id', String(userId))
       .maybeSingle();
-    return data || null;
+    // User not in team_members yet → bootstrap as admin so they can set themselves up
+    if (!data) {
+      return { role: 'admin', team_id: null, crm_user_id: userId, _bootstrap: true };
+    }
+    return data;
   } catch {
     return null;
   }
