@@ -145,14 +145,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
   useEffect(() => {
     navigation.setOptions({
       title: title || t('projectDetails'),
-      headerRight: canEditProject ? () => (
-        <TouchableOpacity
-          style={{ marginRight: 16 }}
-          onPress={() => navigation.navigate('EditProject', { project })}
-        >
-          <Ionicons name="create-outline" size={24} color="#1565C0" />
-        </TouchableOpacity>
-      ) : undefined,
+      headerRight: undefined,
     });
   }, [navigation, project, title]);
 
@@ -294,7 +287,7 @@ export default function ProjectDetailScreen({ navigation, route }) {
             await uploadPlanExecutionAttachment(executionId, fd);
           } catch (attachErr) {
             failed.push(file.name);
-            console.warn('Attachment upload failed:', file.name, attachErr?.response?.status, attachErr?.message);
+            // error surfaced to user via Alert below
           }
         }
         if (failed.length > 0) {

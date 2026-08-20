@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, ScrollView, SectionList, FlatList, StyleSheet, TouchableOpacity,
+  View, Text, ScrollView, FlatList, StyleSheet, TouchableOpacity,
   TextInput, RefreshControl, ActivityIndicator, Modal, Animated, Linking, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -553,7 +553,7 @@ export default function ReportsScreen() {
       setVisitsLoading(true);
       loadVisits(projectIds, clientMap).then(v => setVisits(v)).finally(() => setVisitsLoading(false));
     } catch (e) {
-      console.warn('ReportsScreen load error:', e?.message);
+      setError(e?.message || 'خطأ في التحميل');
     } finally {
       setLoading(false);
       setRefreshing(false);

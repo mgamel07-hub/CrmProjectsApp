@@ -74,8 +74,8 @@ export default function ActivityFeedScreen() {
       let filtered;
       if (role === 'admin') {
         filtered = members;
-      } else if (role === 'manager' && teamId) {
-        filtered = members.filter(m => m.team_id === teamId);
+      } else if (role === 'manager') {
+        filtered = teamId ? members.filter(m => m.team_id === teamId) : members;
       } else {
         // employee: only self
         const self = members.find(m => String(m.crm_user_id) === userId);
@@ -132,7 +132,7 @@ export default function ActivityFeedScreen() {
       events.sort((a, b) => b._sort.localeCompare(a._sort));
       setFeed(events);
     } catch (e) {
-      console.warn('ActivityFeed error:', e.message);
+      // silent — user sees empty list
     } finally {
       setLoading(false);
       setRefreshing(false);

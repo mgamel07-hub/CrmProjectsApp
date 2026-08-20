@@ -471,7 +471,7 @@ export default function ImplReportsScreen() {
       setVisitsLoading(true);
       loadVisits(projectIds).then(v => setVisits(v)).finally(() => setVisitsLoading(false));
     } catch (e) {
-      console.warn('ImplReports load error:', e?.message);
+      setError(e?.message || 'خطأ في التحميل');
     } finally {
       setLoading(false);
       setRefreshing(false);

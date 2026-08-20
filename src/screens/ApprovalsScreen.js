@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity, RefreshControl, Alert,
-  ActivityIndicator,
+  ActivityIndicator, TextInput, Modal, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -25,12 +25,43 @@ import Card from '../components/Card';
 
 // ── Unit Requests Section ────────────────────────────────────────────────────
 
+function InputModal({ visible, title, placeholder, defaultValue, onConfirm, onCancel }) {
+  const [val, setVal] = useState(defaultValue || '');
+  React.useEffect(() => { if (visible) setVal(defaultValue || ''); }, [visible, defaultValue]);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 }}>
+        <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 20, gap: 12 }}>
+          <Text style={{ fontSize: 15, fontWeight: '700', color: '#1a1a1a', textAlign: 'right' }}>{title}</Text>
+          <TextInput
+            value={val}
+            onChangeText={setVal}
+            placeholder={placeholder}
+            style={{ borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 10, fontSize: 14, textAlign: 'right' }}
+            keyboardType="default"
+            autoFocus
+          />
+          <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }}>
+            <TouchableOpacity onPress={onCancel} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: '#f0f0f0' }}>
+              <Text style={{ color: '#555', fontWeight: '600' }}>إلغاء</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onConfirm(val)} style={{ paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: '#1565C0' }}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>تأكيد</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function UnitsTab({ lang, isDemo }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('pending');
+  const [inputModal, setInputModal] = useState({ visible: false, title: '', placeholder: '', defaultValue: '', onConfirm: null });
 
   const load = useCallback(async () => {
     if (isDemo) {
@@ -57,10 +88,13 @@ function UnitsTab({ lang, isDemo }) {
   const onRefresh = () => { setRefreshing(true); load(); };
 
   const handleApprove = (req) => {
-    Alert.prompt(
-      lang === 'ar' ? 'عدد الوحدات المعتمدة' : 'Approved Units',
-      lang === 'ar' ? 'أدخل عدد الوحدات المعتمدة' : 'Enter approved unit count',
-      async (count) => {
+    setInputModal({
+      visible: true,
+      title: lang === 'ar' ? 'عدد الوحدات المعتمدة' : 'Approved Units',
+      placeholder: lang === 'ar' ? 'أدخل العدد' : 'Enter count',
+      defaultValue: String(req.requestedUnitCount),
+      onConfirm: async (count) => {
+        setInputModal(m => ({ ...m, visible: false }));
         if (!count) return;
         try {
           await approveUnitsRequest(req.id, { approvedUnitCount: Number(count) });
@@ -69,17 +103,18 @@ function UnitsTab({ lang, isDemo }) {
           Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
         }
       },
-      'plain-text',
-      String(req.requestedUnitCount)
-    );
+    });
   };
 
   const handleReject = (req) => {
-    Alert.prompt(
-      lang === 'ar' ? 'سبب الرفض' : 'Rejection Reason',
-      lang === 'ar' ? 'أدخل سبب الرفض' : 'Enter rejection reason',
-      async (reason) => {
-        if (reason === null) return;
+    setInputModal({
+      visible: true,
+      title: lang === 'ar' ? 'سبب الرفض' : 'Rejection Reason',
+      placeholder: lang === 'ar' ? 'أدخل سبب الرفض' : 'Enter reason',
+      defaultValue: '',
+      onConfirm: async (reason) => {
+        setInputModal(m => ({ ...m, visible: false }));
+        if (!reason) return;
         try {
           await rejectUnitsRequest(req.id, { reason });
           load();
@@ -87,8 +122,7 @@ function UnitsTab({ lang, isDemo }) {
           Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
         }
       },
-      'plain-text'
-    );
+    });
   };
 
   const filters = [
@@ -103,6 +137,14 @@ function UnitsTab({ lang, isDemo }) {
 
   return (
     <View style={{ flex: 1 }}>
+      <InputModal
+        visible={inputModal.visible}
+        title={inputModal.title}
+        placeholder={inputModal.placeholder}
+        defaultValue={inputModal.defaultValue}
+        onConfirm={inputModal.onConfirm || (() => {})}
+        onCancel={() => setInputModal(m => ({ ...m, visible: false }))}
+      />
       <View style={styles.chips}>
         {filters.map((f) => (
           <TouchableOpacity

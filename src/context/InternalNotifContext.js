@@ -6,7 +6,7 @@
  */
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated, Vibration, AppState,
+  View, Text, StyleSheet, TouchableOpacity, Animated, Vibration, AppState, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../api/supabase';
@@ -142,7 +142,10 @@ export function InternalNotifProvider({ children }) {
   return (
     <InternalNotifContext.Provider value={{ unreadInt, clearBadge }}>
       {children}
-      {banner && <NotifBanner notif={banner} onDismiss={dismiss} />}
+      {/* Use Modal so the banner appears above the navigation stack on Android */}
+      <Modal visible={!!banner} transparent animationType="none" statusBarTranslucent>
+        {banner && <NotifBanner notif={banner} onDismiss={dismiss} />}
+      </Modal>
     </InternalNotifContext.Provider>
   );
 }

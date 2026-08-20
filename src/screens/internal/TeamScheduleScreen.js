@@ -54,8 +54,9 @@ export default function TeamScheduleScreen() {
       let filtered;
       if (role === 'admin') {
         filtered = members;
-      } else if (role === 'manager' && teamId) {
-        filtered = members.filter(m => m.team_id === teamId);
+      } else if (role === 'manager') {
+        // If assigned a team, show that team; otherwise show all (manager without team assignment)
+        filtered = teamId ? members.filter(m => m.team_id === teamId) : members;
       } else {
         // employee: only self
         const self = members.find(m => String(m.crm_user_id) === userId);
