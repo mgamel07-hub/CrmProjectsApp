@@ -46,6 +46,14 @@ export default function TeamHomeScreen({ navigation }) {
       onPress: () => navigation.navigate('DailyLog'),
     },
     {
+      title: 'إضافة إجراء',
+      subtitle: 'تنفيذ خطة وإرفاق مستندات',
+      icon: 'checkmark-done-circle-outline',
+      color: '#0277BD',
+      roles: ['admin', 'manager', 'employee'],
+      onPress: () => navigation.navigate('QuickExecution'),
+    },
+    {
       title: 'مهامي',
       subtitle: pendingTasks > 0 ? `${pendingTasks} مهمة معلقة` : 'لا توجد مهام معلقة',
       icon: 'checkmark-done-outline',

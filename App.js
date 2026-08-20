@@ -43,6 +43,7 @@ import ImplReportsScreen           from './src/screens/ImplReportsScreen';
 import ActivityFeedScreen          from './src/screens/internal/ActivityFeedScreen';
 import DailyLogScreen              from './src/screens/internal/DailyLogScreen';
 import MyDashboardScreen           from './src/screens/internal/MyDashboardScreen';
+import QuickExecutionScreen        from './src/screens/QuickExecutionScreen';
 import { InternalNotifProvider }   from './src/context/InternalNotifContext';
 
 I18nManager.forceRTL(true);
@@ -234,6 +235,11 @@ function AppNavigator() {
               name="MyDashboard"
               component={MyDashboardScreen}
               options={{ title: 'داشبورد إنجازاتي' }}
+            />
+            <Stack.Screen
+              name="QuickExecution"
+              component={QuickExecutionScreen}
+              options={{ title: 'إضافة إجراء' }}
             />
           </>
         )}
