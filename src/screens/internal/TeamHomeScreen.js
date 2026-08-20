@@ -14,7 +14,7 @@ export default function TeamHomeScreen({ navigation }) {
   const [pendingTasks, setPendingTasks] = useState(0);
   const [unread, setUnread] = useState(0);
   const [allUsers, setAllUsers] = useState([]);
-  const [myRole,   setMyRole]   = useState('admin'); // 'admin'|'manager'|'employee'
+  const [myRole,   setMyRole]   = useState('employee'); // 'admin'|'manager'|'employee'
   const { unreadInt } = useInternalNotif() || {};
 
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');

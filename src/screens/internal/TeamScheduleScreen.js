@@ -36,7 +36,7 @@ export default function TeamScheduleScreen() {
   const [users,      setUsers]      = useState([]);
   const [entries,    setEntries]    = useState([]);
   const [loading,    setLoading]    = useState(true);
-  const [myRole,     setMyRole]     = useState(null); // 'admin' | 'manager' | 'employee'
+  const [myRole,     setMyRole]     = useState('employee'); // 'admin' | 'manager' | 'employee'
 
   const load = useCallback(async () => {
     setLoading(true);

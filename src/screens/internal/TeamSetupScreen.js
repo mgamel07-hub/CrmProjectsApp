@@ -37,7 +37,7 @@ function getCrmName(u) {
 export default function TeamSetupScreen() {
   const { user } = useAuth();
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
-  const [myRole, setMyRole] = useState(null);
+  const [myRole, setMyRole] = useState('employee');
 
   useEffect(() => {
     if (!userId) return;
