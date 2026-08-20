@@ -68,7 +68,7 @@ export default function ActivityFeedScreen() {
         getTeamMembers(),
         userId ? getMyTeamRecord(userId) : Promise.resolve(null),
       ]);
-      const role   = myRec?.role || 'admin';
+      const role   = myRec?.role || 'employee';
       const teamId = myRec?.team_id;
 
       let filtered;

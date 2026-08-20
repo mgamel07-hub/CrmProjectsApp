@@ -41,7 +41,7 @@ export default function TeamSetupScreen() {
 
   useEffect(() => {
     if (!userId) return;
-    getMyTeamRecord(userId).then(rec => setMyRole(rec?.role || 'admin')).catch(() => setMyRole('admin'));
+    getMyTeamRecord(userId).then(rec => setMyRole(rec?.role || 'employee')).catch(() => setMyRole('employee'));
   }, [userId]);
 
   // Access guard — only admin

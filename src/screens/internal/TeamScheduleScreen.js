@@ -47,7 +47,7 @@ export default function TeamScheduleScreen() {
         getTeamMembers(),
         userId ? getMyTeamRecord(userId) : Promise.resolve(null),
       ]);
-      const role   = myRec?.role || 'admin';
+      const role   = myRec?.role || 'employee';
       const teamId = myRec?.team_id;
       setMyRole(role);
 

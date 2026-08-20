@@ -67,7 +67,7 @@ export default function ManageTasksScreen({ route, navigation }) {
         ? members.find(m => m.display_name === user.fullName) || null : null;
       const resolvedRec = myRec || nameMatch;
       setMyRecord(resolvedRec);
-      const role   = resolvedRec?.role || 'admin';
+      const role   = resolvedRec?.role || 'employee';
       const selfId = resolvedRec?.crm_user_id ? String(resolvedRec.crm_user_id) : userId;
       let visible = [];
       if (role === 'admin') visible = members;
