@@ -84,6 +84,12 @@ export default function TeamScheduleScreen() {
         userList = [{ id: userId, fullName: user?.fullName || String(userId) }, ...userList];
       }
 
+      // Filter out any entries with invalid IDs to avoid breaking the Supabase query
+      userList = userList.filter(u => {
+        const s = String(u.id ?? '');
+        return s && s !== 'undefined' && s !== 'null';
+      });
+
       if (userList.length) {
         const ids  = userList.map(u => String(u.id));
         const data = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));

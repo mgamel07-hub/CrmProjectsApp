@@ -65,6 +65,7 @@ export default function WeeklyScheduleScreen({ route }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setEntries({}); // Clear stale data immediately before fetching
     const week = getWeekDates(weekOffset);
     setDays(week);
     try {
@@ -187,7 +188,7 @@ export default function WeeklyScheduleScreen({ route }) {
       )}
 
       {/* Entry Modal */}
-      <Modal visible={!!modal} transparent animationType="slide" onRequestClose={() => setModal(null)}>
+      <Modal visible={!!modal} transparent animationType="slide" onRequestClose={() => {}}>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <Text style={styles.sheetTitle}>{modal?.date}</Text>
