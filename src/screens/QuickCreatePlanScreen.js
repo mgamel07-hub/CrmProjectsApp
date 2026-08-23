@@ -167,6 +167,9 @@ export default function QuickCreatePlanScreen({ navigation }) {
   const [saving, setSaving] = useState(false);
   const [step,   setStep]   = useState(null);
 
+  // Debug error
+  const [debugError, setDebugError] = useState('');
+
   // Loading states
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingScopes,   setLoadingScopes]   = useState(false);
@@ -217,7 +220,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
   // Reset plan-level state
   const resetPlan = () => {
     setPlanId(null); setPlanStatus(null);
-    setExistingItems([]); setNoPlanFound(false);
+    setExistingItems([]); setNoPlanFound(false); setDebugError('');
     setStartDate(null); setEndDate(null);
     setUnits(''); setNoUnits(false); setRequiredDocument(false);
     setNewItems([]); setSelectedCatIds([]);
@@ -229,6 +232,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
     if (!scopeIdParam || !stageIdParam) return;
     setLoadingPlan(true);
     setNoPlanFound(false);
+    setDebugError('');
     setPlanId(null);
     try {
       // 1. Try to find an existing plan for this scope
@@ -240,24 +244,35 @@ export default function QuickCreatePlanScreen({ navigation }) {
           const raw = res?.data?.data ?? res?.data ?? null;
           plans = Array.isArray(raw) ? raw : (raw && raw.id ? [raw] : []);
         }
+        if (!Array.isArray(plans)) plans = [];
         const targetId = String(stageIdParam);
         const matchStage = p =>
           String(p.projectScopeStageId ?? p.stageId ?? p.scopeStageId ?? '') === targetId;
         found =
           plans.find(p => matchStage(p) && (p.statusId === 1 || p.statusId === 4)) ||
           plans.find(p => matchStage(p));
-      } catch (_) {}
+        if (__DEV__) console.log('[loadPlan] plans count:', plans.length, '| found:', !!found, '| stageId:', targetId, '| sample:', plans[0] ? JSON.stringify(plans[0]).slice(0, 200) : 'none');
+      } catch (fetchErr) {
+        if (__DEV__) console.log('[loadPlan] getPlansByScope error:', fetchErr?.response?.status, fetchErr?.message);
+        setDebugError(`جلب: ${fetchErr?.response?.status || fetchErr?.message}`);
+      }
 
       // 2. If not found, create a new draft plan
       if (!found) {
         try {
           const createRes = await createPlan({ projectScopeStageId: stageIdParam });
           const newPlan = createRes?.data?.data ?? createRes?.data;
+          if (__DEV__) console.log('[loadPlan] created plan:', JSON.stringify(newPlan).slice(0, 200));
           if (newPlan?.id) {
             found = { ...newPlan, statusId: newPlan.statusId ?? 1 };
+          } else {
+            setDebugError('إنشاء: لا يوجد ID في الرد');
           }
         } catch (createErr) {
-          console.log('[createPlan] error:', createErr?.response?.status, createErr?.message);
+          const code = createErr?.response?.status;
+          const msg = createErr?.response?.data?.message || createErr?.message || '';
+          if (__DEV__) console.log('[loadPlan] createPlan error:', code, msg);
+          setDebugError(`إنشاء: ${code || ''} ${msg}`.trim());
           setNoPlanFound(true);
           return;
         }
@@ -469,6 +484,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
         <View style={s.noPlanBox}>
           <Ionicons name="alert-circle-outline" size={32} color="#E65100" />
           <Text style={s.noPlanText}>تعذّر تحميل أو إنشاء الخطة</Text>
+          {!!debugError && <Text style={[s.noPlanSub, { color: '#D32F2F', fontWeight: '700' }]}>{debugError}</Text>}
           <Text style={s.noPlanSub}>تحقق من الاتصال بالشبكة أو الصلاحيات</Text>
           <TouchableOpacity style={[s.confirmBtn, { marginTop: 8, paddingHorizontal: 20 }]}
             onPress={() => loadDraftPlan(scopeId, stageId)}>
