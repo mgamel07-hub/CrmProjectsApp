@@ -13,6 +13,7 @@ import {
   getProjectsDropdown, getScopesDropdown, getStagesDropdown,
   getPlansByScope, createPlan, updatePlan, getPlanItems,
   getAvailableStageDefItems, createPlanItem, createPlanItemFromCatalog,
+  submitPlan,
 } from '../api/projects';
 import { getTeamMembers, getMyTeamRecord, createNotification } from '../api/internal';
 import { extractList, extractData } from '../utils/helpers';
@@ -427,17 +428,25 @@ export default function QuickCreatePlanScreen({ navigation }) {
         }
       }
 
-      // 4. Notify manager (implementer doesn't call submitPlan — manager submits)
+      // 4. Submit for approval + notify manager
+      let submitted = false;
       if (andSubmit) {
+        setStep('جاري تقديم الخطة للاعتماد...');
+        try {
+          await submitPlan(currentPlanId);
+          submitted = true;
+        } catch (_) {}
         setStep('جاري إرسال إشعار للمدير...');
         await notifyManager(stageName);
       }
 
       Alert.alert(
         'تم بنجاح ✓',
-        andSubmit
-          ? 'تم حفظ بيانات الخطة وإشعار المدير — سيقوم المدير بمراجعتها وتقديمها'
-          : 'تم حفظ الخطة كمسودة',
+        submitted
+          ? 'تم تقديم الخطة للمدير للاعتماد — ستصلك إشعار بالنتيجة'
+          : andSubmit
+            ? 'تم حفظ الخطة وإشعار المدير'
+            : 'تم حفظ الخطة كمسودة',
         [{
           text: 'عرض الخطة',
           onPress: () => navigation.navigate('PlanDetail', { planId: currentPlanId, title: `خطة: ${stageName}` }),
