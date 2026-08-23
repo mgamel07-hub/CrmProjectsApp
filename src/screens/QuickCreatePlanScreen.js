@@ -128,7 +128,7 @@ function DateField({ label, value, onChange, required }) {
 
 export default function QuickCreatePlanScreen({ navigation }) {
   const { user } = useAuth();
-  const { visibleCrmIds, roleLoading } = useRole();
+  const { visibleCrmIds } = useRole();
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
 
   // Selection
@@ -176,9 +176,8 @@ export default function QuickCreatePlanScreen({ navigation }) {
 
   // Load projects filtered by role (same logic as ProjectsScreen)
   useEffect(() => {
-    if (roleLoading) return;
     setLoadingProjects(true);
-    getProjects({ pageNumber: 1, pageSize: 200, includeClosed: false })
+    getProjects({ pageNumber: 1, pageSize: 200, includeClosed: true })
       .then(res => {
         const all = extractList(res) || [];
         const filtered = visibleCrmIds
@@ -189,7 +188,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
       })
       .catch(() => setProjects([]))
       .finally(() => setLoadingProjects(false));
-  }, [visibleCrmIds, roleLoading]);
+  }, [visibleCrmIds]);
 
   const onSelectProject = useCallback(async (id) => {
     setProjectId(id); setScopeId(null); setStageId(null); setStageName('');

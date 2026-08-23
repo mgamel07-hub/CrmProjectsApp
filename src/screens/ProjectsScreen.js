@@ -38,7 +38,6 @@ export default function ProjectsScreen({ navigation, route }) {
   ];
 
   const load = useCallback(async () => {
-    if (roleLoading) return; // wait until role is resolved before filtering
     if (isDemo) {
       let data = DEMO_PROJECTS;
       if (statusFilter) data = data.filter(p => p.statusId === statusFilter);
@@ -67,7 +66,7 @@ export default function ProjectsScreen({ navigation, route }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search, statusFilter, isDemo, visibleCrmIds, roleLoading]);
+  }, [search, statusFilter, isDemo, visibleCrmIds]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -113,7 +112,7 @@ export default function ProjectsScreen({ navigation, route }) {
     );
   };
 
-  if (loading || roleLoading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen />;
   if (error && !projects.length) return <ErrorMessage message={error} onRetry={load} />;
 
   const renderItem = ({ item }) => (
