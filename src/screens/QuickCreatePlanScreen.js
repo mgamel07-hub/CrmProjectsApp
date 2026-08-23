@@ -345,24 +345,24 @@ export default function QuickCreatePlanScreen({ navigation }) {
     setAddingItem(false);
   };
 
-  // Notify manager + all admins (مدير التنفيذ)
+  // Notify manager + مدير التنفيذ (userId 1537)
   const notifyManager = async (stageLabel) => {
     try {
-      const me = await getMyTeamRecord(userId);
-      const allMembers = await getTeamMembers();
       const msg = `طلب اعتماد خطة: ${stageLabel || 'خطة جديدة'} — بانتظار مراجعتك`;
-      // Collect: direct team manager + all admins
-      const targets = new Set();
-      if (me && !me._bootstrap && me.team_id) {
-        const direct = allMembers.find(m => m.team_id === me.team_id && m.role === 'manager');
-        if (direct) targets.add(String(direct.crm_user_id));
-      }
-      allMembers
-        .filter(m => m.role === 'admin' && String(m.crm_user_id) !== userId)
-        .forEach(m => targets.add(String(m.crm_user_id)));
-      await Promise.allSettled([...targets].map(id =>
-        createNotification({ to_user_id: id, type: 'approval', message: msg, is_read: false })
-      ));
+      const targets = new Set(['1537']); // مدير التنفيذ
+      // Also notify direct team manager if different
+      try {
+        const me = await getMyTeamRecord(userId);
+        const allMembers = await getTeamMembers();
+        if (me && !me._bootstrap && me.team_id) {
+          const direct = allMembers.find(m => m.team_id === me.team_id && m.role === 'manager');
+          if (direct) targets.add(String(direct.crm_user_id));
+        }
+      } catch (_) {}
+      await Promise.allSettled([...targets]
+        .filter(id => id !== userId)
+        .map(id => createNotification({ to_user_id: id, type: 'approval', message: msg, is_read: false }))
+      );
     } catch (_) {}
   };
 
