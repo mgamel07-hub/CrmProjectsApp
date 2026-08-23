@@ -345,20 +345,24 @@ export default function QuickCreatePlanScreen({ navigation }) {
     setAddingItem(false);
   };
 
-  // Notify manager
+  // Notify manager + all admins (مدير التنفيذ)
   const notifyManager = async (stageLabel) => {
     try {
       const me = await getMyTeamRecord(userId);
-      if (!me || me._bootstrap) return;
       const allMembers = await getTeamMembers();
-      const manager = allMembers.find(m => m.team_id === me.team_id && m.role === 'manager');
-      if (!manager) return;
-      await createNotification({
-        to_user_id: String(manager.crm_user_id),
-        type: 'approval',
-        message: `طلب اعتماد خطة: ${stageLabel || 'خطة جديدة'} — بانتظار مراجعتك`,
-        is_read: false,
-      });
+      const msg = `طلب اعتماد خطة: ${stageLabel || 'خطة جديدة'} — بانتظار مراجعتك`;
+      // Collect: direct team manager + all admins
+      const targets = new Set();
+      if (me && !me._bootstrap && me.team_id) {
+        const direct = allMembers.find(m => m.team_id === me.team_id && m.role === 'manager');
+        if (direct) targets.add(String(direct.crm_user_id));
+      }
+      allMembers
+        .filter(m => m.role === 'admin' && String(m.crm_user_id) !== userId)
+        .forEach(m => targets.add(String(m.crm_user_id)));
+      await Promise.allSettled([...targets].map(id =>
+        createNotification({ to_user_id: id, type: 'approval', message: msg, is_read: false })
+      ));
     } catch (_) {}
   };
 
