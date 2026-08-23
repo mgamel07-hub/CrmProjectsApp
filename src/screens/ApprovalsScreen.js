@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   getUnitsRequests, approveUnitsRequest, rejectUnitsRequest,
-  getPendingPlans, approvePlan, rejectPlan,
+  getPendingPlans, approvePlan, rejectPlan, submitPlan,
 } from '../api/projects';
 import {
   getTeamMembers, getMyTeamRecord, createNotification,
@@ -229,15 +229,18 @@ function PlansTab({ lang, navigation }) {
 
   const load = useCallback(async () => {
     try {
-      // statusId=2 = Submitted (pending approval)
-      const res = await getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 100 });
-      const list = extractList(res) || extractData(res) || [];
-      setPlans(Array.isArray(list) ? list : []);
+      // Load both draft (1) and submitted (2) plans
+      const [res1, res2] = await Promise.allSettled([
+        getPendingPlans({ statusId: 1, pageNumber: 1, pageSize: 100 }),
+        getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 100 }),
+      ]);
+      const list1 = res1.status === 'fulfilled' ? (extractList(res1.value) || extractData(res1.value) || []) : [];
+      const list2 = res2.status === 'fulfilled' ? (extractList(res2.value) || extractData(res2.value) || []) : [];
+      setPlans([...list2, ...list1]); // submitted first, then drafts
       setError(null);
     } catch (e) {
       const status = e?.response?.status;
       if (status === 404 || status === 405) {
-        // endpoint doesn't exist — show empty with hint
         setPlans([]);
         setError(null);
       } else {
@@ -272,6 +275,10 @@ function PlansTab({ lang, navigation }) {
   const handleApprove = async (plan) => {
     setActionLoading(`approve-${plan.id}`);
     try {
+      // If still draft (statusId=1), submit first then approve
+      if ((plan.statusId ?? plan.status) === 1) {
+        await submitPlan(plan.id);
+      }
       await approvePlan(plan.id);
       await notifyImplementer(plan, true);
       load();

@@ -315,13 +315,20 @@ export default function QuickCreatePlanScreen({ navigation }) {
 
   // Catalog
   const openCatalog = async () => {
-    if (!planId) return;
     setShowCatalog(true);
     setLoadingCatalog(true);
     try {
-      const res = await getAvailableStageDefItems(planId);
-      const items = extractList(res) || res?.data || [];
-      setCatalogItems(Array.isArray(items) ? items : []);
+      let activePlanId = planId;
+      // Create plan now if not yet created
+      if (!activePlanId) {
+        const createRes = await createPlan({ projectScopeStageId: stageId });
+        const np = createRes?.data?.data ?? createRes?.data;
+        if (np?.id) { activePlanId = np.id; setPlanId(np.id); setPlanStatus(np.statusId ?? 1); }
+      }
+      if (!activePlanId) { setCatalogItems([]); return; }
+      const res = await getAvailableStageDefItems(activePlanId);
+      const raw = extractList(res) ?? res?.data?.data ?? res?.data ?? [];
+      setCatalogItems(Array.isArray(raw) ? raw : []);
     } catch { setCatalogItems([]); }
     finally { setLoadingCatalog(false); }
   };
