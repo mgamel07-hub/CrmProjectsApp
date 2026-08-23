@@ -44,6 +44,7 @@ import ActivityFeedScreen          from './src/screens/internal/ActivityFeedScre
 import DailyLogScreen              from './src/screens/internal/DailyLogScreen';
 import MyDashboardScreen           from './src/screens/internal/MyDashboardScreen';
 import QuickExecutionScreen        from './src/screens/QuickExecutionScreen';
+import QuickCreatePlanScreen      from './src/screens/QuickCreatePlanScreen';
 import { InternalNotifProvider }   from './src/context/InternalNotifContext';
 
 I18nManager.forceRTL(true);
@@ -70,6 +71,7 @@ function MainTabs({ navigation }) {
           const icons = {
             Dashboard: focused ? 'grid'              : 'grid-outline',
             Projects:  focused ? 'folder'            : 'folder-outline',
+            MyPlan:    focused ? 'document-text'     : 'document-text-outline',
             Reports:   focused ? 'bar-chart'         : 'bar-chart-outline',
             Approvals: focused ? 'checkmark-circle'  : 'checkmark-circle-outline',
             Team:      focused ? 'people'            : 'people-outline',
@@ -88,6 +90,11 @@ function MainTabs({ navigation }) {
         name="Projects"
         component={ProjectsScreen}
         options={{ title: t('projects'), tabBarLabel: t('projects') }}
+      />
+      <Tab.Screen
+        name="MyPlan"
+        component={QuickCreatePlanScreen}
+        options={{ title: 'إنشاء خطة', tabBarLabel: 'خطتي' }}
       />
       <Tab.Screen
         name="Reports"

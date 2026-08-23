@@ -9,7 +9,7 @@ import {
   getPendingPlans, approvePlan, rejectPlan,
 } from '../api/projects';
 import {
-  getTeamMembers, getMyTeamRecord,
+  getTeamMembers, getMyTeamRecord, createNotification,
   getPendingScheduleEntries, approveScheduleEntry, rejectScheduleEntry,
   getPendingModifications, approveModificationRequest, rejectModificationRequest,
 } from '../api/internal';
@@ -252,10 +252,28 @@ function PlansTab({ lang, navigation }) {
   useEffect(() => { load(); }, [load]);
   const onRefresh = () => { setRefreshing(true); load(); };
 
+  // Send Supabase notification to plan creator (implementer)
+  const notifyImplementer = async (plan, approved) => {
+    try {
+      const creatorId = plan.createdByUserId ?? plan.userId ?? plan.createdBy?.userId
+        ?? plan.createdBy?.id ?? plan.implementorId ?? null;
+      if (!creatorId) return;
+      await createNotification({
+        to_user_id: String(creatorId),
+        type: 'approval',
+        message: approved
+          ? `✓ تم اعتماد خطتك: ${plan.stageName || 'خطة #' + plan.id}`
+          : `✗ تم رفض خطتك: ${plan.stageName || 'خطة #' + plan.id} — راجع التفاصيل`,
+        is_read: false,
+      });
+    } catch (_) {}
+  };
+
   const handleApprove = async (plan) => {
     setActionLoading(`approve-${plan.id}`);
     try {
       await approvePlan(plan.id);
+      await notifyImplementer(plan, true);
       load();
     } catch (e) {
       Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
@@ -276,6 +294,7 @@ function PlansTab({ lang, navigation }) {
             setActionLoading(`reject-${plan.id}`);
             try {
               await rejectPlan(plan.id, {});
+              await notifyImplementer(plan, false);
               load();
             } catch (e) {
               Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));

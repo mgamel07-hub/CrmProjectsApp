@@ -140,6 +140,14 @@ export default function ProjectsScreen({ navigation, route }) {
 
   return (
     <View style={styles.root}>
+      {/* Banner: assigned projects only */}
+      {visibleCrmIds && (
+        <View style={styles.assignedBanner}>
+          <Ionicons name="person-circle-outline" size={14} color="#1565C0" />
+          <Text style={styles.assignedBannerText}>المشاريع المسندة إليك فقط</Text>
+        </View>
+      )}
+
       {/* Search */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
@@ -200,6 +208,12 @@ export default function ProjectsScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F5F7FA' },
+  assignedBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#E3F2FD', paddingHorizontal: 14, paddingVertical: 7,
+    borderBottomWidth: 1, borderColor: '#BBDEFB',
+  },
+  assignedBannerText: { fontSize: 12, fontWeight: '700', color: '#1565C0' },
   searchRow: { padding: 12, paddingBottom: 8 },
   searchBox: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
