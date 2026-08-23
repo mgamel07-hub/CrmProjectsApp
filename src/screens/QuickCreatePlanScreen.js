@@ -404,18 +404,33 @@ export default function QuickCreatePlanScreen({ navigation }) {
       }
 
       // 4. Submit for approval
+      let submitted = false;
       if (andSubmit) {
         setStep('جاري تقديم الخطة للاعتماد...');
-        await submitPlan(currentPlanId);
-        setStep('جاري إرسال إشعار للمدير...');
-        await notifyManager(stageName);
+        try {
+          await submitPlan(currentPlanId);
+          submitted = true;
+          setStep('جاري إرسال إشعار للمدير...');
+          await notifyManager(stageName);
+        } catch (submitErr) {
+          const code = submitErr?.response?.status;
+          if (code === 403) {
+            // Implementer can't submit directly — data saved, notify manager manually
+            setStep('جاري إرسال إشعار للمدير...');
+            await notifyManager(stageName);
+          } else {
+            throw submitErr;
+          }
+        }
       }
 
       Alert.alert(
         'تم بنجاح ✓',
-        andSubmit
+        submitted
           ? 'تم تقديم الخطة للمدير للاعتماد — ستصلك إشعار بالنتيجة'
-          : 'تم حفظ الخطة كمسودة',
+          : andSubmit
+            ? 'تم حفظ بيانات الخطة وإشعار المدير — سيقوم المدير بالتقديم'
+            : 'تم حفظ الخطة كمسودة',
         [{
           text: 'عرض الخطة',
           onPress: () => navigation.navigate('PlanDetail', { planId: currentPlanId, title: `خطة: ${stageName}` }),
