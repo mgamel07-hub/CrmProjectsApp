@@ -226,7 +226,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
     setCatalogItems([]); setShowCatalog(false);
   };
 
-  // Find the draft plan for the selected scope+stage
+  // Find the plan for the selected scope+stage
   const loadDraftPlan = useCallback(async (scopeIdParam, stageIdParam) => {
     if (!scopeIdParam || !stageIdParam) return;
     setLoadingPlan(true);
@@ -234,39 +234,57 @@ export default function QuickCreatePlanScreen({ navigation }) {
     setPlanId(null);
     try {
       const res = await getPlansByScope({ projectScopeId: scopeIdParam });
-      const all = extractList(res) || extractData(res) || [];
-      const plans = Array.isArray(all) ? all : [];
-      // Find draft plan for this stage (statusId 1 = draft, or check stageName)
-      const draft = plans.find(p =>
-        (p.projectScopeStageId === stageIdParam || p.stageId === stageIdParam) &&
-        (p.statusId === 1 || String(p.statusName || '').toLowerCase().includes('draft') ||
-         String(p.statusName || '').includes('مسودة'))
-      ) || plans.find(p =>
-        p.projectScopeStageId === stageIdParam || p.stageId === stageIdParam
-      );
 
-      if (!draft) {
+      // Handle both array and single-object responses
+      let plans = extractList(res);
+      if (!plans) {
+        const raw = res?.data?.data ?? res?.data ?? null;
+        plans = Array.isArray(raw) ? raw : (raw && raw.id ? [raw] : []);
+      }
+      // DEV: log response shape to help debug field names
+      if (__DEV__ && plans.length > 0) {
+        console.log('[Plan] sample keys:', Object.keys(plans[0]).join(', '));
+        console.log('[Plan] sample stageId fields:', {
+          projectScopeStageId: plans[0].projectScopeStageId,
+          stageId: plans[0].stageId,
+          scopeStageId: plans[0].scopeStageId,
+          statusId: plans[0].statusId,
+        });
+      }
+
+      const targetId = String(stageIdParam);
+
+      // Match by stage id (convert both to string to avoid type mismatch)
+      const matchStage = p =>
+        String(p.projectScopeStageId ?? p.stageId ?? p.scopeStageId ?? '') === targetId;
+
+      // Prefer draft/rejected (can be edited); fall back to any matching plan
+      const found =
+        plans.find(p => matchStage(p) && (p.statusId === 1 || p.statusId === 4)) ||
+        plans.find(p => matchStage(p));
+
+      if (!found) {
         setNoPlanFound(true);
         return;
       }
 
       // Pre-populate fields
-      setPlanId(draft.id);
-      setPlanStatus(draft.statusId);
-      setStartDate(parseDate(draft.startDate));
-      setEndDate(parseDate(draft.endDate));
-      setUnits(draft.expectedUnits != null ? String(draft.expectedUnits) : '');
-      setNoUnits(!!(draft.noUnits));
-      setRequiredDocument(!!(draft.requiredDocument));
+      setPlanId(found.id);
+      setPlanStatus(found.statusId);
+      setStartDate(parseDate(found.startDate));
+      setEndDate(parseDate(found.endDate));
+      setUnits(found.expectedUnits != null ? String(found.expectedUnits) : '');
+      setNoUnits(!!(found.noUnits));
+      setRequiredDocument(!!(found.requiredDocument));
 
       // Load existing items
       try {
-        const itemsRes = await getPlanItems(draft.id);
+        const itemsRes = await getPlanItems(found.id);
         const items = extractList(itemsRes) || [];
         setExistingItems(Array.isArray(items) ? items : []);
       } catch { setExistingItems([]); }
 
-    } catch (e) {
+    } catch {
       setNoPlanFound(true);
     } finally {
       setLoadingPlan(false);
