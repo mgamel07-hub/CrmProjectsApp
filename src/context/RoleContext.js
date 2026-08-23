@@ -81,9 +81,14 @@ export function RoleProvider({ children }) {
 export const useRole = () => useContext(RoleContext);
 
 // Shared helper: does a project's user list include any visible CRM ID?
-// Projects with NO assigned members are hidden from limited-role users.
 export function projectMatchesRole(proj, visibleCrmIds) {
   if (!visibleCrmIds) return true; // admin sees everything
+
+  // If the response has no user-assignment field at all (lightweight endpoint),
+  // show the project — better than hiding everything.
+  const hasField = 'projectUsers' in proj || 'users' in proj;
+  if (!hasField) return true;
+
   const users = proj.projectUsers ?? proj.users ?? [];
   // No members assigned → not visible to non-admins
   if (!Array.isArray(users) || users.length === 0) return false;

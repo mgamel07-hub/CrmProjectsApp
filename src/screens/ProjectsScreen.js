@@ -4,7 +4,7 @@ import {
   TextInput, RefreshControl, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getProjects, deleteProject } from '../api/projects';
+import { getProjects, getProjectsDropdown, deleteProject } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { useAuth } from '../context/AuthContext';
@@ -48,13 +48,24 @@ export default function ProjectsScreen({ navigation, route }) {
       return;
     }
     try {
-      const res = await getProjects({
-        pageNumber: 1, pageSize: 100,
-        searchText: search || undefined,
-        statusId: statusFilter || undefined,
-        includeClosed: true,
-      });
-      const all = extractList(res) || [];
+      let all = [];
+      try {
+        const res = await getProjects({
+          pageNumber: 1, pageSize: 100,
+          searchText: search || undefined,
+          statusId: statusFilter || undefined,
+          includeClosed: true,
+        });
+        all = extractList(res) || [];
+      } catch (primaryErr) {
+        // Fallback: lighter endpoint if POST /Project/GetAll is forbidden
+        if (primaryErr?.response?.status >= 400) {
+          const res2 = await getProjectsDropdown();
+          all = extractList(res2) || [];
+        } else {
+          throw primaryErr;
+        }
+      }
       const filtered = visibleCrmIds
         ? all.filter(p => projectMatchesRole(p, visibleCrmIds))
         : all;
