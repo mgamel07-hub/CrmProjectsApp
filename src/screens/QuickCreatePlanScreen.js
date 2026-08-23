@@ -201,11 +201,18 @@ export default function QuickCreatePlanScreen({ navigation }) {
     finally { setLoadingStages(false); }
   }, []);
 
-  const onSelectStage = useCallback(async (id, obj) => {
+  const onSelectStage = useCallback((id, obj) => {
     setStageId(id);
     setStageName(obj?.value || obj?.name || '');
-    await loadDraftPlan(scopeId, id);
-  }, [scopeId]);
+    // loadDraftPlan triggered by useEffect below
+  }, []);
+
+  // Trigger plan load whenever both scopeId and stageId are set
+  useEffect(() => {
+    if (scopeId && stageId) {
+      loadDraftPlan(scopeId, stageId);
+    }
+  }, [scopeId, stageId]); // eslint-disable-line
 
   // Reset plan-level state
   const resetPlan = () => {
@@ -275,7 +282,8 @@ export default function QuickCreatePlanScreen({ navigation }) {
         setExistingItems(Array.isArray(items) ? items : []);
       } catch { setExistingItems([]); }
 
-    } catch {
+    } catch (e) {
+      console.log('[loadDraftPlan] error:', e?.response?.status, e?.message);
       setNoPlanFound(true);
     } finally {
       setLoadingPlan(false);
@@ -461,8 +469,13 @@ export default function QuickCreatePlanScreen({ navigation }) {
       {noPlanFound && !loadingPlan && (
         <View style={s.noPlanBox}>
           <Ionicons name="alert-circle-outline" size={32} color="#E65100" />
-          <Text style={s.noPlanText}>لا توجد خطة لهذه المرحلة بعد</Text>
-          <Text style={s.noPlanSub}>يرجى التواصل مع المشرف لإنشاء الخطة أولاً</Text>
+          <Text style={s.noPlanText}>لا توجد خطة لهذه المرحلة</Text>
+          <Text style={s.noPlanSub}>يرجى التأكد من إنشاء الخطة في النظام أولاً</Text>
+          <TouchableOpacity style={[s.confirmBtn, { marginTop: 8, paddingHorizontal: 20 }]}
+            onPress={() => loadDraftPlan(scopeId, stageId)}>
+            <Ionicons name="refresh-outline" size={15} color="#fff" />
+            <Text style={s.confirmBtnText}>إعادة المحاولة</Text>
+          </TouchableOpacity>
         </View>
       )}
 
