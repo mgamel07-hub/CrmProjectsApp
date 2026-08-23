@@ -11,7 +11,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getProjectsDropdown, getScopesDropdown, getStagesDropdown,
-  getPlansByScope, updatePlan, getPlanItems,
+  getPlansByScope, createPlan, updatePlan, getPlanItems,
   getAvailableStageDefItems, createPlanItem, createPlanItemFromCatalog,
   submitPlan,
 } from '../api/projects';
@@ -224,49 +224,48 @@ export default function QuickCreatePlanScreen({ navigation }) {
     setCatalogItems([]); setShowCatalog(false);
   };
 
-  // Find the plan for the selected scope+stage
+  // Load or create the plan for the selected scope+stage
   const loadDraftPlan = useCallback(async (scopeIdParam, stageIdParam) => {
     if (!scopeIdParam || !stageIdParam) return;
     setLoadingPlan(true);
     setNoPlanFound(false);
     setPlanId(null);
     try {
-      const res = await getPlansByScope({ projectScopeId: scopeIdParam });
+      // 1. Try to find an existing plan for this scope
+      let found = null;
+      try {
+        const res = await getPlansByScope({ projectScopeId: scopeIdParam });
+        let plans = extractList(res);
+        if (!plans) {
+          const raw = res?.data?.data ?? res?.data ?? null;
+          plans = Array.isArray(raw) ? raw : (raw && raw.id ? [raw] : []);
+        }
+        const targetId = String(stageIdParam);
+        const matchStage = p =>
+          String(p.projectScopeStageId ?? p.stageId ?? p.scopeStageId ?? '') === targetId;
+        found =
+          plans.find(p => matchStage(p) && (p.statusId === 1 || p.statusId === 4)) ||
+          plans.find(p => matchStage(p));
+      } catch (_) {}
 
-      // Handle both array and single-object responses
-      let plans = extractList(res);
-      if (!plans) {
-        const raw = res?.data?.data ?? res?.data ?? null;
-        plans = Array.isArray(raw) ? raw : (raw && raw.id ? [raw] : []);
-      }
-      // DEV: log response shape to help debug field names
-      if (__DEV__ && plans.length > 0) {
-        console.log('[Plan] sample keys:', Object.keys(plans[0]).join(', '));
-        console.log('[Plan] sample stageId fields:', {
-          projectScopeStageId: plans[0].projectScopeStageId,
-          stageId: plans[0].stageId,
-          scopeStageId: plans[0].scopeStageId,
-          statusId: plans[0].statusId,
-        });
-      }
-
-      const targetId = String(stageIdParam);
-
-      // Match by stage id (convert both to string to avoid type mismatch)
-      const matchStage = p =>
-        String(p.projectScopeStageId ?? p.stageId ?? p.scopeStageId ?? '') === targetId;
-
-      // Prefer draft/rejected (can be edited); fall back to any matching plan
-      const found =
-        plans.find(p => matchStage(p) && (p.statusId === 1 || p.statusId === 4)) ||
-        plans.find(p => matchStage(p));
-
+      // 2. If not found, create a new draft plan
       if (!found) {
-        setNoPlanFound(true);
-        return;
+        try {
+          const createRes = await createPlan({ projectScopeStageId: stageIdParam });
+          const newPlan = createRes?.data?.data ?? createRes?.data;
+          if (newPlan?.id) {
+            found = { ...newPlan, statusId: newPlan.statusId ?? 1 };
+          }
+        } catch (createErr) {
+          console.log('[createPlan] error:', createErr?.response?.status, createErr?.message);
+          setNoPlanFound(true);
+          return;
+        }
       }
 
-      // Pre-populate fields
+      if (!found) { setNoPlanFound(true); return; }
+
+      // 3. Populate form fields
       setPlanId(found.id);
       setPlanStatus(found.statusId);
       setStartDate(parseDate(found.startDate));
@@ -275,7 +274,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
       setNoUnits(!!(found.noUnits));
       setRequiredDocument(!!(found.requiredDocument));
 
-      // Load existing items
+      // 4. Load existing items
       try {
         const itemsRes = await getPlanItems(found.id);
         const items = extractList(itemsRes) || [];
@@ -465,12 +464,12 @@ export default function QuickCreatePlanScreen({ navigation }) {
         </View>
       )}
 
-      {/* No plan found */}
+      {/* No plan found (only if create also failed — likely a permissions issue) */}
       {noPlanFound && !loadingPlan && (
         <View style={s.noPlanBox}>
           <Ionicons name="alert-circle-outline" size={32} color="#E65100" />
-          <Text style={s.noPlanText}>لا توجد خطة لهذه المرحلة</Text>
-          <Text style={s.noPlanSub}>يرجى التأكد من إنشاء الخطة في النظام أولاً</Text>
+          <Text style={s.noPlanText}>تعذّر تحميل أو إنشاء الخطة</Text>
+          <Text style={s.noPlanSub}>تحقق من الاتصال بالشبكة أو الصلاحيات</Text>
           <TouchableOpacity style={[s.confirmBtn, { marginTop: 8, paddingHorizontal: 20 }]}
             onPress={() => loadDraftPlan(scopeId, stageId)}>
             <Ionicons name="refresh-outline" size={15} color="#fff" />
