@@ -2,7 +2,7 @@
  * QuickCreatePlanScreen — تعبئة وتقديم خطة التنفيذ للمنفذ
  * الخطط تُنشأ تلقائياً من النظام — المنفذ يملأ التواريخ والبنود ويقدم للاعتماد
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   TextInput, ActivityIndicator, Alert, Platform, Switch,
@@ -137,6 +137,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
   const [scopeId,    setScopeId]    = useState(null);
   const [stageId,    setStageId]    = useState(null);
   const [stageName,  setStageName]  = useState('');
+  const scopeIdRef = useRef(null); // always holds latest scopeId for use in callbacks
 
   // Loaded plan
   const [planId,       setPlanId]       = useState(null);
@@ -186,6 +187,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
 
   const onSelectProject = useCallback(async (id) => {
     setProjectId(id); setScopeId(null); setStageId(null); setStageName('');
+    scopeIdRef.current = null;
     setScopes([]); setStages([]);
     resetPlan();
     setLoadingScopes(true);
@@ -196,6 +198,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
 
   const onSelectScope = useCallback(async (id) => {
     setScopeId(id); setStageId(null); setStageName('');
+    scopeIdRef.current = id;
     setStages([]);
     resetPlan();
     setLoadingStages(true);
@@ -205,17 +208,16 @@ export default function QuickCreatePlanScreen({ navigation }) {
   }, []);
 
   const onSelectStage = useCallback((id, obj) => {
-    setStageId(id);
+    // id may be null/undefined if API returns {key: null} — use obj directly as fallback
+    const realId = id ?? obj?.id ?? obj?.key ?? obj?.Id;
+    setStageId(realId);
     setStageName(obj?.value || obj?.name || '');
-    // loadDraftPlan triggered by useEffect below
-  }, []);
-
-  // Trigger plan load whenever both scopeId and stageId are set
-  useEffect(() => {
-    if (scopeId && stageId) {
-      loadDraftPlan(scopeId, stageId);
+    // call directly with ref — avoids stale closure and useEffect timing issues
+    const currentScopeId = scopeIdRef.current;
+    if (currentScopeId && realId != null) {
+      loadDraftPlan(currentScopeId, realId);
     }
-  }, [scopeId, stageId]); // eslint-disable-line
+  }, []);
 
   // Reset plan-level state
   const resetPlan = () => {
