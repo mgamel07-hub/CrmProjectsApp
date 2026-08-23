@@ -473,6 +473,20 @@ export default function QuickCreatePlanScreen({ navigation }) {
         />
       )}
 
+      {/* Manual load button — shows when stage selected but no result yet */}
+      {scopeId && stageId && !planId && !noPlanFound && !loadingPlan && (
+        <TouchableOpacity
+          style={s.loadPlanBtn}
+          onPress={() => {
+            Alert.alert('debug', `scopeId=${scopeId} stageId=${stageId}`);
+            loadDraftPlan(scopeId, stageId);
+          }}
+        >
+          <Ionicons name="search-outline" size={16} color="#fff" />
+          <Text style={s.loadPlanBtnText}>تحميل الخطة</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Loading plan */}
       {loadingPlan && (
         <View style={s.loadingPlanBox}>
@@ -908,6 +922,12 @@ const s = StyleSheet.create({
     gap: 6, backgroundColor: '#1565C0', borderRadius: 12, paddingVertical: 13, elevation: 2,
   },
   submitBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+
+  loadPlanBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: '#1565C0', borderRadius: 10, paddingVertical: 13, marginBottom: 4,
+  },
+  loadPlanBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
   savingBox: { alignItems: 'center', paddingVertical: 20, gap: 12 },
   savingText: { color: '#1565C0', fontSize: 14, fontWeight: '600' },
