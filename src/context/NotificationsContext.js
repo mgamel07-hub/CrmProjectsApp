@@ -47,17 +47,13 @@ export function NotificationsProvider({ children }) {
       .forEach((n) => markAsRead(n.id || n.Id));
   }, [notifications, markAsRead]);
 
-  // Load on login
+  // Reset on logout
   useEffect(() => {
-    if (token && token !== 'demo-token' && !isDemo) {
-      load();
-    } else {
+    if (!token || token === 'demo-token' || isDemo) {
       setNotifications([]);
       setUnreadCount(0);
     }
   }, [token, isDemo]);
-
-  // No automatic polling — load is called manually when the user opens the notifications screen
 
   return (
     <NotificationsContext.Provider value={{
