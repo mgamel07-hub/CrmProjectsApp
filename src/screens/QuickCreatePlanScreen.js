@@ -365,11 +365,21 @@ export default function QuickCreatePlanScreen({ navigation }) {
       // 0. Create plan if we don't have one yet
       if (!currentPlanId) {
         setStep('جاري إنشاء الخطة...');
-        const createRes = await createPlan({ projectScopeStageId: stageId });
-        const np = createRes?.data?.data ?? createRes?.data;
-        if (!np?.id) throw new Error('فشل في إنشاء الخطة — تحقق من الصلاحيات');
-        currentPlanId = np.id;
-        setPlanId(np.id);
+        try {
+          const createRes = await createPlan({ projectScopeStageId: stageId });
+          const np = createRes?.data?.data ?? createRes?.data;
+          if (np?.id) { currentPlanId = np.id; setPlanId(np.id); }
+        } catch (createErr) {
+          const code = createErr?.response?.status;
+          if (code === 403) {
+            // Can't create — notify manager to create/submit on their end
+            setStep('جاري إرسال إشعار للمدير...');
+            await notifyManager(stageName);
+            Alert.alert('تم ✓', 'تم إرسال إشعار للمدير — سيقوم بمراجعة الخطة وتقديمها', [{ text: 'حسناً' }]);
+            return;
+          }
+          throw createErr;
+        }
       }
 
       // 1. Update plan dates/units/flags
