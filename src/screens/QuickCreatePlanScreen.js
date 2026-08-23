@@ -13,11 +13,11 @@ import {
   getProjectsDropdown, getScopesDropdown, getStagesDropdown,
   getPlansByScope, createPlan, updatePlan, getPlanItems,
   getAvailableStageDefItems, createPlanItem, createPlanItemFromCatalog,
-  submitPlan,
 } from '../api/projects';
 import { getTeamMembers, getMyTeamRecord, createNotification } from '../api/internal';
 import { extractList, extractData } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
+import { useRole, projectMatchesRole } from '../context/RoleContext';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -127,6 +127,7 @@ function DateField({ label, value, onChange, required }) {
 
 export default function QuickCreatePlanScreen({ navigation }) {
   const { user } = useAuth();
+  const { visibleCrmIds } = useRole();
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
 
   // Selection
@@ -176,14 +177,20 @@ export default function QuickCreatePlanScreen({ navigation }) {
   const [loadingScopes,   setLoadingScopes]   = useState(false);
   const [loadingStages,   setLoadingStages]   = useState(false);
 
-  // Load projects via dropdown endpoint (works for all roles)
+  // Load projects via dropdown endpoint, filtered by role
   useEffect(() => {
     setLoadingProjects(true);
     getProjectsDropdown()
-      .then(res => setProjects(extractList(res) || []))
+      .then(res => {
+        const all = extractList(res) || [];
+        const filtered = visibleCrmIds
+          ? all.filter(p => projectMatchesRole(p, visibleCrmIds))
+          : all;
+        setProjects(filtered);
+      })
       .catch(() => setProjects([]))
       .finally(() => setLoadingProjects(false));
-  }, []);
+  }, [visibleCrmIds]);
 
   const onSelectProject = useCallback(async (id) => {
     setProjectId(id); setScopeId(null); setStageId(null); setStageName('');
@@ -403,34 +410,17 @@ export default function QuickCreatePlanScreen({ navigation }) {
         }
       }
 
-      // 4. Submit for approval
-      let submitted = false;
+      // 4. Notify manager (implementer doesn't call submitPlan — manager submits)
       if (andSubmit) {
-        setStep('جاري تقديم الخطة للاعتماد...');
-        try {
-          await submitPlan(currentPlanId);
-          submitted = true;
-          setStep('جاري إرسال إشعار للمدير...');
-          await notifyManager(stageName);
-        } catch (submitErr) {
-          const code = submitErr?.response?.status;
-          if (code === 403) {
-            // Implementer can't submit directly — data saved, notify manager manually
-            setStep('جاري إرسال إشعار للمدير...');
-            await notifyManager(stageName);
-          } else {
-            throw submitErr;
-          }
-        }
+        setStep('جاري إرسال إشعار للمدير...');
+        await notifyManager(stageName);
       }
 
       Alert.alert(
         'تم بنجاح ✓',
-        submitted
-          ? 'تم تقديم الخطة للمدير للاعتماد — ستصلك إشعار بالنتيجة'
-          : andSubmit
-            ? 'تم حفظ بيانات الخطة وإشعار المدير — سيقوم المدير بالتقديم'
-            : 'تم حفظ الخطة كمسودة',
+        andSubmit
+          ? 'تم حفظ بيانات الخطة وإشعار المدير — سيقوم المدير بمراجعتها وتقديمها'
+          : 'تم حفظ الخطة كمسودة',
         [{
           text: 'عرض الخطة',
           onPress: () => navigation.navigate('PlanDetail', { planId: currentPlanId, title: `خطة: ${stageName}` }),
