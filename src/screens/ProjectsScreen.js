@@ -19,7 +19,7 @@ import ProgressBar from '../components/ProgressBar';
 export default function ProjectsScreen({ navigation, route }) {
   const { lang } = useLang();
   const { isDemo, can } = useAuth();
-  const { visibleCrmIds } = useRole();
+  const { visibleCrmIds, roleLoading } = useRole();
   const canCreate = can('Project', 'create');
   const canDelete = can('Project', 'delete');
   const [projects, setProjects] = useState([]);
@@ -38,6 +38,7 @@ export default function ProjectsScreen({ navigation, route }) {
   ];
 
   const load = useCallback(async () => {
+    if (roleLoading) return; // wait until role is resolved before filtering
     if (isDemo) {
       let data = DEMO_PROJECTS;
       if (statusFilter) data = data.filter(p => p.statusId === statusFilter);
@@ -66,7 +67,7 @@ export default function ProjectsScreen({ navigation, route }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [search, statusFilter, isDemo, visibleCrmIds]);
+  }, [search, statusFilter, isDemo, visibleCrmIds, roleLoading]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -112,7 +113,7 @@ export default function ProjectsScreen({ navigation, route }) {
     );
   };
 
-  if (loading) return <LoadingScreen />;
+  if (loading || roleLoading) return <LoadingScreen />;
   if (error && !projects.length) return <ErrorMessage message={error} onRetry={load} />;
 
   const renderItem = ({ item }) => (
