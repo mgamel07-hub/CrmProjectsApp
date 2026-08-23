@@ -57,13 +57,13 @@ export default function ProjectsScreen({ navigation, route }) {
           includeClosed: true,
         });
         all = extractList(res) || [];
-      } catch (primaryErr) {
-        // Fallback: lighter endpoint if POST /Project/GetAll is forbidden
-        if (primaryErr?.response?.status >= 400) {
+      } catch {
+        // Fallback for ANY error (HTTP 4xx/5xx or network timeout)
+        try {
           const res2 = await getProjectsDropdown();
           all = extractList(res2) || [];
-        } else {
-          throw primaryErr;
+        } catch (fallbackErr) {
+          throw fallbackErr; // both failed
         }
       }
       const filtered = visibleCrmIds

@@ -10,7 +10,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  getProjects, getScopesDropdown, getStagesDropdown,
+  getProjectsDropdown, getScopesDropdown, getStagesDropdown,
   getPlansByScope, updatePlan, getPlanItems,
   getAvailableStageDefItems, createPlanItem, createPlanItemFromCatalog,
   submitPlan,
@@ -18,7 +18,6 @@ import {
 import { getTeamMembers, getMyTeamRecord, createNotification } from '../api/internal';
 import { extractList, extractData } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
-import { useRole, projectMatchesRole } from '../context/RoleContext';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -128,7 +127,6 @@ function DateField({ label, value, onChange, required }) {
 
 export default function QuickCreatePlanScreen({ navigation }) {
   const { user } = useAuth();
-  const { visibleCrmIds } = useRole();
   const userId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
 
   // Selection
@@ -174,21 +172,14 @@ export default function QuickCreatePlanScreen({ navigation }) {
   const [loadingScopes,   setLoadingScopes]   = useState(false);
   const [loadingStages,   setLoadingStages]   = useState(false);
 
-  // Load projects filtered by role (same logic as ProjectsScreen)
+  // Load projects via dropdown endpoint (works for all roles)
   useEffect(() => {
     setLoadingProjects(true);
-    getProjects({ pageNumber: 1, pageSize: 200, includeClosed: true })
-      .then(res => {
-        const all = extractList(res) || [];
-        const filtered = visibleCrmIds
-          ? all.filter(p => projectMatchesRole(p, visibleCrmIds))
-          : all;
-        // Normalise to {id, value} shape for the Dropdown component
-        setProjects(filtered.map(p => ({ id: p.id, value: p.title || p.name || `#${p.id}` })));
-      })
+    getProjectsDropdown()
+      .then(res => setProjects(extractList(res) || []))
       .catch(() => setProjects([]))
       .finally(() => setLoadingProjects(false));
-  }, [visibleCrmIds]);
+  }, []);
 
   const onSelectProject = useCallback(async (id) => {
     setProjectId(id); setScopeId(null); setStageId(null); setStageName('');
