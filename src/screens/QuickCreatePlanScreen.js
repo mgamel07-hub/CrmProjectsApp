@@ -347,19 +347,29 @@ export default function QuickCreatePlanScreen({ navigation }) {
     } catch (_) {}
   };
 
-  // Main save
+  // Main save — creates plan if not yet loaded, then updates + submits
   const handleSave = async (andSubmit = true) => {
-    if (!planId)    return Alert.alert('تنبيه', 'لم يتم تحميل الخطة بعد');
     if (!startDate) return Alert.alert('تنبيه', 'تاريخ البداية مطلوب');
     if (!endDate)   return Alert.alert('تنبيه', 'تاريخ الإنتهاء مطلوب');
 
     setSaving(true);
+    let currentPlanId = planId;
     try {
+      // 0. Create plan if we don't have one yet
+      if (!currentPlanId) {
+        setStep('جاري إنشاء الخطة...');
+        const createRes = await createPlan({ projectScopeStageId: stageId });
+        const np = createRes?.data?.data ?? createRes?.data;
+        if (!np?.id) throw new Error('فشل في إنشاء الخطة — تحقق من الصلاحيات');
+        currentPlanId = np.id;
+        setPlanId(np.id);
+      }
+
       // 1. Update plan dates/units/flags
       setStep('جاري حفظ تفاصيل الخطة...');
       try {
         await updatePlan({
-          id: planId,
+          id: currentPlanId,
           projectScopeStageId: stageId,
           startDate: fmtDate(startDate),
           endDate:   fmtDate(endDate),
@@ -373,7 +383,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
       if (selectedCatIds.length > 0) {
         setStep('جاري إضافة بنود الكتالوج...');
         for (const catId of selectedCatIds) {
-          try { await createPlanItemFromCatalog({ projectPlanId: planId, stageDefItemId: catId }); }
+          try { await createPlanItemFromCatalog({ projectPlanId: currentPlanId, stageDefItemId: catId }); }
           catch (_) {}
         }
       }
@@ -384,7 +394,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
         for (const item of newItems) {
           try {
             await createPlanItem({
-              projectPlanId: planId,
+              projectPlanId: currentPlanId,
               title: item.title.trim(),
               expectedUnits: item.expectedUnits ? Number(item.expectedUnits) : 0,
               scheduledDate: item.scheduledDate ? fmtDate(item.scheduledDate) : undefined,
@@ -396,7 +406,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
       // 4. Submit for approval
       if (andSubmit) {
         setStep('جاري تقديم الخطة للاعتماد...');
-        await submitPlan(planId);
+        await submitPlan(currentPlanId);
         setStep('جاري إرسال إشعار للمدير...');
         await notifyManager(stageName);
       }
@@ -408,7 +418,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
           : 'تم حفظ الخطة كمسودة',
         [{
           text: 'عرض الخطة',
-          onPress: () => navigation.navigate('PlanDetail', { planId, title: `خطة: ${stageName}` }),
+          onPress: () => navigation.navigate('PlanDetail', { planId: currentPlanId, title: `خطة: ${stageName}` }),
         }, {
           text: 'حسناً',
           onPress: resetForm,
@@ -429,7 +439,8 @@ export default function QuickCreatePlanScreen({ navigation }) {
     resetPlan();
   };
 
-  const isDraftOrRejected = !planStatus || planStatus === 1 || planStatus === 4;
+  // Allow editing when: no plan yet (will create on save), or draft, or rejected
+  const isDraftOrRejected = !planId || !planStatus || planStatus === 1 || planStatus === 4;
 
   // ── render ────────────────────────────────────────────────────────────────────
 
@@ -473,46 +484,24 @@ export default function QuickCreatePlanScreen({ navigation }) {
         />
       )}
 
-      {/* Manual load button — shows when stage selected but no result yet */}
-      {scopeId && stageId && !planId && !noPlanFound && !loadingPlan && (
-        <TouchableOpacity
-          style={s.loadPlanBtn}
-          onPress={() => {
-            Alert.alert('debug', `scopeId=${scopeId} stageId=${stageId}`);
-            loadDraftPlan(scopeId, stageId);
-          }}
-        >
-          <Ionicons name="search-outline" size={16} color="#fff" />
-          <Text style={s.loadPlanBtnText}>تحميل الخطة</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Loading plan */}
+      {/* Loading plan in background */}
       {loadingPlan && (
         <View style={s.loadingPlanBox}>
           <ActivityIndicator color="#1565C0" />
-          <Text style={s.loadingPlanText}>جاري تحميل الخطة...</Text>
+          <Text style={s.loadingPlanText}>جاري تحميل بيانات الخطة...</Text>
         </View>
       )}
 
-      {/* No plan found (only if create also failed — likely a permissions issue) */}
-      {noPlanFound && !loadingPlan && (
-        <View style={s.noPlanBox}>
-          <Ionicons name="alert-circle-outline" size={32} color="#E65100" />
-          <Text style={s.noPlanText}>تعذّر تحميل أو إنشاء الخطة</Text>
-          {!!debugError && <Text style={[s.noPlanSub, { color: '#D32F2F', fontWeight: '700' }]}>{debugError}</Text>}
-          <Text style={s.noPlanSub}>تحقق من الاتصال بالشبكة أو الصلاحيات</Text>
-          <TouchableOpacity style={[s.confirmBtn, { marginTop: 8, paddingHorizontal: 20 }]}
-            onPress={() => loadDraftPlan(scopeId, stageId)}>
-            <Ionicons name="refresh-outline" size={15} color="#fff" />
-            <Text style={s.confirmBtnText}>إعادة المحاولة</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Plan loaded */}
-      {planId && !loadingPlan && (<>
-        {/* Plan status banner */}
+      {/* Plan form — shows as soon as stage is selected, regardless of planId */}
+      {stageId && !loadingPlan && (<>
+        {/* New plan indicator */}
+        {!planId && (
+          <View style={[s.statusBanner, { backgroundColor: '#E3F2FD' }]}>
+            <Ionicons name="add-circle-outline" size={16} color="#1565C0" />
+            <Text style={[s.statusBannerText, { color: '#1565C0' }]}>خطة جديدة — ستُنشأ عند الحفظ</Text>
+          </View>
+        )}
+        {/* Existing plan status banner */}
         {planStatus && planStatus !== 1 && (
           <View style={[s.statusBanner, planStatus === 3 && s.statusBannerGreen, planStatus === 4 && s.statusBannerRed]}>
             <Ionicons
