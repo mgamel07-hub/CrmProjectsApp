@@ -435,9 +435,14 @@ export default function QuickCreatePlanScreen({ navigation }) {
         try {
           await submitPlan(currentPlanId);
           submitted = true;
-        } catch (_) {}
+        } catch (submitErr) {
+          const code = submitErr?.response?.status;
+          const msg = submitErr?.response?.data?.message || submitErr?.response?.data?.title || submitErr?.message || '';
+          // Re-throw so user sees the real error instead of silent failure
+          throw new Error(`فشل تقديم الخطة (${code || '?'}): ${msg}`);
+        }
         setStep('جاري إرسال إشعار للمدير...');
-        await notifyManager(stageName);
+        try { await notifyManager(stageName); } catch (_) {}
       }
 
       Alert.alert(
