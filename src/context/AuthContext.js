@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
 import { login as apiLogin, loginV2 as apiLoginV2 } from '../api/auth';
 import { getMyPermissions, getMyProfile } from '../api/permissions';
 import { DEMO_USER } from '../api/demoData';
+import api from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -74,6 +76,17 @@ export function AuthProvider({ children }) {
           setUser(JSON.parse(savedUser));
           if (savedPerms) setPerms(JSON.parse(savedPerms));
           if (savedProf)  setProfile(JSON.parse(savedProf));
+          // DEBUG: fetch RSA public key and display it
+          try {
+            const pkRes = await api.get('/Auth/GetPublicKey');
+            const pk = pkRes?.data?.data || pkRes?.data;
+            if (pk) {
+              Alert.alert('RSA Public Key', String(pk), [{ text: 'OK' }]);
+              await AsyncStorage.setItem('rsaPublicKey', String(pk));
+            }
+          } catch (pkErr) {
+            Alert.alert('GetPublicKey Error', String(pkErr?.response?.status) + ' ' + JSON.stringify(pkErr?.response?.data));
+          }
         }
       } catch (_) {}
       setLoading(false);
