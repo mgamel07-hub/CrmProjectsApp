@@ -419,16 +419,9 @@ export default function QuickExecutionScreen({ navigation }) {
       await FileSystem.writeAsStringAsync(fileUri, html, {
         encoding: FileSystem.EncodingType.UTF8,
       });
-      const Sharing = await import('expo-sharing');
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'text/html',
-          dialogTitle: 'نموذج تدريب',
-          UTI: 'public.html',
-        });
-      } else {
-        Alert.alert('تم', 'تم إنشاء النموذج بنجاح');
-      }
+      const contentUri = await FileSystem.getContentUriAsync(fileUri);
+      const { Linking } = require('react-native');
+      await Linking.openURL(contentUri);
     } catch (e) {
       Alert.alert('خطأ', 'فشل إنشاء النموذج: ' + (e?.message || ''));
     } finally {
