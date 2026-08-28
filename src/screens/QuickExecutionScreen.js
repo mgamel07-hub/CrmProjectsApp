@@ -8,8 +8,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import {
   getProjectsDropdown, getScopesDropdown, getStagesDropdown,
   getPlansDropDown, getPlanItems,
@@ -416,12 +415,16 @@ export default function QuickExecutionScreen({ navigation }) {
         trainerNotes: description,
         clientNotes,
       });
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      const fileUri = FileSystem.documentDirectory + 'training_form.html';
+      await FileSystem.writeAsStringAsync(fileUri, html, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      const Sharing = await import('expo-sharing');
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'text/html',
           dialogTitle: 'نموذج تدريب',
-          UTI: 'com.adobe.pdf',
+          UTI: 'public.html',
         });
       } else {
         Alert.alert('تم', 'تم إنشاء النموذج بنجاح');
