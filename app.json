@@ -48,6 +48,9 @@
         }
       ]
     ],
+    "experiments": {
+      "baseUrl": "/CrmProjectsApp/"
+    },
     "extra": {
       "eas": {
         "projectId": "b7f82206-bc3a-4086-982e-0173cfe8735f"

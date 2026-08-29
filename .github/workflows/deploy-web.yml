@@ -29,7 +29,7 @@ jobs:
         run: npm ci
 
       - name: Build web
-        run: npx expo export --platform web --base-url /CrmProjectsApp/ 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
+        run: npx expo export --platform web 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
         env:
           CI: ''
           EXPO_NO_TELEMETRY: 1
