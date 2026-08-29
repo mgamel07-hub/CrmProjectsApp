@@ -417,7 +417,7 @@ export default function QuickExecutionScreen({ navigation }) {
       });
       const fileUri = FileSystem.documentDirectory + 'training_form.html';
       await FileSystem.writeAsStringAsync(fileUri, html, {
-        encoding: FileSystem.EncodingType.UTF8,
+        encoding: 'utf8',
       });
       const contentUri = await FileSystem.getContentUriAsync(fileUri);
       const { Linking } = require('react-native');
