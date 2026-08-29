@@ -2,7 +2,8 @@
   "buildCommand": "npx expo export --platform web",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/((?!_expo|assets|favicon).*)", "destination": "/index.html" }
+    { "source": "/api/:path*", "destination": "https://crm.yemensoft.net:3346/api/:path*" },
+    { "source": "/((?!_expo|assets|favicon|api).*)", "destination": "/index.html" }
   ],
   "headers": [
     {

@@ -1,9 +1,14 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
-const BASE_URL      = 'https://crm.yemensoft.net:3346/api/v1';
-const BASE_URL_V2   = 'https://crm.yemensoft.net:3346/api/v2';
-const BASE_URL_ROOT = 'https://crm.yemensoft.net:3346';
+// On web (Vercel), use relative paths so the proxy handles CORS.
+// On native, hit the CRM server directly.
+const HOST = Platform.OS === 'web' ? '' : 'https://crm.yemensoft.net:3346';
+
+const BASE_URL      = `${HOST}/api/v1`;
+const BASE_URL_V2   = `${HOST}/api/v2`;
+const BASE_URL_ROOT = `${HOST}`;
 
 const api = axios.create({
   baseURL: BASE_URL,

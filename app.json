@@ -25,9 +25,8 @@
       "backgroundColor": "#F5F7FA",
       "display": "standalone",
       "orientation": "portrait",
-      "scope": "/CrmProjectsApp/",
-      "startUrl": "/CrmProjectsApp/",
-      "baseUrl": "/CrmProjectsApp/"
+      "scope": "/",
+      "startUrl": "/"
     },
     "plugins": [
       "expo-font",
@@ -48,9 +47,6 @@
         }
       ]
     ],
-    "experiments": {
-      "baseUrl": "/CrmProjectsApp/"
-    },
     "extra": {
       "eas": {
         "projectId": "b7f82206-bc3a-4086-982e-0173cfe8735f"
