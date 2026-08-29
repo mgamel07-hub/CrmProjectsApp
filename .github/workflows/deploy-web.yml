@@ -29,7 +29,10 @@ jobs:
         run: npm ci
 
       - name: Build web
-        run: npx expo export --platform web
+        run: npx expo export --platform web --clear
+        env:
+          CI: ''
+          EXPO_NO_TELEMETRY: 1
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
