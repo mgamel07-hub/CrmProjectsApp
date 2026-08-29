@@ -4,9 +4,10 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert,
+  TextInput, ActivityIndicator, Alert, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import {
@@ -444,6 +445,10 @@ export default function QuickExecutionScreen({ navigation }) {
   const [startTime,   setStartTime]   = useState('');
   const [endTime,     setEndTime]     = useState('');
   const [location,    setLocation]    = useState(1);
+
+  const [showDatePicker,      setShowDatePicker]      = useState(false);
+  const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+  const [showEndTimePicker,   setShowEndTimePicker]   = useState(false);
   const [description, setDescription] = useState('');
   const [clientNotes, setClientNotes] = useState('');
   const [trainees,    setTrainees]    = useState([{ name: '', job: '' }]);
@@ -693,29 +698,82 @@ export default function QuickExecutionScreen({ navigation }) {
 
       {/* Date */}
       <Field label="تاريخ التنفيذ *">
-        <TextInput
-          style={s.input}
-          value={date}
-          onChangeText={setDate}
-          placeholder="YYYY-MM-DD"
-          placeholderTextColor="#aaa"
-          keyboardType="numeric"
-          textAlign="right"
-        />
+        <TouchableOpacity style={s.dateBtn} onPress={() => setShowDatePicker(true)}>
+          <Ionicons name="calendar-outline" size={18} color="#555" style={{ marginLeft: 6 }} />
+          <Text style={[s.dateBtnText, !date && { color: '#aaa' }]}>
+            {date || 'اختر التاريخ'}
+          </Text>
+        </TouchableOpacity>
+        {showDatePicker && (
+          <DateTimePicker
+            value={date ? new Date(date) : new Date()}
+            mode="date"
+            display="default"
+            onChange={(event, selected) => {
+              setShowDatePicker(false);
+              if (selected) {
+                const y = selected.getFullYear();
+                const m = String(selected.getMonth() + 1).padStart(2, '0');
+                const d = String(selected.getDate()).padStart(2, '0');
+                setDate(`${y}-${m}-${d}`);
+              }
+            }}
+          />
+        )}
       </Field>
 
       {/* Time */}
       <View style={s.timeRow}>
         <View style={{ flex: 1 }}>
           <Field label="من">
-            <TextInput style={s.input} value={startTime} onChangeText={setStartTime}
-              placeholder="HH:MM" placeholderTextColor="#aaa" keyboardType="numeric" />
+            <TouchableOpacity style={s.dateBtn} onPress={() => setShowStartTimePicker(true)}>
+              <Ionicons name="time-outline" size={18} color="#555" style={{ marginLeft: 6 }} />
+              <Text style={[s.dateBtnText, !startTime && { color: '#aaa' }]}>
+                {startTime || 'الوقت'}
+              </Text>
+            </TouchableOpacity>
+            {showStartTimePicker && (
+              <DateTimePicker
+                value={startTime ? (() => { const [h,m] = startTime.split(':'); const d = new Date(); d.setHours(+h,+m,0,0); return d; })() : new Date()}
+                mode="time"
+                is24Hour={true}
+                display="default"
+                onChange={(event, selected) => {
+                  setShowStartTimePicker(false);
+                  if (selected) {
+                    const h = String(selected.getHours()).padStart(2, '0');
+                    const m = String(selected.getMinutes()).padStart(2, '0');
+                    setStartTime(`${h}:${m}`);
+                  }
+                }}
+              />
+            )}
           </Field>
         </View>
         <View style={{ flex: 1 }}>
           <Field label="إلى">
-            <TextInput style={s.input} value={endTime} onChangeText={setEndTime}
-              placeholder="HH:MM" placeholderTextColor="#aaa" keyboardType="numeric" />
+            <TouchableOpacity style={s.dateBtn} onPress={() => setShowEndTimePicker(true)}>
+              <Ionicons name="time-outline" size={18} color="#555" style={{ marginLeft: 6 }} />
+              <Text style={[s.dateBtnText, !endTime && { color: '#aaa' }]}>
+                {endTime || 'الوقت'}
+              </Text>
+            </TouchableOpacity>
+            {showEndTimePicker && (
+              <DateTimePicker
+                value={endTime ? (() => { const [h,m] = endTime.split(':'); const d = new Date(); d.setHours(+h,+m,0,0); return d; })() : new Date()}
+                mode="time"
+                is24Hour={true}
+                display="default"
+                onChange={(event, selected) => {
+                  setShowEndTimePicker(false);
+                  if (selected) {
+                    const h = String(selected.getHours()).padStart(2, '0');
+                    const m = String(selected.getMinutes()).padStart(2, '0');
+                    setEndTime(`${h}:${m}`);
+                  }
+                }}
+              />
+            )}
           </Field>
         </View>
       </View>
@@ -937,6 +995,12 @@ const s = StyleSheet.create({
     justifyContent: 'center', marginTop: 4,
   },
   addRowBtnText: { color: '#1565C0', fontSize: 13, fontWeight: '600' },
+
+  dateBtn: {
+    flexDirection: 'row-reverse', alignItems: 'center', borderWidth: 1, borderColor: '#ddd',
+    borderRadius: 10, backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 10,
+  },
+  dateBtnText: { flex: 1, fontSize: 15, color: '#222', textAlign: 'right' },
 
   input: {
     borderWidth: 1, borderColor: '#ddd', borderRadius: 10,
