@@ -438,6 +438,13 @@ function buildFollowUpHtml({ clientName, systemName, date, startTime, endTime, v
     + HTML_FOOTER;
 }
 
+// ── Web-only style for native HTML inputs ─────────────────────────────────────
+const webInputStyle = {
+  width: '100%', padding: '10px 12px', fontSize: 15, borderRadius: 10,
+  border: '1px solid #ddd', backgroundColor: '#fff', outline: 'none',
+  direction: 'rtl', fontFamily: 'inherit', color: '#222',
+};
+
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function QuickExecutionScreen({ navigation }) {
   // Common state
@@ -606,6 +613,11 @@ export default function QuickExecutionScreen({ navigation }) {
   };
 
   const capturePhoto = async () => {
+    if (Platform.OS === 'web') {
+      // On web, open file picker filtered to images
+      pickAttachment();
+      return;
+    }
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) { Alert.alert('تنبيه', 'يجب السماح بالوصول إلى الكاميرا'); return; }
@@ -724,11 +736,17 @@ export default function QuickExecutionScreen({ navigation }) {
         });
       }
 
-      const fileUri = FileSystem.documentDirectory + 'visit_form.html';
-      await FileSystem.writeAsStringAsync(fileUri, html, { encoding: 'utf8' });
-      const contentUri = await FileSystem.getContentUriAsync(fileUri);
-      const { Linking } = require('react-native');
-      await Linking.openURL(contentUri);
+      if (Platform.OS === 'web') {
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      } else {
+        const fileUri = FileSystem.documentDirectory + 'visit_form.html';
+        await FileSystem.writeAsStringAsync(fileUri, html, { encoding: 'utf8' });
+        const contentUri = await FileSystem.getContentUriAsync(fileUri);
+        const { Linking } = require('react-native');
+        await Linking.openURL(contentUri);
+      }
     } catch (e) {
       Alert.alert('خطأ', 'فشل إنشاء النموذج: ' + (e?.message || ''));
     } finally { setGeneratingPdf(false); }
@@ -810,27 +828,38 @@ export default function QuickExecutionScreen({ navigation }) {
 
       {/* Date */}
       <Field label="تاريخ التنفيذ *">
-        <TouchableOpacity style={s.dateBtn} onPress={() => setShowDatePicker(true)}>
-          <Ionicons name="calendar-outline" size={18} color="#555" style={{ marginLeft: 6 }} />
-          <Text style={[s.dateBtnText, !date && { color: '#aaa' }]}>
-            {date || 'اختر التاريخ'}
-          </Text>
-        </TouchableOpacity>
-        {showDatePicker && (
-          <DateTimePicker
-            value={date ? new Date(date) : new Date()}
-            mode="date"
-            display="default"
-            onChange={(event, selected) => {
-              setShowDatePicker(false);
-              if (selected) {
-                const y = selected.getFullYear();
-                const m = String(selected.getMonth() + 1).padStart(2, '0');
-                const d = String(selected.getDate()).padStart(2, '0');
-                setDate(`${y}-${m}-${d}`);
-              }
-            }}
+        {Platform.OS === 'web' ? (
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            style={webInputStyle}
           />
+        ) : (
+          <>
+            <TouchableOpacity style={s.dateBtn} onPress={() => setShowDatePicker(true)}>
+              <Ionicons name="calendar-outline" size={18} color="#555" style={{ marginLeft: 6 }} />
+              <Text style={[s.dateBtnText, !date && { color: '#aaa' }]}>
+                {date || 'اختر التاريخ'}
+              </Text>
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={date ? new Date(date) : new Date()}
+                mode="date"
+                display="default"
+                onChange={(event, selected) => {
+                  setShowDatePicker(false);
+                  if (selected) {
+                    const y = selected.getFullYear();
+                    const m = String(selected.getMonth() + 1).padStart(2, '0');
+                    const d = String(selected.getDate()).padStart(2, '0');
+                    setDate(`${y}-${m}-${d}`);
+                  }
+                }}
+              />
+            )}
+          </>
         )}
       </Field>
 
@@ -838,53 +867,65 @@ export default function QuickExecutionScreen({ navigation }) {
       <View style={s.timeRow}>
         <View style={{ flex: 1 }}>
           <Field label="من">
-            <TouchableOpacity style={s.dateBtn} onPress={() => setShowStartTimePicker(true)}>
-              <Ionicons name="time-outline" size={18} color="#555" style={{ marginLeft: 6 }} />
-              <Text style={[s.dateBtnText, !startTime && { color: '#aaa' }]}>
-                {startTime || 'الوقت'}
-              </Text>
-            </TouchableOpacity>
-            {showStartTimePicker && (
-              <DateTimePicker
-                value={startTime ? (() => { const [h,m] = startTime.split(':'); const d = new Date(); d.setHours(+h,+m,0,0); return d; })() : new Date()}
-                mode="time"
-                is24Hour={true}
-                display="default"
-                onChange={(event, selected) => {
-                  setShowStartTimePicker(false);
-                  if (selected) {
-                    const h = String(selected.getHours()).padStart(2, '0');
-                    const m = String(selected.getMinutes()).padStart(2, '0');
-                    setStartTime(`${h}:${m}`);
-                  }
-                }}
-              />
+            {Platform.OS === 'web' ? (
+              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={webInputStyle} />
+            ) : (
+              <>
+                <TouchableOpacity style={s.dateBtn} onPress={() => setShowStartTimePicker(true)}>
+                  <Ionicons name="time-outline" size={18} color="#555" style={{ marginLeft: 6 }} />
+                  <Text style={[s.dateBtnText, !startTime && { color: '#aaa' }]}>
+                    {startTime || 'الوقت'}
+                  </Text>
+                </TouchableOpacity>
+                {showStartTimePicker && (
+                  <DateTimePicker
+                    value={startTime ? (() => { const [h,m] = startTime.split(':'); const d = new Date(); d.setHours(+h,+m,0,0); return d; })() : new Date()}
+                    mode="time"
+                    is24Hour={true}
+                    display="default"
+                    onChange={(event, selected) => {
+                      setShowStartTimePicker(false);
+                      if (selected) {
+                        const h = String(selected.getHours()).padStart(2, '0');
+                        const m = String(selected.getMinutes()).padStart(2, '0');
+                        setStartTime(`${h}:${m}`);
+                      }
+                    }}
+                  />
+                )}
+              </>
             )}
           </Field>
         </View>
         <View style={{ flex: 1 }}>
           <Field label="إلى">
-            <TouchableOpacity style={s.dateBtn} onPress={() => setShowEndTimePicker(true)}>
-              <Ionicons name="time-outline" size={18} color="#555" style={{ marginLeft: 6 }} />
-              <Text style={[s.dateBtnText, !endTime && { color: '#aaa' }]}>
-                {endTime || 'الوقت'}
-              </Text>
-            </TouchableOpacity>
-            {showEndTimePicker && (
-              <DateTimePicker
-                value={endTime ? (() => { const [h,m] = endTime.split(':'); const d = new Date(); d.setHours(+h,+m,0,0); return d; })() : new Date()}
-                mode="time"
-                is24Hour={true}
-                display="default"
-                onChange={(event, selected) => {
-                  setShowEndTimePicker(false);
-                  if (selected) {
-                    const h = String(selected.getHours()).padStart(2, '0');
-                    const m = String(selected.getMinutes()).padStart(2, '0');
-                    setEndTime(`${h}:${m}`);
-                  }
-                }}
-              />
+            {Platform.OS === 'web' ? (
+              <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={webInputStyle} />
+            ) : (
+              <>
+                <TouchableOpacity style={s.dateBtn} onPress={() => setShowEndTimePicker(true)}>
+                  <Ionicons name="time-outline" size={18} color="#555" style={{ marginLeft: 6 }} />
+                  <Text style={[s.dateBtnText, !endTime && { color: '#aaa' }]}>
+                    {endTime || 'الوقت'}
+                  </Text>
+                </TouchableOpacity>
+                {showEndTimePicker && (
+                  <DateTimePicker
+                    value={endTime ? (() => { const [h,m] = endTime.split(':'); const d = new Date(); d.setHours(+h,+m,0,0); return d; })() : new Date()}
+                    mode="time"
+                    is24Hour={true}
+                    display="default"
+                    onChange={(event, selected) => {
+                      setShowEndTimePicker(false);
+                      if (selected) {
+                        const h = String(selected.getHours()).padStart(2, '0');
+                        const m = String(selected.getMinutes()).padStart(2, '0');
+                        setEndTime(`${h}:${m}`);
+                      }
+                    }}
+                  />
+                )}
+              </>
             )}
           </Field>
         </View>

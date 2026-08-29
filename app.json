@@ -17,7 +17,16 @@
       "package": "com.m.gamel.CrmProjectsApp"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "name": "CRM Projects",
+      "shortName": "CRM",
+      "lang": "ar",
+      "themeColor": "#1565C0",
+      "backgroundColor": "#F5F7FA",
+      "display": "standalone",
+      "orientation": "portrait",
+      "scope": "/",
+      "startUrl": "/"
     },
     "plugins": [
       "expo-font",

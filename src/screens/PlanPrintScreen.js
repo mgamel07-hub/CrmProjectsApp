@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { getPlanByIdForView, getPlanItems, getProjectVisits } from '../api/projects';
 import { extractData, extractList, formatDate } from '../utils/helpers';
 
@@ -254,10 +254,15 @@ export default function PlanPrintScreen({ navigation, route }) {
         visits,
         projectId,
       });
-      const fileUri = FileSystem.documentDirectory + 'plan_document.html';
-      await FileSystem.writeAsStringAsync(fileUri, html, { encoding: 'utf8' });
-      const contentUri = await FileSystem.getContentUriAsync(fileUri);
-      await Linking.openURL(contentUri);
+      if (Platform.OS === 'web') {
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        window.open(URL.createObjectURL(blob), '_blank');
+      } else {
+        const fileUri = FileSystem.documentDirectory + 'plan_document.html';
+        await FileSystem.writeAsStringAsync(fileUri, html, { encoding: 'utf8' });
+        const contentUri = await FileSystem.getContentUriAsync(fileUri);
+        await Linking.openURL(contentUri);
+      }
     } catch (e) {
       Alert.alert('خطأ', 'فشل إنشاء الوثيقة: ' + (e?.message || ''));
     } finally {
