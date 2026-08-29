@@ -320,6 +320,23 @@ export default function DashboardScreen({ navigation }) {
           </View>
         </View>
 
+        {/* Quick Action Card */}
+        <View style={styles.quickCard}>
+          <View style={styles.quickCardLeft}>
+            <Text style={styles.quickCardDate}>
+              {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </Text>
+            <Text style={styles.quickCardSub}>أضف إجراء زيارة مباشرة</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.quickCardBtn}
+            onPress={() => navigation.navigate('QuickExecution')}
+          >
+            <Ionicons name="add-circle" size={20} color="#fff" />
+            <Text style={styles.quickCardBtnText}>إجراء سريع</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* ── كروت المراحل ──────────────────────────────────────────── */}
         <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>كروت المراحل</Text>
@@ -467,13 +484,28 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
 
   greetingCard: {
-    backgroundColor: '#1565C0', borderRadius: 16, padding: 20, marginBottom: 20,
+    backgroundColor: '#1565C0', borderRadius: 16, padding: 20, marginBottom: 12,
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   greetingLeft:  { flex: 1 },
   greeting:      { fontSize: 18, fontWeight: '700', color: '#fff' },
   greetingSub:   { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   greetingIcon:  { backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 12, padding: 8 },
+
+  quickCard: {
+    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderWidth: 1, borderColor: '#E3F2FD',
+    shadowColor: '#1565C0', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+  },
+  quickCardLeft:    { flex: 1 },
+  quickCardDate:    { fontSize: 14, fontWeight: '700', color: '#1565C0', textAlign: 'right' },
+  quickCardSub:     { fontSize: 12, color: '#888', marginTop: 2, textAlign: 'right' },
+  quickCardBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#1565C0', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
+  },
+  quickCardBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 10 },
   sectionRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },

@@ -21,7 +21,22 @@
     },
     "plugins": [
       "expo-font",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "السماح بالوصول إلى الكاميرا لالتقاط صور أثناء الزيارة",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1565C0",
+          "sounds": []
+        }
+      ]
     ],
     "extra": {
       "eas": {

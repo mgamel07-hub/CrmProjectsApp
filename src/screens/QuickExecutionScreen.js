@@ -1,7 +1,7 @@
 /**
  * QuickExecutionScreen — إضافة تنفيذ + توليد 4 نماذج رسمية
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Alert, Platform,
@@ -9,7 +9,21 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const LAST_USED_KEY = 'qe_last_used';
+const SAVED_TRAINEES_KEY = 'qe_saved_trainees';
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function nowTimeStr() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
 import {
   getProjectsDropdown, getScopesDropdown, getStagesDropdown,
   getPlansDropDown, getPlanItems,
@@ -441,8 +455,8 @@ export default function QuickExecutionScreen({ navigation }) {
   const [stageId,     setStageId]     = useState(null);
   const [planId,      setPlanId]      = useState(null);
 
-  const [date,        setDate]        = useState('');
-  const [startTime,   setStartTime]   = useState('');
+  const [date,        setDate]        = useState(todayStr);
+  const [startTime,   setStartTime]   = useState(nowTimeStr);
   const [endTime,     setEndTime]     = useState('');
   const [location,    setLocation]    = useState(1);
 
@@ -451,8 +465,10 @@ export default function QuickExecutionScreen({ navigation }) {
   const [showEndTimePicker,   setShowEndTimePicker]   = useState(false);
   const [description, setDescription] = useState('');
   const [clientNotes, setClientNotes] = useState('');
-  const [trainees,    setTrainees]    = useState([{ name: '', job: '' }]);
-  const [attachments, setAttachments] = useState([]);
+  const [trainees,       setTrainees]       = useState([{ name: '', job: '' }]);
+  const [savedTrainees,  setSavedTrainees]  = useState([]);
+  const [showSavedList,  setShowSavedList]  = useState(false);
+  const [attachments,    setAttachments]    = useState([]);
 
   // Form type
   const [formType, setFormType] = useState(1);
@@ -478,45 +494,95 @@ export default function QuickExecutionScreen({ navigation }) {
   const [saving,          setSaving]           = useState(false);
   const [generatingPdf,   setGeneratingPdf]   = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    // Load projects + restore last-used selection + load saved trainees
     setLoadingProjects(true);
-    getProjectsDropdown()
-      .then(res => setProjects(extractList(res) || []))
-      .catch(() => setProjects([]))
-      .finally(() => setLoadingProjects(false));
+    Promise.all([
+      getProjectsDropdown().catch(() => null),
+      AsyncStorage.getItem(LAST_USED_KEY).catch(() => null),
+      AsyncStorage.getItem(SAVED_TRAINEES_KEY).catch(() => null),
+    ]).then(async ([projRes, lastRaw, traineesRaw]) => {
+      const projs = extractList(projRes) || [];
+      setProjects(projs);
+
+      if (traineesRaw) {
+        try { setSavedTrainees(JSON.parse(traineesRaw)); } catch { }
+      }
+
+      if (lastRaw) {
+        try {
+          const last = JSON.parse(lastRaw);
+          if (last.projectId && projs.find(p => (p.id ?? p.key) === last.projectId)) {
+            setProjectId(last.projectId);
+            setProjectName(last.projectName || '');
+            setLoadingScopes(true);
+            const scopeRes = await getScopesDropdown(last.projectId).catch(() => null);
+            const scopeList = extractList(scopeRes) || [];
+            setScopes(scopeList);
+            setLoadingScopes(false);
+
+            if (last.scopeId && scopeList.find(s => (s.id ?? s.key) === last.scopeId)) {
+              setScopeId(last.scopeId);
+              setScopeName(last.scopeName || '');
+              setLoadingStages(true);
+              const stageRes = await getStagesDropdown(last.scopeId).catch(() => null);
+              const stageList = extractList(stageRes) || [];
+              setStages(stageList);
+              setLoadingStages(false);
+
+              if (last.stageId && stageList.find(s => (s.id ?? s.key) === last.stageId)) {
+                setStageId(last.stageId);
+              }
+            }
+          }
+        } catch { }
+      }
+    }).finally(() => setLoadingProjects(false));
+  }, []);
+
+  const saveLastUsed = useCallback((patch) => {
+    AsyncStorage.getItem(LAST_USED_KEY).then(raw => {
+      const prev = raw ? JSON.parse(raw) : {};
+      AsyncStorage.setItem(LAST_USED_KEY, JSON.stringify({ ...prev, ...patch })).catch(() => {});
+    }).catch(() => {});
   }, []);
 
   const onSelectProject = useCallback(async (id, obj) => {
+    const name = obj?.value || obj?.name || '';
     setProjectId(id);
-    setProjectName(obj?.value || obj?.name || '');
+    setProjectName(name);
     setScopeId(null); setScopeName(''); setStageId(null); setPlanId(null);
     setScopes([]); setStages([]); setPlans([]); setPlanItems([]); setSelectedItems([]);
+    saveLastUsed({ projectId: id, projectName: name, scopeId: null, scopeName: '', stageId: null });
     setLoadingScopes(true);
     try { setScopes(extractList(await getScopesDropdown(id)) || []); }
     catch { setScopes([]); }
     finally { setLoadingScopes(false); }
-  }, []);
+  }, [saveLastUsed]);
 
   const onSelectScope = useCallback(async (id, obj) => {
+    const name = obj?.value || obj?.name || '';
     setScopeId(id);
-    setScopeName(obj?.value || obj?.name || '');
+    setScopeName(name);
     setStageId(null); setPlanId(null);
     setStages([]); setPlans([]); setPlanItems([]); setSelectedItems([]);
+    saveLastUsed({ scopeId: id, scopeName: name, stageId: null });
     setLoadingStages(true);
     try { setStages(extractList(await getStagesDropdown(id)) || []); }
     catch { setStages([]); }
     finally { setLoadingStages(false); }
-  }, []);
+  }, [saveLastUsed]);
 
   const onSelectStage = useCallback(async (id) => {
     setStageId(id);
     setPlanId(null);
     setPlans([]); setPlanItems([]); setSelectedItems([]);
+    saveLastUsed({ stageId: id });
     setLoadingPlans(true);
     try { setPlans(extractList(await getPlansDropDown(scopeId, id)) || []); }
     catch { setPlans([]); }
     finally { setLoadingPlans(false); }
-  }, [scopeId]);
+  }, [scopeId, saveLastUsed]);
 
   const onSelectPlan = useCallback(async (id) => {
     setPlanId(id);
@@ -538,6 +604,49 @@ export default function QuickExecutionScreen({ navigation }) {
       }
     } catch { }
   };
+
+  const capturePhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { Alert.alert('تنبيه', 'يجب السماح بالوصول إلى الكاميرا'); return; }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        allowsEditing: false,
+      });
+      if (!result.canceled && result.assets?.length) {
+        const asset = result.assets[0];
+        setAttachments(prev => [...prev, {
+          uri: asset.uri,
+          name: `photo_${Date.now()}.jpg`,
+          mimeType: 'image/jpeg',
+        }]);
+      }
+    } catch { }
+  };
+
+  const saveTrainee = useCallback((name, job) => {
+    if (!name.trim()) return;
+    setSavedTrainees(prev => {
+      const exists = prev.find(t => t.name === name.trim());
+      const updated = exists
+        ? prev.map(t => t.name === name.trim() ? { name: name.trim(), job: job.trim() } : t)
+        : [...prev, { name: name.trim(), job: job.trim() }];
+      AsyncStorage.setItem(SAVED_TRAINEES_KEY, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  }, []);
+
+  const addSavedTrainee = useCallback((t) => {
+    setTrainees(prev => {
+      const exists = prev.find(x => x.name === t.name);
+      if (exists) return prev;
+      const blank = prev.find(x => !x.name.trim());
+      if (blank) return prev.map(x => !x.name.trim() ? t : x);
+      return [...prev, t];
+    });
+    setShowSavedList(false);
+  }, []);
 
   const handleSave = async () => {
     if (!planId)  return Alert.alert('تنبيه', 'اختر الخطة أولاً');
@@ -567,6 +676,9 @@ export default function QuickExecutionScreen({ navigation }) {
         }
         if (failed.length) Alert.alert('تنبيه', 'لم يرفع بعض المرفقات: ' + failed.join(', '));
       }
+
+      // Auto-save any new trainees entered
+      trainees.forEach(t => { if (t.name.trim()) saveTrainee(t.name, t.job); });
 
       Alert.alert('تم ✓', 'تم حفظ الإجراء بنجاح', [
         { text: 'إنشاء النموذج', onPress: handleGeneratePdf },
@@ -816,6 +928,29 @@ export default function QuickExecutionScreen({ navigation }) {
               })}
             </Field>
           )}
+          {/* Saved trainees quick-pick */}
+          {savedTrainees.length > 0 && (
+            <View style={s.savedTraineesWrap}>
+              <TouchableOpacity style={s.savedTraineesBtn} onPress={() => setShowSavedList(v => !v)}>
+                <Ionicons name="people-outline" size={16} color="#1565C0" />
+                <Text style={s.savedTraineesBtnText}>اختر من المحفوظين ({savedTrainees.length})</Text>
+                <Ionicons name={showSavedList ? 'chevron-up' : 'chevron-down'} size={14} color="#1565C0" />
+              </TouchableOpacity>
+              {showSavedList && (
+                <View style={s.savedList}>
+                  {savedTrainees.map((t, i) => (
+                    <TouchableOpacity key={i} style={s.savedItem} onPress={() => addSavedTrainee(t)}>
+                      <Ionicons name="person-add-outline" size={15} color="#1565C0" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.savedItemName}>{t.name}</Text>
+                        {!!t.job && <Text style={s.savedItemJob}>{t.job}</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
           <TraineesList trainees={trainees} onChange={setTrainees} />
           <Field label="ملاحظات المدرب">
             <TextInput style={[s.input, s.textarea]} value={description} onChangeText={setDescription}
@@ -882,10 +1017,16 @@ export default function QuickExecutionScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         ))}
-        <TouchableOpacity style={s.addRowBtn} onPress={pickAttachment}>
-          <Ionicons name="attach-outline" size={18} color="#1565C0" />
-          <Text style={s.addRowBtnText}>إضافة مرفق</Text>
-        </TouchableOpacity>
+        <View style={s.attachBtnsRow}>
+          <TouchableOpacity style={[s.addRowBtn, { flex: 1 }]} onPress={pickAttachment}>
+            <Ionicons name="attach-outline" size={18} color="#1565C0" />
+            <Text style={s.addRowBtnText}>إضافة مرفق</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.addRowBtn, { flex: 1 }]} onPress={capturePhoto}>
+            <Ionicons name="camera-outline" size={18} color="#1565C0" />
+            <Text style={s.addRowBtnText}>التقاط صورة</Text>
+          </TouchableOpacity>
+        </View>
       </Field>
 
       {/* Action buttons */}
@@ -1001,6 +1142,22 @@ const s = StyleSheet.create({
     borderRadius: 10, backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 10,
   },
   dateBtnText: { flex: 1, fontSize: 15, color: '#222', textAlign: 'right' },
+
+  savedTraineesWrap: { marginBottom: 4 },
+  savedTraineesBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#E3F2FD', borderRadius: 8, padding: 8, marginBottom: 4,
+  },
+  savedTraineesBtnText: { flex: 1, color: '#1565C0', fontSize: 13, fontWeight: '600' },
+  savedList: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, backgroundColor: '#fff', overflow: 'hidden' },
+  savedItem: {
+    flexDirection: 'row-reverse', alignItems: 'center', gap: 8,
+    padding: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
+  },
+  savedItemName: { fontSize: 14, color: '#222', fontWeight: '600', textAlign: 'right' },
+  savedItemJob:  { fontSize: 12, color: '#888', textAlign: 'right' },
+
+  attachBtnsRow: { flexDirection: 'row', gap: 8 },
 
   input: {
     borderWidth: 1, borderColor: '#ddd', borderRadius: 10,

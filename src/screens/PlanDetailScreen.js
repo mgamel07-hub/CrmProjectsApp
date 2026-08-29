@@ -21,6 +21,7 @@ import LoadingScreen from '../components/LoadingScreen';
 import ErrorMessage from '../components/ErrorMessage';
 import StatusBadge from '../components/StatusBadge';
 import Card from '../components/Card';
+import { scheduleItemReminders } from '../utils/notifications';
 
 export default function PlanDetailScreen({ navigation, route }) {
   const { planId, title } = route.params;
@@ -44,8 +45,13 @@ export default function PlanDetailScreen({ navigation, route }) {
         getPlanByIdForView(planId),
         getPlanItems(planId),
       ]);
-      if (planRes.status === 'fulfilled') setPlan(extractData(planRes.value));
-      if (itemsRes.status === 'fulfilled') setItems(extractList(itemsRes.value));
+      const planData = planRes.status === 'fulfilled' ? extractData(planRes.value) : null;
+      const itemData = itemsRes.status === 'fulfilled' ? extractList(itemsRes.value) : [];
+      if (planData) setPlan(planData);
+      if (itemData) {
+        setItems(itemData);
+        scheduleItemReminders(itemData, planData?.name || title || '').catch(() => {});
+      }
       setError(null);
     } catch (e) {
       setError(e?.response?.data?.message || t('networkError'));
