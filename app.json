@@ -25,8 +25,9 @@
       "backgroundColor": "#F5F7FA",
       "display": "standalone",
       "orientation": "portrait",
-      "scope": "/",
-      "startUrl": "/"
+      "scope": "/CrmProjectsApp/",
+      "startUrl": "/CrmProjectsApp/",
+      "baseUrl": "/CrmProjectsApp/"
     },
     "plugins": [
       "expo-font",
