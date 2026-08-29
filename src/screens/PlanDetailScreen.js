@@ -56,7 +56,26 @@ export default function PlanDetailScreen({ navigation, route }) {
   }, [planId]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { navigation.setOptions({ title: title || t('planDetails') }); }, [navigation, title]);
+  useEffect(() => {
+    navigation.setOptions({
+      title: title || t('planDetails'),
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => navigation.navigate('PlanPrint', {
+            planId,
+            projectId: plan?.projectId || route.params?.projectId,
+            clientName:  plan?.projectName  || route.params?.clientName  || '',
+            scopeName:   plan?.scopeName    || route.params?.scopeName    || '',
+            stageName:   plan?.stageName    || route.params?.stageName    || '',
+            planTitle:   plan?.name         || title || '',
+          })}
+          style={{ marginLeft: 14 }}
+        >
+          <Ionicons name="print-outline" size={22} color="#fff" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, title, plan]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
 

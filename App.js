@@ -45,6 +45,7 @@ import DailyLogScreen              from './src/screens/internal/DailyLogScreen';
 import MyDashboardScreen           from './src/screens/internal/MyDashboardScreen';
 import QuickExecutionScreen        from './src/screens/QuickExecutionScreen';
 import QuickCreatePlanScreen      from './src/screens/QuickCreatePlanScreen';
+import PlanPrintScreen            from './src/screens/PlanPrintScreen';
 import { InternalNotifProvider }   from './src/context/InternalNotifContext';
 
 I18nManager.forceRTL(true);
@@ -247,6 +248,11 @@ function AppNavigator() {
               name="QuickExecution"
               component={QuickExecutionScreen}
               options={{ title: 'إضافة إجراء' }}
+            />
+            <Stack.Screen
+              name="PlanPrint"
+              component={PlanPrintScreen}
+              options={{ title: 'طباعة الخطة' }}
             />
           </>
         )}
