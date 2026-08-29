@@ -22,14 +22,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build web
-        run: npx expo export --platform web --clear
+        run: npx expo export --platform web 2>&1 | tee build-log.txt; exit ${PIPESTATUS[0]}
         env:
           CI: ''
           EXPO_NO_TELEMETRY: 1
@@ -38,6 +38,13 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-log.txt
 
   deploy:
     needs: build
