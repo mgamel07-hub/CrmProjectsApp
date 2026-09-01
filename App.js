@@ -48,6 +48,7 @@ import QuickCreatePlanScreen      from './src/screens/QuickCreatePlanScreen';
 import PlanPrintScreen            from './src/screens/PlanPrintScreen';
 import ClientCloudAccessScreen    from './src/screens/ClientCloudAccessScreen';
 import { InternalNotifProvider }   from './src/context/InternalNotifContext';
+import InstallBanner               from './src/components/InstallBanner';
 
 I18nManager.forceRTL(true);
 
@@ -288,6 +289,7 @@ export default function App() {
           <NotificationsProvider>
             <InternalNotifProvider>
               <AppNavigator />
+              <InstallBanner />
             </InternalNotifProvider>
           </NotificationsProvider>
         </RoleProvider>
