@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, Alert,
-  Modal, TextInput, ScrollView, ActivityIndicator, RefreshControl,
+  Modal, TextInput, ScrollView, ActivityIndicator, RefreshControl, Platform, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { getMyDailyLogs, createDailyLog, deleteDailyLog } from '../../api/internal';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/client';
@@ -18,6 +20,102 @@ const TYPES = {
 };
 
 const todayStr = () => new Date().toISOString().split('T')[0];
+
+function buildVisitHtml(log, userName) {
+  const t = TYPES[log.type] || TYPES.other;
+  const dateStr = new Date(log.created_at || Date.now()).toLocaleDateString('ar-EG', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+  const timeStr = new Date(log.created_at || Date.now()).toLocaleTimeString('ar-EG', {
+    hour: '2-digit', minute: '2-digit',
+  });
+  return `<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Cairo',Arial,sans-serif; background:#f5f7fa; direction:rtl; }
+  .page { max-width:600px; margin:0 auto; background:#fff; min-height:100vh; }
+  .header { background:#1565C0; color:#fff; padding:28px 24px 20px; }
+  .company { font-size:13px; opacity:.8; margin-bottom:4px; }
+  .title { font-size:22px; font-weight:900; }
+  .subtitle { font-size:13px; opacity:.75; margin-top:4px; }
+  .badge { display:inline-block; background:rgba(255,255,255,0.2); border-radius:20px; padding:4px 14px; font-size:12px; margin-top:10px; font-weight:700; }
+  .body { padding:24px; }
+  .row { display:flex; gap:16px; margin-bottom:16px; }
+  .field { flex:1; }
+  .field-label { font-size:11px; color:#888; font-weight:700; margin-bottom:4px; text-transform:uppercase; }
+  .field-value { font-size:15px; color:#1a1a1a; font-weight:700; }
+  .details-box { background:#f8f9fa; border-radius:12px; padding:16px; margin-top:8px; border-right:4px solid ${log.type === 'visit' ? '#1565C0' : log.type === 'issue' ? '#C62828' : '#6A1B9A'}; }
+  .details-label { font-size:11px; color:#888; font-weight:700; margin-bottom:8px; }
+  .details-text { font-size:15px; color:#222; line-height:1.7; }
+  .footer { border-top:1px solid #eee; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; margin-top:auto; }
+  .footer-name { font-size:13px; color:#888; }
+  .footer-time { font-size:12px; color:#bbb; }
+  .sig-box { border:1px dashed #ccc; border-radius:8px; height:60px; margin-top:24px; display:flex; align-items:center; justify-content:center; }
+  .sig-label { font-size:12px; color:#ccc; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div class="company">YemenSoft — نظام متابعة المشاريع</div>
+    <div class="title">نموذج ${t.label}</div>
+    <div class="subtitle">${dateStr}</div>
+    <span class="badge">${t.label}</span>
+  </div>
+  <div class="body">
+    <div class="row">
+      ${log.client_name ? `<div class="field"><div class="field-label">اسم العميل</div><div class="field-value">${log.client_name}</div></div>` : ''}
+      <div class="field"><div class="field-label">المنفّذ</div><div class="field-value">${userName || '—'}</div></div>
+      <div class="field"><div class="field-label">الوقت</div><div class="field-value">${timeStr}</div></div>
+    </div>
+    <div class="details-box">
+      <div class="details-label">التفاصيل</div>
+      <div class="details-text">${(log.details || '').replace(/\n/g, '<br/>')}</div>
+    </div>
+    <div class="sig-box"><span class="sig-label">توقيع المسؤول</span></div>
+  </div>
+  <div class="footer">
+    <span class="footer-name">${userName || ''}</span>
+    <span class="footer-time">تم الإنشاء: ${new Date().toLocaleString('ar-EG')}</span>
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+async function shareLogAsWhatsApp(log, userName) {
+  const html = buildVisitHtml(log, userName);
+  try {
+    if (Platform.OS === 'web') {
+      // On web: open print dialog (user can save as PDF then share)
+      const win = window.open('', '_blank');
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 500);
+      return;
+    }
+    // Native: generate PDF then open share sheet
+    const { uri } = await Print.printToFileAsync({ html, base64: false });
+    const canShare = await Sharing.isAvailableAsync();
+    if (canShare) {
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'مشاركة نموذج الزيارة',
+        UTI: 'com.adobe.pdf',
+      });
+    } else {
+      Alert.alert('تنبيه', 'المشاركة غير متاحة على هذا الجهاز');
+    }
+  } catch (e) {
+    Alert.alert('خطأ', e.message);
+  }
+}
 
 function relativeTime(isoStr) {
   if (!isoStr) return '';
@@ -103,6 +201,7 @@ export default function DailyLogScreen() {
 
   const renderItem = ({ item }) => {
     const t = TYPES[item.type] || TYPES.other;
+    const userName = user?.fullName || user?.userName || '';
     return (
       <View style={[styles.logCard, { borderRightColor: t.color, borderRightWidth: 3 }]}>
         <View style={[styles.logIconWrap, { backgroundColor: t.bg }]}>
@@ -120,6 +219,14 @@ export default function DailyLogScreen() {
             </View>
           )}
           <Text style={styles.logDetails}>{item.details}</Text>
+          {/* PDF / WhatsApp button */}
+          <TouchableOpacity
+            style={styles.pdfBtn}
+            onPress={() => shareLogAsWhatsApp(item, userName)}
+          >
+            <Ionicons name="document-text-outline" size={14} color="#25D366" />
+            <Text style={styles.pdfBtnText}>PDF / واتساب</Text>
+          </TouchableOpacity>
         </View>
         <TouchableOpacity onPress={() => del(item)} style={styles.delBtn}>
           <Ionicons name="trash-outline" size={16} color="#ddd" />
@@ -275,6 +382,8 @@ const styles = StyleSheet.create({
   clientText: { fontSize: 11, color: '#888', fontWeight: '600' },
   logDetails: { fontSize: 13, color: '#333', lineHeight: 18 },
   delBtn:     { padding: 4 },
+  pdfBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, alignSelf: 'flex-start', backgroundColor: '#E8F5E9', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  pdfBtnText: { fontSize: 12, color: '#25D366', fontWeight: '700' },
   empty:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: '#ccc' },
   emptySubtitle:{ fontSize: 13, color: '#ddd' },

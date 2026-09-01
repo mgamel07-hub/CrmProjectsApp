@@ -11,6 +11,7 @@ const WEB_STUBS = {
   'expo-notifications': path.resolve(__dirname, 'src/stubs/empty.js'),
   '@react-native-community/datetimepicker': path.resolve(__dirname, 'src/stubs/datetimepicker.js'),
   'expo-file-system': path.resolve(__dirname, 'src/stubs/filesystem.js'),
+  'expo-sharing': path.resolve(__dirname, 'src/stubs/sharing.js'),
 };
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
