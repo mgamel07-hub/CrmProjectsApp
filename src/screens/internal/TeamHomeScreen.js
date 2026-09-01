@@ -102,6 +102,14 @@ export default function TeamHomeScreen({ navigation }) {
       roles: ['admin', 'manager', 'employee'],
       onPress: () => navigation.navigate('TeamSetup'),
     },
+    {
+      title: 'وصول عملاء الكلاود',
+      subtitle: 'بيانات دخول العملاء على الأنظمة',
+      icon: 'cloud-outline',
+      color: '#1565C0',
+      roles: ['admin', 'manager', 'employee'],
+      onPress: () => navigation.navigate('ClientCloudAccess'),
+    },
   ];
 
   const cards = allCards.filter(c => c.roles.includes(myRole));

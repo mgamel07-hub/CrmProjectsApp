@@ -110,9 +110,9 @@ function MainTabs({ navigation }) {
         options={{ title: t('approvals'), tabBarLabel: t('approvals') }}
       />
       <Tab.Screen
-        name="Tools"
-        component={ClientCloudAccessScreen}
-        options={{ title: 'وصول عملاء الكلاود', tabBarLabel: 'الأدوات' }}
+        name="Team"
+        component={TeamHomeScreen}
+        options={{ title: 'الأدوات', tabBarLabel: 'الأدوات' }}
       />
       <Tab.Screen
         name="Profile"
