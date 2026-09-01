@@ -76,7 +76,7 @@ function MainTabs({ navigation }) {
             MyPlan:    focused ? 'document-text'     : 'document-text-outline',
             Reports:   focused ? 'bar-chart'         : 'bar-chart-outline',
             Approvals: focused ? 'checkmark-circle'  : 'checkmark-circle-outline',
-            Team:      focused ? 'people'            : 'people-outline',
+            Tools:     focused ? 'construct'         : 'construct-outline',
             Profile:   focused ? 'person'            : 'person-outline',
           };
           return <Ionicons name={icons[route.name] || 'ellipse-outline'} size={size} color={color} />;
@@ -109,9 +109,9 @@ function MainTabs({ navigation }) {
         options={{ title: t('approvals'), tabBarLabel: t('approvals') }}
       />
       <Tab.Screen
-        name="Team"
-        component={TeamHomeScreen}
-        options={{ title: 'الفريق', tabBarLabel: 'الفريق' }}
+        name="Tools"
+        component={ClientCloudAccessScreen}
+        options={{ title: 'وصول عملاء الكلاود', tabBarLabel: 'الأدوات' }}
       />
       <Tab.Screen
         name="Profile"

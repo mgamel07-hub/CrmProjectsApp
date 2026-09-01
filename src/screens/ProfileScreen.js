@@ -20,7 +20,7 @@ function MenuItem({ icon, label, value, onPress, color = '#1565C0', danger = fal
   );
 }
 
-export default function ProfileScreen({ navigation }) {
+export default function ProfileScreen() {
   const { user, logout, profile } = useAuth();
   const { lang, switchLang } = useLang();
   const displayName = profile?.fullName || user?.fullName || user?.userName || user?.userId || '—';
@@ -59,19 +59,6 @@ export default function ProfileScreen({ navigation }) {
           {user?.branchName && (
             <MenuItem icon="business-outline" label={t('branch')} value={user.branchName} />
           )}
-        </View>
-      </View>
-
-      {/* Tools */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{lang === 'ar' ? 'الأدوات' : 'Tools'}</Text>
-        <View style={styles.card}>
-          <MenuItem
-            icon="cloud-outline"
-            label="وصول عملاء الكلاود"
-            onPress={() => navigation.navigate('ClientCloudAccess')}
-            color="#1565C0"
-          />
         </View>
       </View>
 

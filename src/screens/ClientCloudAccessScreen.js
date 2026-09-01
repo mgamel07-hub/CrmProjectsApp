@@ -6,8 +6,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../api/supabase';
-import { getCustomers } from '../api/projects';
-import { extractList } from '../utils/helpers';
+import { getAccountsDropdown, getAccountsDynamic } from '../api/projects';
+import { extractList, extractData } from '../utils/helpers';
 
 const SYSTEMS = [
   { value: 'onyx',      label: 'أونكس' },
@@ -142,8 +142,24 @@ export default function ClientCloudAccessScreen() {
 
   const loadCustomers = useCallback(async () => {
     try {
-      const res = await getCustomers();
-      const list = extractList(res) || [];
+      const [custRes, custDynRes] = await Promise.all([
+        getAccountsDropdown().catch(() => null),
+        getAccountsDynamic().catch(() => null),
+      ]);
+      const raw = (() => {
+        const s = extractList(custRes) || extractData(custRes);
+        if (Array.isArray(s) && s.length) return s;
+        const d = extractList(custDynRes) || extractData(custDynRes);
+        if (Array.isArray(d) && d.length) return d;
+        return [];
+      })();
+      const list = raw
+        .map(c => ({
+          id: c.key ?? c.id ?? c.customerId,
+          name: c.value || c.fullName || c.localName || c.name || '',
+          code: c.code || '',
+        }))
+        .filter(c => c.id != null && c.name);
       setCustomers(list);
     } catch {}
   }, []);
