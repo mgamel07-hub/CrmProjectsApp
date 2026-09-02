@@ -101,28 +101,34 @@ function Dropdown({ label, options, value, onSelect, getLabel, placeholder, load
 function DateField({ label, value, onChange, required }) {
   const [show, setShow] = useState(false);
 
-  // Web: use a plain text input (YYYY-MM-DD)
+  // Web: transparent native HTML date input overlaid on the styled button
   if (Platform.OS === 'web') {
     return (
       <View style={s.field}>
         <Text style={s.label}>{label}{required ? ' *' : ''}</Text>
-        <View style={s.dateBtn}>
+        <View style={[s.dateBtn, { position: 'relative', overflow: 'hidden' }]}>
           <Ionicons name="calendar-outline" size={18} color="#1565C0" />
-          <TextInput
-            style={[s.dateVal, { flex: 1, outline: 'none' }]}
-            value={value ? fmtDate(value) : ''}
-            onChangeText={v => {
-              const d = new Date(v);
-              onChange(isNaN(d.getTime()) ? null : d);
-            }}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor="#aaa"
-          />
+          <Text style={[s.dateVal, !value && { color: '#aaa' }]}>{displayDate(value)}</Text>
           {value && (
             <TouchableOpacity onPress={() => onChange(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close-circle" size={16} color="#ccc" />
             </TouchableOpacity>
           )}
+          {/* Invisible native date picker covers the whole button */}
+          <input
+            type="date"
+            value={value ? fmtDate(value) : ''}
+            onChange={e => {
+              const d = e.target.value ? new Date(e.target.value + 'T00:00:00') : null;
+              onChange(d && !isNaN(d.getTime()) ? d : null);
+            }}
+            style={{
+              position: 'absolute', inset: 0,
+              opacity: 0, cursor: 'pointer',
+              width: '100%', height: '100%',
+              zIndex: 10,
+            }}
+          />
         </View>
       </View>
     );
