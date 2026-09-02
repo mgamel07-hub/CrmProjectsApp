@@ -366,8 +366,21 @@ export default function QuickCreatePlanScreen({ navigation }) {
       }
       if (!activePlanId) { setCatalogItems([]); return; }
       const res = await getAvailableStageDefItems(activePlanId);
-      const raw = extractList(res) ?? res?.data?.data ?? res?.data ?? [];
-      setCatalogItems(Array.isArray(raw) ? raw : []);
+      const raw = (() => {
+        const s = extractList(res);
+        if (Array.isArray(s) && s.length > 0) return s;
+        if (Array.isArray(res?.data?.data) && res.data.data.length > 0) return res.data.data;
+        if (Array.isArray(res?.data) && res.data.length > 0) return res.data;
+        // last resort: try known wrapper shapes
+        const d = res?.data;
+        if (d && typeof d === 'object') {
+          for (const key of ['items','list','results','records','data','value']) {
+            if (Array.isArray(d[key])) return d[key];
+          }
+        }
+        return [];
+      })();
+      setCatalogItems(raw);
     } catch { setCatalogItems([]); }
     finally { setLoadingCatalog(false); }
   };
