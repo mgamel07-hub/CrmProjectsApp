@@ -508,21 +508,25 @@ export default function QuickCreatePlanScreen({ navigation }) {
         try { await notifyManager(stageName); } catch (_) {}
       }
 
-      Alert.alert(
-        'تم بنجاح ✓',
-        submitted
-          ? 'تم تقديم الخطة للمدير للاعتماد — ستصلك إشعار بالنتيجة'
-          : andSubmit
-            ? 'تم حفظ الخطة وإشعار المدير'
-            : 'تم حفظ الخطة كمسودة',
-        [{
-          text: 'عرض الخطة',
-          onPress: () => navigation.navigate('PlanDetail', { planId: currentPlanId, title: `خطة: ${stageName}` }),
-        }, {
-          text: 'حسناً',
-          onPress: resetForm,
-        }]
-      );
+      if (submitted) {
+        Alert.alert(
+          'تم التقديم بنجاح ✓',
+          'تم تقديم الخطة للمدير للاعتماد — ستصلك إشعار بالنتيجة',
+          [{ text: 'حسناً', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        Alert.alert(
+          'تم بنجاح ✓',
+          andSubmit ? 'تم حفظ الخطة وإشعار المدير' : 'تم حفظ الخطة كمسودة',
+          [{
+            text: 'عرض الخطة',
+            onPress: () => navigation.navigate('PlanDetail', { planId: currentPlanId, title: `خطة: ${stageName}` }),
+          }, {
+            text: 'حسناً',
+            onPress: resetForm,
+          }]
+        );
+      }
     } catch (e) {
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message;
       Alert.alert('خطأ', msg || 'حدث خطأ في الحفظ');
