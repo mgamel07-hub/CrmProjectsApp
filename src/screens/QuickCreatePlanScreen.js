@@ -101,20 +101,13 @@ function Dropdown({ label, options, value, onSelect, getLabel, placeholder, load
 function DateField({ label, value, onChange, required }) {
   const [show, setShow] = useState(false);
 
-  // Web: transparent native HTML date input overlaid on the styled button
+  // Web: real <input type="date"> rendered inline, styled to match the button
   if (Platform.OS === 'web') {
     return (
       <View style={s.field}>
         <Text style={s.label}>{label}{required ? ' *' : ''}</Text>
-        <View style={[s.dateBtn, { position: 'relative', overflow: 'hidden' }]}>
+        <View style={s.dateBtn}>
           <Ionicons name="calendar-outline" size={18} color="#1565C0" />
-          <Text style={[s.dateVal, !value && { color: '#aaa' }]}>{displayDate(value)}</Text>
-          {value && (
-            <TouchableOpacity onPress={() => onChange(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close-circle" size={16} color="#ccc" />
-            </TouchableOpacity>
-          )}
-          {/* Invisible native date picker covers the whole button */}
           <input
             type="date"
             value={value ? fmtDate(value) : ''}
@@ -123,12 +116,22 @@ function DateField({ label, value, onChange, required }) {
               onChange(d && !isNaN(d.getTime()) ? d : null);
             }}
             style={{
-              position: 'absolute', inset: 0,
-              opacity: 0, cursor: 'pointer',
-              width: '100%', height: '100%',
-              zIndex: 10,
+              flex: 1,
+              border: 'none',
+              background: 'transparent',
+              fontSize: 13,
+              color: value ? '#1a1a1a' : '#aaa',
+              outline: 'none',
+              cursor: 'pointer',
+              direction: 'ltr',
+              minWidth: 0,
             }}
           />
+          {value && (
+            <TouchableOpacity onPress={() => onChange(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={16} color="#ccc" />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
