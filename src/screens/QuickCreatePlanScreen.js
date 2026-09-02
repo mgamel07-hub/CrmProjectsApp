@@ -100,6 +100,34 @@ function Dropdown({ label, options, value, onSelect, getLabel, placeholder, load
 
 function DateField({ label, value, onChange, required }) {
   const [show, setShow] = useState(false);
+
+  // Web: use a plain text input (YYYY-MM-DD)
+  if (Platform.OS === 'web') {
+    return (
+      <View style={s.field}>
+        <Text style={s.label}>{label}{required ? ' *' : ''}</Text>
+        <View style={s.dateBtn}>
+          <Ionicons name="calendar-outline" size={18} color="#1565C0" />
+          <TextInput
+            style={[s.dateVal, { flex: 1, outline: 'none' }]}
+            value={value ? fmtDate(value) : ''}
+            onChangeText={v => {
+              const d = new Date(v);
+              onChange(isNaN(d.getTime()) ? null : d);
+            }}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor="#aaa"
+          />
+          {value && (
+            <TouchableOpacity onPress={() => onChange(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={16} color="#ccc" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={s.field}>
       <Text style={s.label}>{label}{required ? ' *' : ''}</Text>
@@ -161,10 +189,11 @@ export default function QuickCreatePlanScreen({ navigation }) {
   const [newItem,    setNewItem]    = useState({ title: '', expectedUnits: '', scheduledDate: null });
 
   // Catalog
-  const [catalogItems,   setCatalogItems]   = useState([]);
-  const [selectedCatIds, setSelectedCatIds] = useState([]);
-  const [showCatalog,    setShowCatalog]    = useState(false);
-  const [loadingCatalog, setLoadingCatalog] = useState(false);
+  const [catalogItems,    setCatalogItems]    = useState([]);
+  const [selectedCatIds,  setSelectedCatIds]  = useState([]);
+  const [selectedCatObjs, setSelectedCatObjs] = useState([]); // full objects for display
+  const [showCatalog,     setShowCatalog]     = useState(false);
+  const [loadingCatalog,  setLoadingCatalog]  = useState(false);
 
   // Saving
   const [saving, setSaving] = useState(false);
@@ -233,7 +262,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
     setExistingItems([]); setNoPlanFound(false); setDebugError('');
     setStartDate(null); setEndDate(null);
     setUnits(''); setNoUnits(false); setRequiredDocument(false);
-    setNewItems([]); setSelectedCatIds([]);
+    setNewItems([]); setSelectedCatIds([]); setSelectedCatObjs([]);
     setCatalogItems([]); setShowCatalog(false);
   };
 
@@ -334,8 +363,16 @@ export default function QuickCreatePlanScreen({ navigation }) {
     finally { setLoadingCatalog(false); }
   };
 
-  const toggleCatId = (id) =>
-    setSelectedCatIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleCatId = (id, obj) => {
+    setSelectedCatIds(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      setSelectedCatObjs(prev2 => {
+        if (prev.includes(id)) return prev2.filter(o => (o.id ?? o.stageDefItemId) !== id);
+        return [...prev2, obj];
+      });
+      return next;
+    });
+  };
 
   // New manual item
   const addNewItem = () => {
@@ -607,7 +644,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
         <SectionTitle
           icon="list-outline"
           title="بنود الخطة"
-          badge={existingItems.length + newItems.length || null}
+          badge={existingItems.length + newItems.length + selectedCatIds.length || null}
         />
 
         {/* Existing items */}
@@ -663,16 +700,33 @@ export default function QuickCreatePlanScreen({ navigation }) {
           </View>
         ))}
 
-        {/* Catalog items selected */}
-        {selectedCatIds.length > 0 && (
-          <View style={s.catSelectedBanner}>
-            <Ionicons name="checkmark-circle-outline" size={14} color="#388E3C" />
-            <Text style={s.catSelectedText}>{selectedCatIds.length} بند من الكتالوج محدد</Text>
-            <TouchableOpacity onPress={() => setSelectedCatIds([])}>
-              <Ionicons name="close" size={14} color="#888" />
-            </TouchableOpacity>
-          </View>
-        )}
+        {/* Catalog items selected — show as cards */}
+        {selectedCatObjs.map((item, i) => {
+          const catId = item.id ?? item.stageDefItemId;
+          return (
+            <View key={catId ?? i} style={[s.itemCard, { borderColor: '#D1C4E9', backgroundColor: '#F9F5FF' }]}>
+              <View style={s.itemCardBody}>
+                <Text style={s.itemCardTitle}>{item.title || item.name || item.nameAr || `#${catId}`}</Text>
+                {item.expectedUnits != null && (
+                  <View style={s.itemCardMeta}>
+                    <View style={s.metaChip}>
+                      <Ionicons name="cube-outline" size={12} color="#6A1B9A" />
+                      <Text style={[s.metaChipText, { color: '#6A1B9A' }]}>{item.expectedUnits} وحدة</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+              <View style={{ alignItems: 'center', gap: 4 }}>
+                <View style={[s.existingBadge, { backgroundColor: '#EDE7F6' }]}>
+                  <Text style={[s.existingBadgeText, { color: '#6A1B9A' }]}>كتالوج</Text>
+                </View>
+                <TouchableOpacity onPress={() => toggleCatId(catId, item)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <Ionicons name="trash-outline" size={16} color="#D32F2F" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        })}
 
         {/* Add item form */}
         {addingItem ? (
@@ -747,9 +801,14 @@ export default function QuickCreatePlanScreen({ navigation }) {
             ) : (
               <>
                 <TouchableOpacity style={s.selectAllRow}
-                  onPress={() => setSelectedCatIds(
-                    selectedCatIds.length === catalogItems.length ? [] : catalogItems.map(i => i.id ?? i.stageDefItemId)
-                  )}>
+                  onPress={() => {
+                    if (selectedCatIds.length === catalogItems.length) {
+                      setSelectedCatIds([]); setSelectedCatObjs([]);
+                    } else {
+                      setSelectedCatIds(catalogItems.map(i => i.id ?? i.stageDefItemId));
+                      setSelectedCatObjs(catalogItems);
+                    }
+                  }}>
                   <Ionicons
                     name={selectedCatIds.length === catalogItems.length ? 'checkbox' : 'square-outline'}
                     size={18} color="#1565C0" />
@@ -759,7 +818,7 @@ export default function QuickCreatePlanScreen({ navigation }) {
                   const catId = item.id ?? item.stageDefItemId;
                   const checked = selectedCatIds.includes(catId);
                   return (
-                    <TouchableOpacity key={i} style={s.catalogItem} onPress={() => toggleCatId(catId)}>
+                    <TouchableOpacity key={i} style={s.catalogItem} onPress={() => toggleCatId(catId, item)}>
                       <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={18}
                         color={checked ? '#1565C0' : '#bbb'} />
                       <Text style={s.catalogItemText} numberOfLines={2}>
