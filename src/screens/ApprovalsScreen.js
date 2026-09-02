@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   getUnitsRequests, approveUnitsRequest, rejectUnitsRequest,
-  getPendingPlans, approvePlan, rejectPlan, submitPlan,
+  getPendingPlans, approvePlan, rejectPlan, submitPlan, getPlanByIdForView,
 } from '../api/projects';
 import {
   getTeamMembers, getMyTeamRecord, createNotification,
@@ -258,8 +258,17 @@ function PlansTab({ lang, navigation }) {
   // Send Supabase notification to plan creator (implementer)
   const notifyImplementer = async (plan, approved) => {
     try {
-      const creatorId = plan.createdByUserId ?? plan.userId ?? plan.createdBy?.userId
-        ?? plan.createdBy?.id ?? plan.implementorId ?? null;
+      let creatorId = plan.createdByUserId ?? plan.userId ?? plan.createdBy?.userId
+        ?? plan.createdBy?.id ?? plan.implementorId ?? plan.implementor?.id ?? null;
+      // If not in summary, fetch full plan details
+      if (!creatorId) {
+        try {
+          const full = await getPlanByIdForView(plan.id);
+          const fp = full?.data?.data ?? full?.data;
+          creatorId = fp?.createdByUserId ?? fp?.userId ?? fp?.createdBy?.userId
+            ?? fp?.createdBy?.id ?? fp?.implementorId ?? fp?.implementor?.id ?? null;
+        } catch (_) {}
+      }
       if (!creatorId) return;
       await createNotification({
         to_user_id: String(creatorId),
