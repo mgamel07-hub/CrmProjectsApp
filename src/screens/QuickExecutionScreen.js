@@ -660,6 +660,51 @@ export default function QuickExecutionScreen({ navigation }) {
     setShowSavedList(false);
   }, []);
 
+  const buildDescription = useCallback(() => {
+    const parts = [];
+    if (formType === 1) {
+      if (description.trim()) parts.push(description.trim());
+      const validTrainees = trainees.filter(t => t.name.trim());
+      if (validTrainees.length > 0) {
+        parts.push(
+          'الحضور:\n' +
+          validTrainees.map((t, i) =>
+            `${i + 1}. ${t.name.trim()}${t.job.trim() ? ` (${t.job.trim()})` : ''}`
+          ).join('\n')
+        );
+      }
+      if (clientNotes.trim()) parts.push('ملاحظات العميل:\n' + clientNotes.trim());
+    } else if (formType === 2) {
+      if (description.trim()) parts.push(description.trim());
+      const validSystems = finishedSystems.filter(s => s.name.trim());
+      if (validSystems.length > 0) {
+        parts.push(
+          'الأنظمة المنتهية:\n' +
+          validSystems.map((s, i) =>
+            `${i + 1}. ${s.name.trim()}${s.notes.trim() ? ` - ${s.notes.trim()}` : ''}`
+          ).join('\n')
+        );
+      }
+    } else if (formType === 3) {
+      if (description.trim()) parts.push(description.trim());
+      const validChanges = systemChanges.filter(c => c.system.trim() || c.change.trim());
+      if (validChanges.length > 0) {
+        parts.push(
+          'التغيير في الإعدادات:\n' +
+          validChanges.map((c, i) => {
+            const ops = [c.isAdd && 'إضافة', c.isRemove && 'إلغاء', c.isEdit && 'تعديل'].filter(Boolean).join('/');
+            return `${i + 1}. ${c.system.trim()} - ${c.change.trim()}${ops ? ` [${ops}]` : ''}`;
+          }).join('\n')
+        );
+      }
+      if (procedureChanges.trim()) parts.push('التغيير في الإجراءات:\n' + procedureChanges.trim());
+    } else if (formType === 4) {
+      if (visitEvents.trim()) parts.push('أحداث الزيارة:\n' + visitEvents.trim());
+      if (visitRequests.trim()) parts.push('الطلبات والملاحظات:\n' + visitRequests.trim());
+    }
+    return parts.join('\n\n') || null;
+  }, [formType, description, trainees, clientNotes, finishedSystems, systemChanges, procedureChanges, visitEvents, visitRequests]);
+
   const handleSave = async () => {
     if (!planId)  return Alert.alert('تنبيه', 'اختر الخطة أولاً');
     if (!date)    return Alert.alert('تنبيه', 'أدخل تاريخ التنفيذ');
@@ -670,7 +715,7 @@ export default function QuickExecutionScreen({ navigation }) {
         executionDate: date,
         startTime: startTime || null,
         endTime: endTime || null,
-        description: description.trim() || null,
+        description: buildDescription(),
         projectPlanItemIds: selectedItems,
         hideItemsInEmail: false,
         skipEmailNotification: false,
