@@ -169,15 +169,38 @@ async function fetchStageCards() {
 
 function StatCard({ icon, label, value, color, onPress }) {
   return (
-    <TouchableOpacity style={[styles.statCard, { borderLeftColor: color }]} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
+    <TouchableOpacity style={[styles.statCard, { borderTopColor: color }]} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
       <View style={[styles.statIcon, { backgroundColor: color + '18' }]}>
-        <Ionicons name={icon} size={22} color={color} />
+        <Ionicons name={icon} size={18} color={color} />
       </View>
-      <View style={styles.statInfo}>
-        <Text style={styles.statValue}>{value ?? '—'}</Text>
-        <Text style={styles.statLabel}>{label}</Text>
-      </View>
+      <Text style={[styles.statValue, { color }]}>{value ?? '—'}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </TouchableOpacity>
+  );
+}
+
+function MiniBarChart({ cards }) {
+  if (!cards || cards.length === 0) return null;
+  const top = cards.slice(0, 6);
+  const max = Math.max(...top.map(c => c.count), 1);
+  const colors = ['#1565C0','#0288D1','#00838F','#00897B','#2E7D32','#6A1B9A'];
+  return (
+    <View style={styles.chartWrap}>
+      <Text style={styles.chartTitle}>توزيع الأنظمة على المراحل</Text>
+      {top.map((c, i) => {
+        const pct = (c.count / max) * 100;
+        const displayName = (c.stageName || '').replace(/ (Call|✅|⛔|👤)$/i, '').trim();
+        return (
+          <View key={c.stageName} style={styles.chartRow}>
+            <Text style={styles.chartLabel} numberOfLines={1}>{displayName}</Text>
+            <View style={styles.chartBarWrap}>
+              <View style={[styles.chartBar, { width: `${pct}%`, backgroundColor: colors[i % colors.length] }]} />
+            </View>
+            <Text style={[styles.chartCount, { color: colors[i % colors.length] }]}>{c.count}</Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }
 
@@ -320,50 +343,8 @@ export default function DashboardScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Quick Action Card */}
-        <View style={styles.quickCard}>
-          <View style={styles.quickCardLeft}>
-            <Text style={styles.quickCardDate}>
-              {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
-            </Text>
-            <Text style={styles.quickCardSub}>أضف إجراء زيارة مباشرة</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.quickCardBtn}
-            onPress={() => navigation.navigate('QuickExecution')}
-          >
-            <Ionicons name="add-circle" size={20} color="#fff" />
-            <Text style={styles.quickCardBtnText}>إجراء سريع</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── كروت المراحل ──────────────────────────────────────────── */}
-        <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>كروت المراحل</Text>
-          {stagesLoading && <ActivityIndicator size="small" color="#1565C0" />}
-        </View>
-
-        {visibleStages.length > 0 ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            nestedScrollEnabled
-            contentContainerStyle={styles.stagesScroll}
-          >
-            {visibleStages.map((card, idx) => (
-              <StageCard key={card.stageName} card={card} index={idx} onPress={() => openModal(card)} />
-            ))}
-          </ScrollView>
-        ) : !stagesLoading ? (
-          <View style={styles.emptyStages}>
-            <Ionicons name="layers-outline" size={28} color="#ccc" />
-            <Text style={styles.emptyStagesText}>لا توجد أنظمة حالياً</Text>
-          </View>
-        ) : null}
-
-        {/* ── إحصائيات المشاريع ─────────────────────────────────────── */}
-        <Text style={[styles.sectionTitle, { marginTop: 16 }]}>إحصائيات المشاريع</Text>
-        <View style={styles.statsGrid}>
+        {/* ── إحصائيات المشاريع — 2×2 compact ───────────────────────── */}
+        <View style={styles.statsGrid2x2}>
           <StatCard
             icon="folder-open-outline"
             label={t('totalProjects')}
@@ -393,6 +374,52 @@ export default function DashboardScreen({ navigation }) {
             onPress={() => navigation.navigate('Approvals')}
           />
         </View>
+
+        {/* Quick Action Card */}
+        <View style={styles.quickCard}>
+          <View style={styles.quickCardLeft}>
+            <Text style={styles.quickCardDate}>
+              {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </Text>
+            <Text style={styles.quickCardSub}>أضف إجراء زيارة مباشرة</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.quickCardBtn}
+            onPress={() => navigation.navigate('QuickExecution')}
+          >
+            <Ionicons name="add-circle" size={20} color="#fff" />
+            <Text style={styles.quickCardBtnText}>إجراء سريع</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ── Bar chart ──────────────────────────────────────────────── */}
+        {!stagesLoading && visibleStages.length > 0 && (
+          <MiniBarChart cards={visibleStages} />
+        )}
+
+        {/* ── كروت المراحل ──────────────────────────────────────────── */}
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>كروت المراحل</Text>
+          {stagesLoading && <ActivityIndicator size="small" color="#1565C0" />}
+        </View>
+
+        {visibleStages.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            contentContainerStyle={styles.stagesScroll}
+          >
+            {visibleStages.map((card, idx) => (
+              <StageCard key={card.stageName} card={card} index={idx} onPress={() => openModal(card)} />
+            ))}
+          </ScrollView>
+        ) : !stagesLoading ? (
+          <View style={styles.emptyStages}>
+            <Ionicons name="layers-outline" size={28} color="#ccc" />
+            <Text style={styles.emptyStagesText}>لا توجد أنظمة حالياً</Text>
+          </View>
+        ) : null}
 
         {stats?.overallProgress !== undefined && (
           <View style={styles.progressCard}>
@@ -527,16 +554,29 @@ const styles = StyleSheet.create({
   emptyStages: { alignItems: 'center', paddingVertical: 20, gap: 6 },
   emptyStagesText: { color: '#aaa', fontSize: 13 },
 
-  statsGrid: { gap: 10, marginBottom: 8 },
+  statsGrid2x2: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12,
+  },
   statCard: {
-    backgroundColor: '#fff', borderRadius: 12, padding: 16, flexDirection: 'row',
-    alignItems: 'center', borderLeftWidth: 4,
+    backgroundColor: '#fff', borderRadius: 14, padding: 12,
+    borderTopWidth: 3, alignItems: 'center',
+    width: '47%', flexShrink: 1,
+    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4,
+  },
+  statIcon:  { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
+  statValue: { fontSize: 26, fontWeight: '900', lineHeight: 30 },
+  statLabel: { fontSize: 11, color: '#666', marginTop: 3, textAlign: 'center' },
+
+  chartWrap: {
+    backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12,
     elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
   },
-  statIcon:  { width: 44, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  statInfo:  { flex: 1 },
-  statValue: { fontSize: 24, fontWeight: '800', color: '#1a1a1a' },
-  statLabel: { fontSize: 12, color: '#666', marginTop: 2 },
+  chartTitle: { fontSize: 13, fontWeight: '700', color: '#333', marginBottom: 12, textAlign: 'right' },
+  chartRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
+  chartLabel: { fontSize: 11, color: '#555', width: 80, textAlign: 'right' },
+  chartBarWrap: { flex: 1, height: 10, backgroundColor: '#EEF2FF', borderRadius: 5, overflow: 'hidden' },
+  chartBar: { height: 10, borderRadius: 5 },
+  chartCount: { fontSize: 12, fontWeight: '700', width: 24, textAlign: 'center' },
 
   progressCard: {
     backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 8,

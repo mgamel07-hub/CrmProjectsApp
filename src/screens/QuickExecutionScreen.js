@@ -38,11 +38,10 @@ const LOCATIONS = [
   { id: 3, label: 'الشركة'     },
 ];
 
-const FORM_TYPES = [
-  { id: 1, label: 'نموذج تدريب',    icon: 'school-outline'       },
-  { id: 2, label: 'انهاء تدريب',    icon: 'checkmark-done-outline'},
-  { id: 3, label: 'محاكاة',         icon: 'sync-circle-outline'  },
-  { id: 4, label: 'متابعة',         icon: 'eye-outline'          },
+// form types: 0=call(minimal), 1=training, 2=end-training, 3=simulation, 4=follow-up, 5=end-impl
+const TRAINING_TOGGLE = [
+  { id: 1, label: 'نموذج تدريب',  icon: 'school-outline'        },
+  { id: 2, label: 'انهاء تدريب',  icon: 'checkmark-done-outline' },
 ];
 
 const VISIT_REASONS = [
@@ -50,6 +49,52 @@ const VISIT_REASONS = [
   { id: 2, label: 'متابعة تشغيل فعلي'   },
   { id: 3, label: 'متابعة عامة للمشروع' },
 ];
+
+// PDF base URLs for auto-attachment
+const WEB_ORIGIN = 'https://crm-projects-app.vercel.app';
+
+function detectFormTypeFromStage(stageName) {
+  const n = (stageName || '').toLowerCase();
+  if (n.includes('مكالم') || n.includes('call'))                        return 0; // call – minimal
+  if (n.includes('تدريب') || n.includes('train'))                       return 1; // training toggle
+  if (n.includes('محاكاة') || n.includes('simul'))                      return 3; // simulation
+  if ((n.includes('تشغيل') && (n.includes('فعل') || n.includes('live')))
+      || n.includes('انتهاء') || n.includes('goLive'))                  return 5; // end implementation
+  return 4; // follow-up (default for all other stages)
+}
+
+// Returns array of {uri, name, mimeType} auto-attachments for a given stage name
+async function getAutoAttachments(stageName) {
+  const n = (stageName || '').toLowerCase();
+  const isCall = n.includes('مكالم') || n.includes('call');
+  const isFirst = n.includes('استلام') || n.includes('تسليم') || n.includes('بيانات');
+  const files = [];
+  const fetchPdf = async (path, name) => {
+    try {
+      const url = Platform.OS === 'web' ? path : WEB_ORIGIN + path;
+      if (Platform.OS === 'web') {
+        const res = await fetch(path);
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        return { uri: URL.createObjectURL(blob), name, mimeType: 'application/pdf' };
+      } else {
+        const { FileSystem } = require('expo-file-system');
+        const dest = FileSystem.cacheDirectory + name;
+        const dl = await FileSystem.downloadAsync(url, dest);
+        return { uri: dl.uri, name, mimeType: 'application/pdf' };
+      }
+    } catch { return null; }
+  };
+  if (isCall) {
+    const f = await fetchPdf('/pdfs/policy.pdf', 'سياسة التنفيذ.pdf');
+    if (f) files.push(f);
+  }
+  if (isFirst) {
+    const f = await fetchPdf('/pdfs/client_receipt.pdf', 'نموذج استلام عميل من المبيعات.pdf');
+    if (f) files.push(f);
+  }
+  return files;
+}
 
 // ── Shared subcomponents ──────────────────────────────────────────────────────
 function Field({ label, children }) {
@@ -135,7 +180,7 @@ function TraineesList({ trainees, onChange }) {
   const remove = (i) => onChange(trainees.filter((_, j) => j !== i));
   const update = (i, field, val) => onChange(trainees.map((t, j) => j === i ? { ...t, [field]: val } : t));
   return (
-    <Field label="المتدربون">
+    <Field label="الحضور (الاسم والوظيفة)">
       {trainees.map((t, i) => (
         <View key={i} style={s.traineeRow}>
           <TextInput
@@ -161,7 +206,7 @@ function TraineesList({ trainees, onChange }) {
       ))}
       <TouchableOpacity style={s.addRowBtn} onPress={add}>
         <Ionicons name="person-add-outline" size={18} color="#1565C0" />
-        <Text style={s.addRowBtnText}>إضافة متدرب</Text>
+        <Text style={s.addRowBtnText}>إضافة حاضر</Text>
       </TouchableOpacity>
     </Field>
   );
@@ -444,6 +489,56 @@ function buildFollowUpHtml({ clientName, systemName, date, startTime, endTime, v
     + HTML_FOOTER;
 }
 
+// 5. End of Implementation Form
+function buildEndImplHtml({ clientName, systemName, date, startTime, endTime, location, finishedSystems, generalNotes }) {
+  const locClient  = location === 1 ? '☑' : '☐';
+  const locOnline  = location === 2 ? '☑' : '☐';
+  const locCompany = location === 3 ? '☑' : '☐';
+  const pairs = [];
+  const items = finishedSystems.length > 0 ? finishedSystems : Array(4).fill({ name: '', notes: '' });
+  for (let i = 0; i < items.length; i += 2) {
+    const a = items[i] || { name: '', notes: '' };
+    const b = items[i + 1] || { name: '', notes: '' };
+    pairs.push(`<tr><td>${a.name || ''}</td><td>${a.notes || ''}</td><td>${b.name || ''}</td><td>${b.notes || ''}</td></tr>`);
+  }
+  return HTML_HEADER('نموذج انهاء التنفيذ')
+    + `<table>
+  <tr>
+    <th style="width:15%">اسم العميل</th>
+    <td style="width:35%">${clientName || ''}</td>
+    <th style="width:15%">اسم النظام</th>
+    <td style="width:35%">${systemName || ''}</td>
+  </tr>
+  <tr>
+    <th>تاريخ الزيارة</th>
+    <td>${date || ''}</td>
+    <th>الوقت</th>
+    <td>من: ${startTime || '........'} &nbsp;&nbsp; إلى: ${endTime || '........'}</td>
+  </tr>
+  <tr>
+    <th>مكان الزيارة</th>
+    <td colspan="3">${locClient} مقر العميل &nbsp;&nbsp;&nbsp; ${locOnline} أونلاين &nbsp;&nbsp;&nbsp; ${locCompany} الشركة</td>
+  </tr>
+</table>
+<div class="section-title">أسماء الأنظمة التي تم الانتهاء من تنفيذها</div>
+<table>
+  <tr><th style="width:30%">اسم النظام</th><th style="width:20%">ملاحظات</th><th style="width:30%">اسم النظام</th><th style="width:20%">ملاحظات</th></tr>
+  ${pairs.join('')}
+</table>
+<p class="info-text">بموجب هذا النموذج يكون قد تم الانتهاء من التنفيذ والتدريب والاعتماد على النظام وإدخال حركات فعلية.</p>
+<div class="section-title">ملاحظات عامة</div>
+<div class="notes-box">${generalNotes || ''}</div>`
+    + `<table class="sig-table" style="margin-top:16px">
+  <tr>
+    <th style="width:33%">مدير المشروع (العميل)</th>
+    <th style="width:33%">المدرب (الحلول النهائية)</th>
+    <th style="width:33%">مدير الفريق (الحلول النهائية)</th>
+  </tr>
+  <tr><td></td><td></td><td></td></tr>
+</table>`
+    + HTML_FOOTER;
+}
+
 // ── Web-only style for native HTML inputs ─────────────────────────────────────
 const webInputStyle = {
   width: '100%', padding: '10px 12px', fontSize: 15, borderRadius: 10,
@@ -485,8 +580,10 @@ export default function QuickExecutionScreen({ navigation }) {
   const [showSavedList,  setShowSavedList]  = useState(false);
   const [attachments,    setAttachments]    = useState([]);
 
-  // Form type
-  const [formType, setFormType] = useState(1);
+  // Form type — driven by stage selection
+  const [stageObj, setStageObj] = useState(null);
+  const [formType, setFormType] = useState(4); // default: متابعة
+  const [sendPolicy, setSendPolicy] = useState(false);
 
   // انهاء تدريب specific
   const [finishedSystems, setFinishedSystems] = useState([{ name: '', notes: '' }]);
@@ -596,11 +693,31 @@ export default function QuickExecutionScreen({ navigation }) {
     finally { setLoadingStages(false); }
   }, [saveLastUsed]);
 
-  const onSelectStage = useCallback(async (id) => {
+  const onSelectStage = useCallback(async (id, obj) => {
     setStageId(id);
+    setStageObj(obj || null);
     setPlanId(null);
     setPlans([]); setPlanItems([]); setSelectedItems([]);
     saveLastUsed({ stageId: id });
+
+    // Auto-detect form type from stage name
+    const sName = obj?.value || obj?.stageDef?.name || obj?.stageDef?.localName
+                || obj?.stageName || obj?.name || obj?.title || obj?.stageDefName || '';
+    const auto = detectFormTypeFromStage(sName);
+    setFormType(auto);
+
+    // Auto-enable policy for call stage
+    const isCall = sName.toLowerCase().includes('مكالم') || sName.toLowerCase().includes('call');
+    setSendPolicy(isCall);
+
+    // Auto-load PDF attachments for call / first-stage stages
+    getAutoAttachments(sName).then(pdfs => {
+      if (pdfs.length > 0) setAttachments(prev => {
+        const names = prev.map(a => a.name);
+        return [...prev, ...pdfs.filter(p => !names.includes(p.name))];
+      });
+    }).catch(() => {});
+
     setLoadingPlans(true);
     try { setPlans(extractList(await getPlansDropDown(scopeId, id)) || []); }
     catch { setPlans([]); }
@@ -678,16 +795,23 @@ export default function QuickExecutionScreen({ navigation }) {
 
   const buildDescription = useCallback(() => {
     const parts = [];
-    if (formType === 1) {
-      const validTrainees = trainees.filter(t => t.name.trim());
-      if (validTrainees.length > 0) {
-        parts.push(
-          'الحضور:\n' +
-          validTrainees.map((t, i) =>
-            `${i + 1}. ${t.name.trim()}${t.job.trim() ? ` (${t.job.trim()})` : ''}`
-          ).join('\n')
-        );
-      }
+
+    // Always add attendees at top if present
+    const validTrainees = trainees.filter(t => t.name.trim());
+    if (validTrainees.length > 0) {
+      parts.push(
+        'الحضور:\n' +
+        validTrainees.map((t, i) =>
+          `${i + 1}. ${t.name.trim()}${t.job.trim() ? ` (${t.job.trim()})` : ''}`
+        ).join('\n')
+      );
+    }
+
+    if (formType === 0) {
+      // Call stage — minimal
+      if (description.trim()) parts.push(description.trim());
+      if (sendPolicy) parts.push('مرفق: سياسة التنفيذ');
+    } else if (formType === 1) {
       if (description.trim()) parts.push(description.trim());
       if (clientNotes.trim()) parts.push('ملاحظات العميل:\n' + clientNotes.trim());
     } else if (formType === 2) {
@@ -715,11 +839,23 @@ export default function QuickExecutionScreen({ navigation }) {
       }
       if (procedureChanges.trim()) parts.push('التغيير في الإجراءات:\n' + procedureChanges.trim());
     } else if (formType === 4) {
+      if (description.trim()) parts.push(description.trim());
       if (visitEvents.trim()) parts.push('أحداث الزيارة:\n' + visitEvents.trim());
       if (visitRequests.trim()) parts.push('الطلبات والملاحظات:\n' + visitRequests.trim());
+    } else if (formType === 5) {
+      if (description.trim()) parts.push(description.trim());
+      const validSystems = finishedSystems.filter(s => s.name.trim());
+      if (validSystems.length > 0) {
+        parts.push(
+          'الأنظمة المنتهية:\n' +
+          validSystems.map((s, i) =>
+            `${i + 1}. ${s.name.trim()}${s.notes.trim() ? ` - ${s.notes.trim()}` : ''}`
+          ).join('\n')
+        );
+      }
     }
     return parts.join('\n\n') || null;
-  }, [formType, description, trainees, clientNotes, finishedSystems, systemChanges, procedureChanges, visitEvents, visitRequests]);
+  }, [formType, description, trainees, clientNotes, finishedSystems, systemChanges, procedureChanges, visitEvents, visitRequests, sendPolicy]);
 
   const handleSave = async () => {
     if (submittedRef.current) return;
@@ -789,6 +925,12 @@ export default function QuickExecutionScreen({ navigation }) {
           systemChanges: systemChanges.filter(c => c.system.trim() || c.change.trim()),
           procedureChanges,
         });
+      } else if (formType === 5) {
+        html = buildEndImplHtml({
+          ...common,
+          finishedSystems: finishedSystems.filter(s => s.name.trim()),
+          generalNotes: description,
+        });
       } else {
         html = buildFollowUpHtml({
           ...common,
@@ -818,28 +960,15 @@ export default function QuickExecutionScreen({ navigation }) {
     setSelectedItems(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
-  const formTypeLabel = FORM_TYPES.find(f => f.id === formType)?.label || 'النموذج';
+  const formTypeLabel = formType === 0 ? 'تقرير مكالمة'
+    : formType === 1 ? 'نموذج تدريب'
+    : formType === 2 ? 'انهاء تدريب'
+    : formType === 3 ? 'محاكاة'
+    : formType === 5 ? 'نموذج انهاء التنفيذ'
+    : 'تقرير متابعة';
 
   return (
     <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
-
-      {/* Form type selector */}
-      <Field label="نوع النموذج">
-        <View style={s.formTypeGrid}>
-          {FORM_TYPES.map(ft => (
-            <TouchableOpacity
-              key={ft.id}
-              style={[s.formTypeBtn, formType === ft.id && s.formTypeBtnActive]}
-              onPress={() => setFormType(ft.id)}
-            >
-              <Ionicons name={ft.icon} size={18} color={formType === ft.id ? '#fff' : '#1565C0'} />
-              <Text style={[s.formTypeBtnText, formType === ft.id && s.formTypeBtnTextActive]}>
-                {ft.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </Field>
 
       {/* Project */}
       <Dropdown
@@ -874,6 +1003,54 @@ export default function QuickExecutionScreen({ navigation }) {
           placeholder="اختر المرحلة"
           loading={loadingStages}
         />
+      )}
+
+      {/* Stage-type badge + training toggle */}
+      {stageId && (
+        <View style={s.stageBanner}>
+          <Ionicons
+            name={formType === 0 ? 'call-outline' : formType === 1 ? 'school-outline' : formType === 2 ? 'checkmark-done-outline' : formType === 3 ? 'sync-circle-outline' : formType === 5 ? 'trophy-outline' : 'eye-outline'}
+            size={16} color="#1565C0"
+          />
+          <Text style={s.stageBannerText}>{formTypeLabel}</Text>
+        </View>
+      )}
+
+      {/* Training sub-toggle: form 1 ↔ 2 */}
+      {stageId && (formType === 1 || formType === 2) && (
+        <Field label="نوع نموذج التدريب">
+          <View style={s.formTypeGrid}>
+            {TRAINING_TOGGLE.map(ft => (
+              <TouchableOpacity
+                key={ft.id}
+                style={[s.formTypeBtn, formType === ft.id && s.formTypeBtnActive]}
+                onPress={() => setFormType(ft.id)}
+              >
+                <Ionicons name={ft.icon} size={18} color={formType === ft.id ? '#fff' : '#1565C0'} />
+                <Text style={[s.formTypeBtnText, formType === ft.id && s.formTypeBtnTextActive]}>
+                  {ft.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Field>
+      )}
+
+      {/* Policy PDF button for call stage */}
+      {stageId && formType === 0 && (
+        <TouchableOpacity
+          style={[s.policyBtn, sendPolicy && s.policyBtnActive]}
+          onPress={() => setSendPolicy(v => !v)}
+        >
+          <Ionicons name={sendPolicy ? 'checkmark-circle' : 'document-attach-outline'} size={20} color={sendPolicy ? '#fff' : '#1565C0'} />
+          <View style={{ flex: 1 }}>
+            <Text style={[s.policyBtnTitle, sendPolicy && { color: '#fff' }]}>إرسال سياسة التنفيذ</Text>
+            <Text style={[s.policyBtnSub, sendPolicy && { color: 'rgba(255,255,255,0.8)' }]}>
+              {sendPolicy ? 'سيتم إرفاق سياسة التنفيذ تلقائياً مع البريد' : 'اضغط لإرفاق سياسة التنفيذ'}
+            </Text>
+          </View>
+          {sendPolicy && <View style={s.policyDot} />}
+        </TouchableOpacity>
       )}
 
       {scopeId && (
@@ -993,12 +1170,46 @@ export default function QuickExecutionScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Location — not shown for متابعة */}
-      {formType !== 4 && (
+      {/* Location — not shown for call or متابعة */}
+      {formType !== 4 && formType !== 0 && (
         <RadioGroup label="مكان الزيارة" options={LOCATIONS} value={location} onChange={setLocation} />
       )}
 
-      {/* ── Training form fields ── */}
+      {/* ── Attendees — always visible ── */}
+      {savedTrainees.length > 0 && (
+        <View style={s.savedTraineesWrap}>
+          <TouchableOpacity style={s.savedTraineesBtn} onPress={() => setShowSavedList(v => !v)}>
+            <Ionicons name="people-outline" size={16} color="#1565C0" />
+            <Text style={s.savedTraineesBtnText}>اختر من المحفوظين ({savedTrainees.length})</Text>
+            <Ionicons name={showSavedList ? 'chevron-up' : 'chevron-down'} size={14} color="#1565C0" />
+          </TouchableOpacity>
+          {showSavedList && (
+            <View style={s.savedList}>
+              {savedTrainees.map((t, i) => (
+                <TouchableOpacity key={i} style={s.savedItem} onPress={() => addSavedTrainee(t)}>
+                  <Ionicons name="person-add-outline" size={15} color="#1565C0" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.savedItemName}>{t.name}</Text>
+                    {!!t.job && <Text style={s.savedItemJob}>{t.job}</Text>}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+      <TraineesList trainees={trainees} onChange={setTrainees} />
+
+      {/* ── Call (type 0) fields — just a description ── */}
+      {formType === 0 && (
+        <Field label="ملاحظات المكالمة">
+          <TextInput style={[s.input, s.textarea]} value={description} onChangeText={setDescription}
+            placeholder="ملاحظات وتفاصيل المكالمة (اختياري)" placeholderTextColor="#aaa"
+            multiline numberOfLines={4} textAlignVertical="top" textAlign="right" />
+        </Field>
+      )}
+
+      {/* ── Training form fields (type 1) ── */}
       {formType === 1 && (
         <>
           {loadingItems && (
@@ -1031,30 +1242,6 @@ export default function QuickExecutionScreen({ navigation }) {
               })}
             </Field>
           )}
-          {/* Saved trainees quick-pick */}
-          {savedTrainees.length > 0 && (
-            <View style={s.savedTraineesWrap}>
-              <TouchableOpacity style={s.savedTraineesBtn} onPress={() => setShowSavedList(v => !v)}>
-                <Ionicons name="people-outline" size={16} color="#1565C0" />
-                <Text style={s.savedTraineesBtnText}>اختر من المحفوظين ({savedTrainees.length})</Text>
-                <Ionicons name={showSavedList ? 'chevron-up' : 'chevron-down'} size={14} color="#1565C0" />
-              </TouchableOpacity>
-              {showSavedList && (
-                <View style={s.savedList}>
-                  {savedTrainees.map((t, i) => (
-                    <TouchableOpacity key={i} style={s.savedItem} onPress={() => addSavedTrainee(t)}>
-                      <Ionicons name="person-add-outline" size={15} color="#1565C0" />
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.savedItemName}>{t.name}</Text>
-                        {!!t.job && <Text style={s.savedItemJob}>{t.job}</Text>}
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-          <TraineesList trainees={trainees} onChange={setTrainees} />
           <Field label="ملاحظات المدرب">
             <TextInput style={[s.input, s.textarea]} value={description} onChangeText={setDescription}
               placeholder="ملاحظات المدرب (اختياري)" placeholderTextColor="#aaa"
@@ -1092,9 +1279,14 @@ export default function QuickExecutionScreen({ navigation }) {
         </>
       )}
 
-      {/* ── Follow-up fields ── */}
+      {/* ── Follow-up fields (type 4) ── */}
       {formType === 4 && (
         <>
+          <Field label="ملاحظات الزيارة">
+            <TextInput style={[s.input, s.textarea]} value={description} onChangeText={setDescription}
+              placeholder="ملاحظات عامة (اختياري)" placeholderTextColor="#aaa"
+              multiline numberOfLines={3} textAlignVertical="top" textAlign="right" />
+          </Field>
           <RadioGroup label="سبب الزيارة" options={VISIT_REASONS} value={visitReason} onChange={setVisitReason} />
           <Field label="أحداث الزيارة">
             <TextInput style={[s.input, s.textarea, { minHeight: 120 }]} value={visitEvents} onChangeText={setVisitEvents}
@@ -1105,6 +1297,19 @@ export default function QuickExecutionScreen({ navigation }) {
             <TextInput style={[s.input, s.textarea, { minHeight: 100 }]} value={visitRequests} onChangeText={setVisitRequests}
               placeholder="الطلبات والملاحظات..." placeholderTextColor="#aaa"
               multiline textAlignVertical="top" textAlign="right" />
+          </Field>
+        </>
+      )}
+
+      {/* ── End of Implementation fields (type 5) ── */}
+      {formType === 5 && (
+        <>
+          <RadioGroup label="مكان الزيارة" options={LOCATIONS} value={location} onChange={setLocation} />
+          <FinishedSystemsList systems={finishedSystems} onChange={setFinishedSystems} />
+          <Field label="ملاحظات عامة">
+            <TextInput style={[s.input, s.textarea]} value={description} onChangeText={setDescription}
+              placeholder="ملاحظات عامة (اختياري)" placeholderTextColor="#aaa"
+              multiline numberOfLines={4} textAlignVertical="top" textAlign="right" />
           </Field>
         </>
       )}
@@ -1282,4 +1487,23 @@ const s = StyleSheet.create({
     backgroundColor: '#1565C0', borderRadius: 12, padding: 14,
   },
   saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+
+  stageBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#E3F2FD', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
+    marginBottom: 4, borderWidth: 1, borderColor: '#BBDEFB',
+  },
+  stageBannerText: { fontSize: 13, color: '#1565C0', fontWeight: '700' },
+
+  policyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 6,
+    borderWidth: 2, borderColor: '#1565C0',
+  },
+  policyBtnActive: { backgroundColor: '#1565C0' },
+  policyBtnTitle: { fontSize: 14, color: '#1565C0', fontWeight: '700' },
+  policyBtnSub: { fontSize: 11, color: '#888', marginTop: 1 },
+  policyDot: {
+    width: 10, height: 10, borderRadius: 5, backgroundColor: '#4CAF50',
+  },
 });
