@@ -298,6 +298,44 @@ function ImplementersBar({ stages }) {
   );
 }
 
+// ─── Project progress summary (stacked bar, always from computedStats) ────────
+function ProgressSummaryCard({ cs }) {
+  if (!cs || !cs.totalProjects) return null;
+  const { totalProjects: total, activeProjects: a = 0, completedProjects: c = 0, onHoldProjects: h = 0 } = cs;
+  const completedPct = Math.round((c / total) * 100);
+
+  const segs = [
+    { value: a, color: '#F57C00', label: 'نشطة',   icon: 'play-circle-outline' },
+    { value: c, color: '#388E3C', label: 'مكتملة',  icon: 'checkmark-circle-outline' },
+    { value: h, color: '#9C27B0', label: 'معلقة',   icon: 'pause-circle-outline' },
+  ];
+
+  return (
+    <View style={styles.psCard}>
+      <View style={styles.psHeader}>
+        <Text style={styles.chartTitle}>ملخص التقدم</Text>
+        <Text style={styles.psPct}>{completedPct}% مكتمل</Text>
+      </View>
+      {/* Stacked bar */}
+      <View style={styles.psBar}>
+        {segs.filter(s => s.value > 0).map((s, i) => (
+          <View key={i} style={[styles.psBarSeg, { flex: s.value, backgroundColor: s.color }]} />
+        ))}
+      </View>
+      {/* Legend row */}
+      <View style={styles.psLegendRow}>
+        {segs.map((s, i) => (
+          <View key={i} style={styles.psLegendItem}>
+            <Ionicons name={s.icon} size={14} color={s.color} />
+            <Text style={[styles.psLegendVal, { color: s.color }]}>{s.value}</Text>
+            <Text style={styles.psLegendLbl}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function MiniBarChart({ cards }) {
   if (!cards || cards.length === 0) return null;
   const top = cards.slice(0, 6);
@@ -520,10 +558,10 @@ export default function DashboardScreen({ navigation }) {
         </View>
 
         {/* ── Donut: project status distribution ─────────────────────── */}
-        {stagesLoading
-          ? null
-          : <DonutChart cs={computedStats} />
-        }
+        {computedStats && <DonutChart cs={computedStats} />}
+
+        {/* ── Progress summary stacked bar (always visible) ───────────── */}
+        {computedStats && <ProgressSummaryCard cs={computedStats} />}
 
         {/* ── Bar chart: stage distribution ──────────────────────────── */}
         {stagesLoading ? (
@@ -720,6 +758,20 @@ const styles = StyleSheet.create({
   chartBarWrap: { flex: 1, height: 10, backgroundColor: '#EEF2FF', borderRadius: 5, overflow: 'hidden' },
   chartBar: { height: 10, borderRadius: 5 },
   chartCount: { fontSize: 12, fontWeight: '700', width: 24, textAlign: 'center' },
+
+  // Progress summary card (stacked bar)
+  psCard: {
+    backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12,
+    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
+  },
+  psHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  psPct:       { fontSize: 13, fontWeight: '800', color: '#388E3C' },
+  psBar:       { flexDirection: 'row', height: 14, borderRadius: 7, overflow: 'hidden', marginBottom: 14, backgroundColor: '#EEE' },
+  psBarSeg:    { height: 14 },
+  psLegendRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  psLegendItem: { alignItems: 'center', gap: 3 },
+  psLegendVal: { fontSize: 16, fontWeight: '900' },
+  psLegendLbl: { fontSize: 10, color: '#888' },
 
   // Donut chart card
   donutCard: {
