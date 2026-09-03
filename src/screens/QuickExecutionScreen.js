@@ -536,14 +536,7 @@ export default function QuickExecutionScreen({ navigation }) {
               setLoadingStages(true);
               const stageRes = await getStagesByScope(last.scopeId).catch(() => null);
               const stageAll = extractList(stageRes) || [];
-              const stageList = stageAll.filter(st => {
-                const sid = st.statusId;
-                if (typeof sid === 'number') return sid !== 2;
-                if (st.isFinished === true || st.isCompleted === true) return false;
-                const sname = String(st.status ?? st.statusName ?? '').toLowerCase().replace(/\s/g, '');
-                if (sname.includes('complet') || sname.includes('finish') || sname === 'منجزة' || sname === 'منجز') return false;
-                return true;
-              });
+              const stageList = stageAll.filter(st => st.statusId !== 3 && st.statusName !== 'Done');
               setStages(stageList);
               setLoadingStages(false);
 
@@ -589,22 +582,8 @@ export default function QuickExecutionScreen({ navigation }) {
       const res = await getStagesByScope(id);
       const all = extractList(res) || [];
       // Filter completed stages: check multiple possible status fields
-      const active = all.filter(st => {
-        // Try numeric statusId
-        const sid = st.statusId;
-        if (typeof sid === 'number') {
-          // 2 = Completed per helpers.js STAGE_STATUS_MAP
-          return sid !== 2;
-        }
-        // Try boolean flags
-        if (st.isFinished === true || st.isCompleted === true || st.isDone === true) return false;
-        // Try string status
-        const sname = String(st.status ?? st.statusName ?? st.statusValue ?? '').toLowerCase().replace(/\s/g, '');
-        if (sname.includes('complet') || sname.includes('finish') || sname === 'منجزة' || sname === 'منجز') return false;
-        // Keep by default
-        return true;
-      });
-      all.forEach((s, i) => console.log(`[Stage${i}]`, JSON.stringify({ id: s.id, key: s.key, statusId: s.statusId, status: s.status, statusName: s.statusName, isFinished: s.isFinished, isCompleted: s.isCompleted, name: s.stageName || s.stageDef?.name || s.name || s.value || s.title })));
+      // statusId 3 = Done (exclude), 2 = InProgress, 1 = Pending (keep both)
+      const active = all.filter(st => st.statusId !== 3 && st.statusName !== 'Done');
       setStages(active);
     }
     catch { setStages([]); }
