@@ -537,9 +537,12 @@ export default function QuickExecutionScreen({ navigation }) {
               const stageRes = await getStagesByScope(last.scopeId).catch(() => null);
               const stageAll = extractList(stageRes) || [];
               const stageList = stageAll.filter(st => {
-                const sid = st.statusId ?? st.status;
-                const sname = String(st.statusName ?? st.statusValue ?? '').toLowerCase();
-                return sid !== 2 && !sname.includes('complet') && !sname.includes('finish');
+                const sid = st.statusId;
+                if (typeof sid === 'number') return sid !== 2;
+                if (st.isFinished === true || st.isCompleted === true) return false;
+                const sname = String(st.status ?? st.statusName ?? '').toLowerCase().replace(/\s/g, '');
+                if (sname.includes('complet') || sname.includes('finish') || sname === 'منجزة' || sname === 'منجز') return false;
+                return true;
               });
               setStages(stageList);
               setLoadingStages(false);
@@ -585,11 +588,23 @@ export default function QuickExecutionScreen({ navigation }) {
     try {
       const res = await getStagesByScope(id);
       const all = extractList(res) || [];
+      // Filter completed stages: check multiple possible status fields
       const active = all.filter(st => {
-        const sid = st.statusId ?? st.status;
-        const sname = String(st.statusName ?? st.statusValue ?? '').toLowerCase();
-        return sid !== 2 && !sname.includes('complet') && !sname.includes('finish');
+        // Try numeric statusId
+        const sid = st.statusId;
+        if (typeof sid === 'number') {
+          // 2 = Completed per helpers.js STAGE_STATUS_MAP
+          return sid !== 2;
+        }
+        // Try boolean flags
+        if (st.isFinished === true || st.isCompleted === true || st.isDone === true) return false;
+        // Try string status
+        const sname = String(st.status ?? st.statusName ?? st.statusValue ?? '').toLowerCase().replace(/\s/g, '');
+        if (sname.includes('complet') || sname.includes('finish') || sname === 'منجزة' || sname === 'منجز') return false;
+        // Keep by default
+        return true;
       });
+      console.log('[Stages] all:', all.map(s => ({ id: s.id, statusId: s.statusId, status: s.status, isFinished: s.isFinished, name: s.stageName || s.name || s.value })));
       setStages(active);
     }
     catch { setStages([]); }
