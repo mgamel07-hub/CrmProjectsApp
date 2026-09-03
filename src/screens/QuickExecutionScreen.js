@@ -663,7 +663,6 @@ export default function QuickExecutionScreen({ navigation }) {
   const buildDescription = useCallback(() => {
     const parts = [];
     if (formType === 1) {
-      if (description.trim()) parts.push(description.trim());
       const validTrainees = trainees.filter(t => t.name.trim());
       if (validTrainees.length > 0) {
         parts.push(
@@ -673,6 +672,7 @@ export default function QuickExecutionScreen({ navigation }) {
           ).join('\n')
         );
       }
+      if (description.trim()) parts.push(description.trim());
       if (clientNotes.trim()) parts.push('ملاحظات العميل:\n' + clientNotes.trim());
     } else if (formType === 2) {
       if (description.trim()) parts.push(description.trim());
