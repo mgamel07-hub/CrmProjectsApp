@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   getUnitsRequests, approveUnitsRequest, rejectUnitsRequest,
   getPendingPlans, approvePlan, rejectPlan, submitPlan, getPlanByIdForView,
+  getProjectsDropdown, getScopesByProject, getStagesByScope, getPlansByScope,
 } from '../api/projects';
 import {
   getTeamMembers, getMyTeamRecord, createNotification,
@@ -227,41 +228,91 @@ function PlansTab({ lang, navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
 
+  // Full traversal: projects → scopes → stages → plans, collect statusId=1,2
+  const fetchAllSubmittedPlans = useCallback(async () => {
+    const collected = [];
+    try {
+      const projRes = await getProjectsDropdown();
+      const projects = extractList(projRes) || extractData(projRes) || [];
+      await Promise.allSettled(projects.map(async (proj) => {
+        const projId = proj.id ?? proj.key;
+        if (!projId) return;
+        try {
+          const scopeRes = await getScopesByProject(projId);
+          const scopes = extractList(scopeRes) || extractData(scopeRes) || [];
+          await Promise.allSettled(scopes.map(async (scope) => {
+            const scopeId = scope.id ?? scope.key;
+            if (!scopeId) return;
+            try {
+              const stageRes = await getStagesByScope(scopeId);
+              const stages = extractList(stageRes) || extractData(stageRes) || [];
+              await Promise.allSettled(stages.map(async (stage) => {
+                const stageId = stage.id ?? stage.key;
+                if (!stageId) return;
+                try {
+                  const planRes = await getPlansByScope({ projectScopeStageId: stageId, pageNumber: 1, pageSize: 50 });
+                  const plans = extractList(planRes) || extractData(planRes) || [];
+                  plans.forEach(p => {
+                    const s = p.statusId ?? p.status;
+                    if (s === 1 || s === 2) {
+                      collected.push({
+                        ...p,
+                        stageName: p.stageName || stage.value || stage.name || `مرحلة #${stageId}`,
+                        projectName: p.projectName || proj.value || proj.name,
+                        scopeName: p.scopeName || scope.name || scope.clientName,
+                      });
+                    }
+                  });
+                } catch (_) {}
+              }));
+            } catch (_) {}
+          }));
+        } catch (_) {}
+      }));
+    } catch (_) {}
+    return collected;
+  }, []);
+
   const load = useCallback(async () => {
     try {
-      // Fetch statusId 1 (draft), 2 (submitted), and no-filter (all) to catch any CRM-submitted plans
-      const [res1, res2, resAll] = await Promise.allSettled([
-        getPendingPlans({ statusId: 1, pageNumber: 1, pageSize: 200 }),
+      // First try GetByFilter (fast but user-scoped)
+      const [res2, resAll] = await Promise.allSettled([
         getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 200 }),
         getPendingPlans({ pageNumber: 1, pageSize: 200 }),
       ]);
-      const list1   = res1.status   === 'fulfilled' ? (extractList(res1.value)   || extractData(res1.value)   || []) : [];
       const list2   = res2.status   === 'fulfilled' ? (extractList(res2.value)   || extractData(res2.value)   || []) : [];
       const listAll = resAll.status === 'fulfilled' ? (extractList(resAll.value) || extractData(resAll.value) || []) : [];
 
-      // Merge all, deduplicate by id, exclude approved (3) plans
       const seen = new Set();
-      const merged = [...list2, ...list1, ...listAll].filter(p => {
+      let merged = [...list2, ...listAll].filter(p => {
         const id = String(p.id);
         if (seen.has(id)) return false;
         seen.add(id);
-        return (p.statusId ?? p.status) !== 3; // hide already-approved
+        return (p.statusId ?? p.status) !== 3;
       });
+
+      // If filter returned nothing, do full traversal to catch all submitted plans
+      if (merged.length === 0) {
+        const traversed = await fetchAllSubmittedPlans();
+        traversed.forEach(p => {
+          const id = String(p.id);
+          if (!seen.has(id)) { seen.add(id); merged.push(p); }
+        });
+      }
+
+      // Sort: submitted (2) first, then drafts (1)
+      merged.sort((a, b) => (b.statusId ?? 0) - (a.statusId ?? 0));
       setPlans(merged);
       setError(null);
     } catch (e) {
       const status = e?.response?.status;
-      if (status === 404 || status === 405) {
-        setPlans([]);
-        setError(null);
-      } else {
-        setError(e?.response?.data?.message || t('networkError'));
-      }
+      if (status === 404 || status === 405) { setPlans([]); setError(null); }
+      else setError(e?.response?.data?.message || t('networkError'));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [fetchAllSubmittedPlans]);
 
   useEffect(() => { load(); }, [load]);
   const onRefresh = () => { setRefreshing(true); load(); };
