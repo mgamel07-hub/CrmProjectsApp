@@ -539,7 +539,7 @@ export default function QuickExecutionScreen({ navigation }) {
               const stageList = stageAll.filter(st => {
                 const sid = st.statusId ?? st.status;
                 const sname = String(st.statusName ?? st.statusValue ?? '').toLowerCase();
-                return sid !== 2 && sid !== 3 && !sname.includes('complet') && !sname.includes('finish');
+                return sid !== 2 && !sname.includes('complet') && !sname.includes('finish');
               });
               setStages(stageList);
               setLoadingStages(false);
@@ -588,7 +588,7 @@ export default function QuickExecutionScreen({ navigation }) {
       const active = all.filter(st => {
         const sid = st.statusId ?? st.status;
         const sname = String(st.statusName ?? st.statusValue ?? '').toLowerCase();
-        return sid !== 2 && sid !== 3 && !sname.includes('complet') && !sname.includes('finish');
+        return sid !== 2 && !sname.includes('complet') && !sname.includes('finish');
       });
       setStages(active);
     }
@@ -870,7 +870,7 @@ export default function QuickExecutionScreen({ navigation }) {
           options={stages}
           value={stageId}
           onSelect={onSelectStage}
-          getLabel={o => o.value || o.name || `#${o.id ?? o.key}`}
+          getLabel={o => o.value || o.stageDef?.name || o.stageDef?.localName || o.stageName || o.name || o.title || o.stageDefName || `#${o.id ?? o.key}`}
           placeholder="اختر المرحلة"
           loading={loadingStages}
         />
