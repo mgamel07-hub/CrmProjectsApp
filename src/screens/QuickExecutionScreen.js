@@ -673,6 +673,7 @@ export default function QuickExecutionScreen({ navigation }) {
         description: description.trim() || null,
         projectPlanItemIds: selectedItems,
         hideItemsInEmail: false,
+        skipEmailNotification: false,
       });
       const raw = res?.data;
       const executionId = typeof raw?.data === 'object' ? raw?.data?.id : (raw?.data ?? raw?.id ?? raw);
