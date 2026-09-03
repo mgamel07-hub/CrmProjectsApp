@@ -470,11 +470,12 @@ function VisitPeriodBar({ period, onSelect }) {
 
 // ─── Visit view toggle ────────────────────────────────────────────────────────
 
-function VisitViewToggle({ mode, onSelect, counts }) {
+function VisitViewToggle({ mode, onSelect }) {
   const opts = [
-    { key: 'list',   label: 'قائمة',    icon: 'list-outline' },
-    { key: 'client', label: 'بالعميل',  icon: 'business-outline' },
-    { key: 'system', label: 'بالنظام',  icon: 'layers-outline' },
+    { key: 'list',     label: 'قائمة',  icon: 'list-outline' },
+    { key: 'client',   label: 'عميل',   icon: 'business-outline' },
+    { key: 'system',   label: 'نظام',   icon: 'layers-outline' },
+    { key: 'calendar', label: 'تقويم',  icon: 'calendar-outline' },
   ];
   return (
     <View style={s.viewToggle}>
@@ -487,6 +488,98 @@ function VisitViewToggle({ mode, onSelect, counts }) {
           </TouchableOpacity>
         );
       })}
+    </View>
+  );
+}
+
+// ─── Calendar view ────────────────────────────────────────────────────────────
+
+const DAY_LABELS = ['أح', 'إث', 'ثل', 'أر', 'خم', 'جم', 'سب'];
+
+function hasUnits(v) {
+  return (v.projectPlanItems?.length > 0)
+      || (v.planItems?.length > 0)
+      || (v.items?.length > 0)
+      || (v.projectPlanItemIds?.length > 0)
+      || ((v.planItemsCount ?? 0) > 0)
+      || ((v.unitsCount ?? 0) > 0);
+}
+
+function VisitCalendar({ visits, onDayPress }) {
+  const [viewDate, setViewDate] = useState(() => new Date());
+  const year  = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+
+  const byDate = {};
+  for (const v of visits) {
+    const d = visitDate(v).slice(0, 10);
+    if (!d) continue;
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(v);
+  }
+
+  const firstDow   = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today      = new Date().toISOString().slice(0, 10);
+  const monthTitle = new Date(year, month).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' });
+
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  // Pad to full rows of 7
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  return (
+    <View style={s.calWrap}>
+      {/* Month nav */}
+      <View style={s.calHeader}>
+        <TouchableOpacity onPress={() => setViewDate(new Date(year, month + 1, 1))} style={s.calNavBtn}>
+          <Ionicons name="chevron-back" size={20} color="#1565C0" />
+        </TouchableOpacity>
+        <Text style={s.calMonthTitle}>{monthTitle}</Text>
+        <TouchableOpacity onPress={() => setViewDate(new Date(year, month - 1, 1))} style={s.calNavBtn}>
+          <Ionicons name="chevron-forward" size={20} color="#1565C0" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Day-of-week headers */}
+      <View style={s.calDayRow}>
+        {DAY_LABELS.map(d => <Text key={d} style={s.calDayLabel}>{d}</Text>)}
+      </View>
+
+      {/* Grid */}
+      <View style={s.calGrid}>
+        {cells.map((day, i) => {
+          if (!day) return <View key={`e${i}`} style={s.calCell} />;
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const dayVisits = byDate[dateStr] || [];
+          const isToday = dateStr === today;
+          const hasDots = dayVisits.length > 0;
+          return (
+            <TouchableOpacity
+              key={dateStr}
+              style={[s.calCell, isToday && s.calCellToday, hasDots && s.calCellHasVisit]}
+              onPress={() => hasDots && onDayPress(dayVisits, dateStr)}
+              activeOpacity={hasDots ? 0.7 : 1}
+            >
+              <Text style={[s.calCellNum, isToday && s.calCellNumToday]}>{day}</Text>
+              {hasDots && (
+                <View style={s.calDotRow}>
+                  {dayVisits.slice(0, 3).map((_, vi) => (
+                    <View key={vi} style={[s.calDot, { backgroundColor: vi === 0 ? '#1565C0' : vi === 1 ? '#0288D1' : '#00897B' }]} />
+                  ))}
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Legend */}
+      <View style={s.calLegend}>
+        <View style={s.calLegendDot} />
+        <Text style={s.calLegendText}>يوم به زيارات — اضغط للتفاصيل</Text>
+      </View>
     </View>
   );
 }
@@ -534,10 +627,12 @@ export default function ReportsScreen() {
   const [selectedSystem, setSelectedSystem] = useState(null);
 
   // Visits filters + state
-  const [visitPeriod,   setVisitPeriod]   = useState(null);
-  const [visitViewMode, setVisitViewMode] = useState('list');   // 'list' | 'client' | 'system'
-  const [visitSearch,   setVisitSearch]   = useState('');
-  const [selectedVisit, setSelectedVisit] = useState(null);
+  const [visitPeriod,    setVisitPeriod]    = useState(null);
+  const [visitViewMode,  setVisitViewMode]  = useState('list');  // 'list' | 'client' | 'system' | 'calendar'
+  const [visitSearch,    setVisitSearch]    = useState('');
+  const [selectedVisit,  setSelectedVisit]  = useState(null);
+  const [onlyWithUnits,  setOnlyWithUnits]  = useState(false);  // وحدات فقط
+  const [calDayVisits,   setCalDayVisits]   = useState(null);   // visits for selected calendar day
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -613,6 +708,7 @@ export default function ReportsScreen() {
   const periodFiltered = filterByPeriod(roleVisits, visitPeriod);
 
   const filteredVisits = periodFiltered.filter(v => {
+    if (onlyWithUnits && !hasUnits(v)) return false;
     if (!visitSearch) return true;
     const q = visitSearch.toLowerCase();
     return (v.projectTitle || '').toLowerCase().includes(q)
@@ -794,20 +890,27 @@ export default function ReportsScreen() {
           {/* View mode toggle */}
           <VisitViewToggle mode={visitViewMode} onSelect={setVisitViewMode} />
 
-          {/* Visit search */}
+          {/* Visit search + units toggle */}
           <View style={[s.searchRow, { marginTop: 0 }]}>
             <View style={s.searchWrap}>
               <Ionicons name="search-outline" size={15} color="#bbb" />
               <TextInput style={s.searchInput} placeholder="بحث في الزيارات..." placeholderTextColor="#ccc" value={visitSearch} onChangeText={setVisitSearch} />
               {visitSearch ? <TouchableOpacity onPress={() => setVisitSearch('')}><Ionicons name="close-circle" size={15} color="#ccc" /></TouchableOpacity> : null}
             </View>
+            <TouchableOpacity
+              style={[s.unitsToggleBtn, onlyWithUnits && s.unitsToggleBtnActive]}
+              onPress={() => setOnlyWithUnits(p => !p)}
+            >
+              <Ionicons name="cube-outline" size={13} color={onlyWithUnits ? '#fff' : '#1565C0'} />
+              <Text style={[s.unitsToggleText, onlyWithUnits && s.unitsToggleTextActive]}>وحدات</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Stats bar */}
           <View style={s.visitStats}>
             <View style={s.visitStatItem}>
               <Text style={s.visitStatNum}>{filteredVisits.length}</Text>
-              <Text style={s.visitStatLabel}>إجمالي</Text>
+              <Text style={s.visitStatLabel}>{onlyWithUnits ? 'بوحدات' : 'إجمالي'}</Text>
             </View>
             <View style={s.visitStatDivider} />
             <View style={s.visitStatItem}>
@@ -826,6 +929,13 @@ export default function ReportsScreen() {
               </Text>
               <Text style={s.visitStatLabel}>جارية</Text>
             </View>
+            <View style={s.visitStatDivider} />
+            <View style={s.visitStatItem}>
+              <Text style={[s.visitStatNum, { color: '#6A1B9A' }]}>
+                {filteredVisits.filter(v => hasUnits(v)).length}
+              </Text>
+              <Text style={s.visitStatLabel}>بوحدات</Text>
+            </View>
           </View>
 
           {visitsLoading ? (
@@ -842,6 +952,16 @@ export default function ReportsScreen() {
               ListEmptyComponent={<View style={s.emptyWrap}><Ionicons name="car-outline" size={48} color="#ddd" /><Text style={s.emptyText}>لا توجد زيارات</Text></View>}
               contentContainerStyle={{ padding: 10, paddingBottom: 30 }}
             />
+          ) : visitViewMode === 'calendar' ? (
+            <ScrollView
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1565C0']} />}
+              contentContainerStyle={{ paddingBottom: 30 }}
+            >
+              <VisitCalendar
+                visits={filteredVisits}
+                onDayPress={(dayVisits) => setCalDayVisits(dayVisits)}
+              />
+            </ScrollView>
           ) : (
             <ScrollView
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1565C0']} />}
@@ -854,6 +974,35 @@ export default function ReportsScreen() {
                 <GroupedVisitSection key={i} section={section} onPress={v => setSelectedVisit(v)} />
               ))}
             </ScrollView>
+          )}
+
+          {/* Calendar day modal: list visits for selected day */}
+          {calDayVisits && (
+            <Modal visible transparent animationType="fade" onRequestClose={() => setCalDayVisits(null)}>
+              <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setCalDayVisits(null)}>
+                <View style={[s.sheet, { maxHeight: '70%' }]}>
+                  <TouchableOpacity activeOpacity={1}>
+                    <View style={s.handle} />
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: '#222', textAlign: 'right' }}>
+                        {calDayVisits[0] ? visitDate(calDayVisits[0]).slice(0, 10) : ''}
+                      </Text>
+                      <TouchableOpacity onPress={() => setCalDayVisits(null)}>
+                        <Ionicons name="close" size={22} color="#888" />
+                      </TouchableOpacity>
+                    </View>
+                    <FlatList
+                      data={calDayVisits}
+                      keyExtractor={(_, i) => i.toString()}
+                      renderItem={({ item }) => (
+                        <VisitRow item={item} onPress={() => { setCalDayVisits(null); setSelectedVisit(item); }} />
+                      )}
+                      contentContainerStyle={{ padding: 10, paddingBottom: 20 }}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            </Modal>
           )}
         </>
       )}
@@ -1218,4 +1367,29 @@ const s = StyleSheet.create({
   empPctBar: { flex: 1, height: 4, backgroundColor: '#eee', borderRadius: 2, overflow: 'hidden' },
   empPctFill: { height: 4, borderRadius: 2 },
   empPctLabel: { fontSize: 11, fontWeight: '800', minWidth: 30, textAlign: 'right' },
+
+  // Units-only toggle button
+  unitsToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1.5, borderColor: '#1565C0', borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5 },
+  unitsToggleBtnActive: { backgroundColor: '#1565C0' },
+  unitsToggleText: { fontSize: 11, fontWeight: '700', color: '#1565C0' },
+  unitsToggleTextActive: { color: '#fff' },
+
+  // Calendar
+  calWrap:        { margin: 10, backgroundColor: '#fff', borderRadius: 14, padding: 12, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
+  calHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  calNavBtn:      { padding: 6 },
+  calMonthTitle:  { fontSize: 15, fontWeight: '800', color: '#1565C0' },
+  calDayRow:      { flexDirection: 'row', marginBottom: 4 },
+  calDayLabel:    { flex: 1, textAlign: 'center', fontSize: 10, fontWeight: '700', color: '#aaa', paddingVertical: 4 },
+  calGrid:        { flexDirection: 'row', flexWrap: 'wrap' },
+  calCell:        { width: '14.28%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 8, padding: 2 },
+  calCellToday:   { backgroundColor: '#E3F2FD' },
+  calCellHasVisit:{ backgroundColor: '#F3F8FF' },
+  calCellNum:     { fontSize: 13, fontWeight: '600', color: '#333' },
+  calCellNumToday:{ color: '#1565C0', fontWeight: '900' },
+  calDotRow:      { flexDirection: 'row', gap: 2, marginTop: 1 },
+  calDot:         { width: 5, height: 5, borderRadius: 3 },
+  calLegend:      { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
+  calLegendDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: '#1565C0' },
+  calLegendText:  { fontSize: 10, color: '#aaa' },
 });
