@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, RefreshControl, TouchableOpacity,
   Modal, FlatList, Animated, ActivityIndicator,
 } from 'react-native';
+import Svg, { Path, Text as SvgText } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import { getDashboardStats } from '../api/projects';
@@ -196,6 +197,104 @@ function StatCard({ icon, label, value, color, onPress }) {
       }
       <Text style={styles.statLabel}>{label}</Text>
     </TouchableOpacity>
+  );
+}
+
+// ─── Donut chart (project status) ────────────────────────────────────────────
+function DonutChart({ cs }) {
+  if (!cs) return null;
+  const { activeProjects: a = 0, completedProjects: c = 0, onHoldProjects: h = 0 } = cs;
+  const total = a + c + h;
+  if (total === 0) return null;
+
+  const size = 130;
+  const cx = size / 2, cy = size / 2;
+  const R = 50, r = 32;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+
+  const segs = [
+    { value: a, color: '#F57C00', label: 'نشطة' },
+    { value: c, color: '#388E3C', label: 'مكتملة' },
+    { value: h, color: '#9C27B0', label: 'معلقة' },
+  ].filter(s => s.value > 0);
+
+  let startAngle = -90;
+  const paths = segs.map(seg => {
+    const angle = (seg.value / total) * 360;
+    const end   = startAngle + angle;
+    const large = angle > 180 ? 1 : 0;
+    const c1 = Math.cos(toRad(startAngle)), s1 = Math.sin(toRad(startAngle));
+    const c2 = Math.cos(toRad(end)),        s2 = Math.sin(toRad(end));
+    const d = [
+      `M ${cx + R * c1} ${cy + R * s1}`,
+      `A ${R} ${R} 0 ${large} 1 ${cx + R * c2} ${cy + R * s2}`,
+      `L ${cx + r * c2} ${cy + r * s2}`,
+      `A ${r} ${r} 0 ${large} 0 ${cx + r * c1} ${cy + r * s1}`,
+      'Z',
+    ].join(' ');
+    startAngle = end;
+    return { ...seg, d };
+  });
+
+  return (
+    <View style={styles.donutCard}>
+      <Text style={styles.chartTitle}>توزيع المشاريع</Text>
+      <View style={styles.donutRow}>
+        <Svg width={size} height={size}>
+          {paths.map((s, i) => <Path key={i} d={s.d} fill={s.color} />)}
+          <SvgText x={cx} y={cy + 5} textAnchor="middle" fontSize="20" fontWeight="bold" fill="#1a1a1a">{total}</SvgText>
+          <SvgText x={cx} y={cy + 18} textAnchor="middle" fontSize="9" fill="#888">مشروع</SvgText>
+        </Svg>
+        <View style={styles.donutLegend}>
+          {segs.map((s, i) => (
+            <View key={i} style={styles.legendRow}>
+              <View style={[styles.legendDot, { backgroundColor: s.color }]} />
+              <Text style={styles.legendLabel}>{s.label}</Text>
+              <Text style={[styles.legendValue, { color: s.color }]}>{s.value}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ─── Top implementers vertical bar chart ─────────────────────────────────────
+function ImplementersBar({ stages }) {
+  const implMap = {};
+  for (const stage of (stages || [])) {
+    for (const sys of (stage.systems || [])) {
+      const name = (sys.implementer || '').trim();
+      if (name) implMap[name] = (implMap[name] || 0) + 1;
+    }
+  }
+  const top = Object.entries(implMap).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  if (top.length === 0) return null;
+
+  const maxVal = top[0][1];
+  const colors = ['#1565C0', '#0288D1', '#00838F', '#F57C00', '#6A1B9A', '#AD1457'];
+  const MAX_H  = 80;
+
+  return (
+    <View style={styles.implCard}>
+      <Text style={styles.chartTitle}>أفضل المنفذين</Text>
+      <View style={styles.implBarsRow}>
+        {top.map(([name, count], i) => {
+          const barH = Math.max(6, (count / maxVal) * MAX_H);
+          const color = colors[i % colors.length];
+          const short = name.split(' ').slice(0, 2).join('\n');
+          return (
+            <View key={name} style={styles.implBarCol}>
+              <Text style={[styles.implCountLabel, { color }]}>{count}</Text>
+              <View style={styles.implBarTrack}>
+                <View style={[styles.implBarFill, { height: barH, backgroundColor: color }]} />
+              </View>
+              <Text style={styles.implNameLabel} numberOfLines={2}>{short}</Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -420,7 +519,13 @@ export default function DashboardScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── Bar chart ──────────────────────────────────────────────── */}
+        {/* ── Donut: project status distribution ─────────────────────── */}
+        {stagesLoading
+          ? null
+          : <DonutChart cs={computedStats} />
+        }
+
+        {/* ── Bar chart: stage distribution ──────────────────────────── */}
         {stagesLoading ? (
           <View style={styles.chartWrap}>
             <Text style={styles.chartTitle}>توزيع الأنظمة على المراحل</Text>
@@ -429,6 +534,11 @@ export default function DashboardScreen({ navigation }) {
         ) : visibleStages.length > 0 ? (
           <MiniBarChart cards={visibleStages} />
         ) : null}
+
+        {/* ── Vertical bar: top implementers ─────────────────────────── */}
+        {!stagesLoading && visibleStages.length > 0 && (
+          <ImplementersBar stages={visibleStages} />
+        )}
 
         {/* ── كروت المراحل ──────────────────────────────────────────── */}
         <View style={styles.sectionRow}>
@@ -610,6 +720,30 @@ const styles = StyleSheet.create({
   chartBarWrap: { flex: 1, height: 10, backgroundColor: '#EEF2FF', borderRadius: 5, overflow: 'hidden' },
   chartBar: { height: 10, borderRadius: 5 },
   chartCount: { fontSize: 12, fontWeight: '700', width: 24, textAlign: 'center' },
+
+  // Donut chart card
+  donutCard: {
+    backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12,
+    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
+  },
+  donutRow:   { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  donutLegend: { flex: 1, gap: 12 },
+  legendRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  legendDot:  { width: 10, height: 10, borderRadius: 5 },
+  legendLabel: { flex: 1, fontSize: 13, color: '#555', textAlign: 'right' },
+  legendValue: { fontSize: 15, fontWeight: '800', minWidth: 28, textAlign: 'right' },
+
+  // Implementers vertical bar chart
+  implCard: {
+    backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12,
+    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
+  },
+  implBarsRow:    { flexDirection: 'row', alignItems: 'flex-end', gap: 6, marginTop: 10, height: 120 },
+  implBarCol:     { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
+  implCountLabel: { fontSize: 11, fontWeight: '800', marginBottom: 3 },
+  implBarTrack:   { width: '100%', alignItems: 'stretch', justifyContent: 'flex-end', flex: 1 },
+  implBarFill:    { width: '100%', borderRadius: 5 },
+  implNameLabel:  { fontSize: 9, color: '#666', textAlign: 'center', marginTop: 5, lineHeight: 13 },
 
   progressCard: {
     backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 8,
