@@ -406,15 +406,17 @@ function PlansTab({ lang, navigation }) {
   };
 
   const handleBulkApprove = async () => {
-    const ids = Array.from(selectedIds).filter(id => !!id); // skip ghost id=0
+    const ids = Array.from(selectedIds).filter(id => !!id);
     if (!ids.length) return;
 
     setBulkLoading(true);
+    const approvedIds = new Set();
     let failed = 0;
     let firstErr = null;
     for (const id of ids) {
       try {
         await approvePlan(id);
+        approvedIds.add(id);
         const plan = plans.find(p => p.id === id);
         if (plan) await notifyImplementer(plan, true).catch(() => {});
       } catch (e) {
@@ -428,7 +430,10 @@ function PlansTab({ lang, navigation }) {
     setBulkLoading(false);
     setSelectedIds(new Set());
     setSelectMode(false);
-    load();
+    // Remove successfully approved plans from state immediately — don't wait for slow traversal
+    if (approvedIds.size > 0) {
+      setPlans(prev => prev.filter(p => !approvedIds.has(p.id)));
+    }
     if (failed > 0) {
       Alert.alert('تنبيه', `${failed} خطة لم تُعتمد${firstErr ? `\n${firstErr}` : ''}`);
     }
