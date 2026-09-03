@@ -405,27 +405,31 @@ function PlansTab({ lang, navigation }) {
   };
 
   const handleBulkApprove = async () => {
-    if (selectedIds.size === 0) return;
-    const snapshotIds = new Set(selectedIds);
-    const toApprove = plans.filter(p => snapshotIds.has(p.id));
-    if (toApprove.length === 0) return;
+    const ids = Array.from(selectedIds);
+    console.log('[BulkApprove] selectedIds size:', selectedIds.size, 'ids:', ids);
+    console.log('[BulkApprove] plans count:', plans.length, 'plan ids:', plans.map(p => p.id));
+    if (!ids.length) { console.log('[BulkApprove] empty — returning'); return; }
 
     setBulkLoading(true);
     let failed = 0;
     let firstErr = null;
-    for (const plan of toApprove) {
+    for (const id of ids) {
       try {
-        await approvePlan(plan.id);
-        await notifyImplementer(plan, true);
+        console.log('[BulkApprove] calling approvePlan for id:', id);
+        await approvePlan(id);
+        console.log('[BulkApprove] approved id:', id);
+        const plan = plans.find(p => p.id === id);
+        if (plan) await notifyImplementer(plan, true).catch(() => {});
       } catch (e) {
         failed++;
-        if (!firstErr) {
-          firstErr = e?.response?.data?.message
-            || (typeof e?.response?.data === 'string' ? e.response.data : null)
-            || e?.message;
-        }
+        const errMsg = e?.response?.data?.message
+          || (typeof e?.response?.data === 'string' ? e.response.data : null)
+          || e?.message;
+        console.error('[BulkApprove] FAILED id:', id, 'error:', errMsg, e?.response?.status);
+        if (!firstErr) firstErr = errMsg;
       }
     }
+    console.log('[BulkApprove] done — failed:', failed);
     setBulkLoading(false);
     setSelectedIds(new Set());
     setSelectMode(false);
