@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getPlansByScope, updateStageStatus, finishStageWorkflow } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
+import { useRole } from '../context/RoleContext';
 import { extractList, getPlanStatusLabel, getPlanStatusColor, formatDate } from '../utils/helpers';
 import LoadingScreen from '../components/LoadingScreen';
 import ErrorMessage from '../components/ErrorMessage';
@@ -15,6 +16,8 @@ import Card from '../components/Card';
 export default function StageDetailScreen({ navigation, route }) {
   const { stageId, title, scopeId } = route.params;
   const { lang } = useLang();
+  const { myRole } = useRole();
+  const canApprove = myRole === 'admin' || myRole === 'manager';
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -128,7 +131,7 @@ export default function StageDetailScreen({ navigation, route }) {
                   <Text style={styles.actionBtnText}>{t('submit')}</Text>
                 </TouchableOpacity>
               )}
-              {(plan.statusId === 2 || plan.canApprovePlan || plan.canRejectPlan) && (
+              {canApprove && (plan.statusId === 2 || plan.canApprovePlan || plan.canRejectPlan) && (
                 <>
                   <TouchableOpacity
                     style={[styles.actionBtn, styles.approveBtn]}

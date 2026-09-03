@@ -11,6 +11,7 @@ import {
 } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
+import { useRole } from '../context/RoleContext';
 import {
   extractData, extractList,
   getPlanStatusLabel, getPlanStatusColor,
@@ -26,6 +27,8 @@ import { scheduleItemReminders } from '../utils/notifications';
 export default function PlanDetailScreen({ navigation, route }) {
   const { planId, title } = route.params;
   const { lang } = useLang();
+  const { myRole } = useRole();
+  const canApprove = myRole === 'admin' || myRole === 'manager';
   const [plan, setPlan] = useState(null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -216,13 +219,13 @@ export default function PlanDetailScreen({ navigation, route }) {
               <Text style={styles.actionBtnText}>{t('submit')}</Text>
             </TouchableOpacity>
           )}
-          {(plan?.canApprovePlan || isSubmitted) && (
+          {canApprove && (plan?.canApprovePlan || isSubmitted) && (
             <TouchableOpacity style={[styles.actionBtn, styles.approveBtn]} onPress={handleApprove}>
               <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
               <Text style={styles.actionBtnText}>{t('approve')}</Text>
             </TouchableOpacity>
           )}
-          {(plan?.canRejectPlan || isSubmitted) && (
+          {canApprove && (plan?.canRejectPlan || isSubmitted) && (
             <TouchableOpacity
               style={[styles.actionBtn, styles.rejectBtn]}
               onPress={() => {
