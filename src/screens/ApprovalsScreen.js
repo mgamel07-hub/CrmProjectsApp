@@ -8,6 +8,7 @@ import {
   getUnitsRequests, approveUnitsRequest, rejectUnitsRequest,
   getPendingPlans, approvePlan, rejectPlan, submitPlan, getPlanByIdForView,
   getProjectsDropdown, getScopesByProject, getStagesByScope, getPlansByScope,
+  getPlanItems,
 } from '../api/projects';
 import {
   getTeamMembers, getMyTeamRecord, createNotification,
@@ -230,6 +231,10 @@ function PlansTab({ lang, navigation }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
+  // expandedId: which plan card is expanded to show its بنود
+  const [expandedId, setExpandedId] = useState(null);
+  // planItems cache: { [planId]: { loading, items } }
+  const [planItemsCache, setPlanItemsCache] = useState({});
 
   // Full traversal: projects → scopes → stages → plans, collect statusId=1,2
   const fetchAllSubmittedPlans = useCallback(async () => {
@@ -395,9 +400,15 @@ function PlansTab({ lang, navigation }) {
     );
   };
 
-  const handleBulkApprove = async () => {
+  const handleBulkApprove = () => {
     if (selectedIds.size === 0) return;
-    const toApprove = plans.filter(p => selectedIds.has(p.id));
+    // snapshot selected IDs at call time to avoid closure staleness
+    const snapshotIds = new Set(selectedIds);
+    const toApprove = plans.filter(p => snapshotIds.has(p.id));
+    if (toApprove.length === 0) {
+      Alert.alert('تنبيه', 'لم يتم تحديد أي خطة');
+      return;
+    }
     Alert.alert(
       'اعتماد جماعي',
       `اعتماد ${toApprove.length} خطة؟`,
@@ -408,18 +419,27 @@ function PlansTab({ lang, navigation }) {
           onPress: async () => {
             setBulkLoading(true);
             let failed = 0;
+            let firstErr = null;
             for (const plan of toApprove) {
               try {
-                if ((plan.statusId ?? plan.status) === 1) await submitPlan(plan.id);
+                const st = plan.statusId ?? plan.status;
+                if (st === 1) {
+                  try { await submitPlan(plan.id); } catch (_) {}
+                }
                 await approvePlan(plan.id);
                 await notifyImplementer(plan, true);
-              } catch { failed++; }
+              } catch (e) {
+                failed++;
+                if (!firstErr) firstErr = e?.response?.data?.message || e?.message;
+              }
             }
             setBulkLoading(false);
             setSelectedIds(new Set());
             setSelectMode(false);
             load();
-            if (failed > 0) Alert.alert('تنبيه', `${failed} خطة لم تُعتمد`);
+            if (failed > 0) {
+              Alert.alert('تنبيه', `${failed} خطة لم تُعتمد${firstErr ? `\n${firstErr}` : ''}`);
+            }
           },
         },
       ]
@@ -439,6 +459,22 @@ function PlansTab({ lang, navigation }) {
       setSelectedIds(new Set());
     } else {
       setSelectedIds(new Set(plans.map(p => p.id)));
+    }
+  };
+
+  const toggleExpandPlan = async (planId) => {
+    if (selectMode) return;
+    if (expandedId === planId) { setExpandedId(null); return; }
+    setExpandedId(planId);
+    if (!planItemsCache[planId]) {
+      setPlanItemsCache(prev => ({ ...prev, [planId]: { loading: true, items: [] } }));
+      try {
+        const res = await getPlanItems(planId);
+        const items = extractList(res) || extractData(res) || [];
+        setPlanItemsCache(prev => ({ ...prev, [planId]: { loading: false, items } }));
+      } catch (_) {
+        setPlanItemsCache(prev => ({ ...prev, [planId]: { loading: false, items: [] } }));
+      }
     }
   };
 
@@ -509,10 +545,12 @@ function PlansTab({ lang, navigation }) {
         }
         renderItem={({ item }) => {
           const isSelected = selectedIds.has(item.id);
+          const isExpanded = expandedId === item.id;
+          const cached = planItemsCache[item.id];
           return (
             <TouchableOpacity
-              activeOpacity={selectMode ? 0.7 : 1}
-              onPress={() => selectMode && toggleSelect(item.id)}
+              activeOpacity={selectMode ? 0.7 : 0.95}
+              onPress={() => selectMode ? toggleSelect(item.id) : toggleExpandPlan(item.id)}
               onLongPress={() => { if (!selectMode) { setSelectMode(true); toggleSelect(item.id); } }}
             >
               <Card style={[styles.reqCard, isSelected && styles.reqCardSelected]}>
@@ -541,7 +579,16 @@ function PlansTab({ lang, navigation }) {
                       </Text>
                     ) : null}
                   </View>
-                  <StatusBadge label={getPlanStatusLabel(item.statusId)} color={getPlanStatusColor(item.statusId)} />
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <StatusBadge label={getPlanStatusLabel(item.statusId)} color={getPlanStatusColor(item.statusId)} />
+                    {!selectMode && (
+                      <Ionicons
+                        name={isExpanded ? 'chevron-up-outline' : 'chevron-down-outline'}
+                        size={16}
+                        color="#888"
+                      />
+                    )}
+                  </View>
                 </View>
 
                 {item.itemCount != null && (
@@ -563,6 +610,33 @@ function PlansTab({ lang, navigation }) {
                   <Text style={styles.date}>
                     {item.startDate ? formatDate(item.startDate) : '—'} → {item.endDate ? formatDate(item.endDate) : '—'}
                   </Text>
+                )}
+
+                {/* Expandable plan items (بنود) */}
+                {isExpanded && (
+                  <View style={styles.planItemsContainer}>
+                    <Text style={styles.planItemsTitle}>البنود</Text>
+                    {cached?.loading ? (
+                      <ActivityIndicator size="small" color="#1565C0" style={{ marginVertical: 8 }} />
+                    ) : (cached?.items || []).length === 0 ? (
+                      <Text style={styles.planItemsEmpty}>لا توجد بنود</Text>
+                    ) : (
+                      (cached.items).map((pi, idx) => (
+                        <View key={pi.id ?? idx} style={styles.planItemRow}>
+                          <Text style={styles.planItemIndex}>{idx + 1}</Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.planItemName}>{pi.itemName || pi.name || pi.title || `بند #${pi.id}`}</Text>
+                            {pi.notes || pi.description ? (
+                              <Text style={styles.planItemNote} numberOfLines={2}>{pi.notes || pi.description}</Text>
+                            ) : null}
+                          </View>
+                          {pi.expectedUnits != null ? (
+                            <Text style={styles.planItemUnits}>{pi.expectedUnits} وحدة</Text>
+                          ) : null}
+                        </View>
+                      ))
+                    )}
+                  </View>
                 )}
 
                 {!selectMode && (
@@ -903,4 +977,13 @@ const styles = StyleSheet.create({
   rejectBtn: { backgroundColor: '#D32F2F' },
   empty: { alignItems: 'center', paddingVertical: 80 },
   emptyText: { color: '#aaa', marginTop: 10, fontSize: 14, textAlign: 'center' },
+  // Plan items expand section
+  planItemsContainer: { marginTop: 10, borderTopWidth: 1, borderTopColor: '#eee', paddingTop: 8 },
+  planItemsTitle: { fontSize: 12, fontWeight: '700', color: '#1565C0', marginBottom: 6, textAlign: 'right' },
+  planItemsEmpty: { fontSize: 12, color: '#aaa', textAlign: 'center', paddingVertical: 6 },
+  planItemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#f5f5f5' },
+  planItemIndex: { fontSize: 11, color: '#aaa', minWidth: 18, textAlign: 'center', marginTop: 2 },
+  planItemName: { fontSize: 13, color: '#222', fontWeight: '500' },
+  planItemNote: { fontSize: 11, color: '#888', marginTop: 2 },
+  planItemUnits: { fontSize: 11, color: '#1565C0', fontWeight: '700', minWidth: 50, textAlign: 'right' },
 });
