@@ -742,14 +742,7 @@ export default function QuickExecutionScreen({ navigation }) {
       // Auto-save any new trainees entered
       trainees.forEach(t => { if (t.name.trim()) saveTrainee(t.name, t.job); });
 
-      Alert.alert(
-        'تم ✓',
-        'تم حفظ الإجراء بنجاح',
-        [
-          { text: 'إنشاء النموذج', onPress: () => { navigation.goBack(); handleGeneratePdf(); } },
-          { text: 'إغلاق', onPress: () => navigation.goBack() },
-        ],
-      );
+      navigation.goBack();
     } catch (e) {
       submittedRef.current = false;
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message;
