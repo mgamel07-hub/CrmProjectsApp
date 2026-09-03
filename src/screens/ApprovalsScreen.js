@@ -227,6 +227,9 @@ function PlansTab({ lang, navigation }) {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
 
   // Full traversal: projects → scopes → stages → plans, collect statusId=1,2
   const fetchAllSubmittedPlans = useCallback(async () => {
@@ -392,95 +395,206 @@ function PlansTab({ lang, navigation }) {
     );
   };
 
+  const handleBulkApprove = async () => {
+    if (selectedIds.size === 0) return;
+    const toApprove = plans.filter(p => selectedIds.has(p.id));
+    Alert.alert(
+      'اعتماد جماعي',
+      `اعتماد ${toApprove.length} خطة؟`,
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: 'اعتماد الكل',
+          onPress: async () => {
+            setBulkLoading(true);
+            let failed = 0;
+            for (const plan of toApprove) {
+              try {
+                if ((plan.statusId ?? plan.status) === 1) await submitPlan(plan.id);
+                await approvePlan(plan.id);
+                await notifyImplementer(plan, true);
+              } catch { failed++; }
+            }
+            setBulkLoading(false);
+            setSelectedIds(new Set());
+            setSelectMode(false);
+            load();
+            if (failed > 0) Alert.alert('تنبيه', `${failed} خطة لم تُعتمد`);
+          },
+        },
+      ]
+    );
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === plans.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(plans.map(p => p.id)));
+    }
+  };
+
   if (loading) return <LoadingScreen />;
   if (error) return <ErrorMessage message={error} onRetry={load} />;
 
+  const allSelected = plans.length > 0 && selectedIds.size === plans.length;
+
   return (
-    <FlatList
-      data={plans}
-      keyExtractor={(item) => String(item.id)}
-      contentContainerStyle={styles.list}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1565C0']} />}
-      ListEmptyComponent={
-        <View style={styles.empty}>
-          <Ionicons name="document-text-outline" size={48} color="#ccc" />
-          <Text style={styles.emptyText}>
-            {lang === 'ar' ? 'لا توجد خطط بانتظار الاعتماد' : 'No plans pending approval'}
-          </Text>
-          <Text style={[styles.emptyText, { fontSize: 12, marginTop: 8 }]}>
-            {lang === 'ar'
-              ? 'يمكنك اعتماد الخطط من: المشاريع ← النطاق ← المرحلة ← الخطة'
-              : 'You can approve plans from: Projects → Scope → Stage → Plan'}
-          </Text>
-        </View>
-      }
-      renderItem={({ item }) => (
-        <Card style={styles.reqCard}>
-          <View style={styles.reqHeader}>
-            <View style={styles.reqLeft}>
-              <Text style={styles.reqTitle}>
-                {lang === 'ar' ? 'خطة' : 'Plan'} #{item.id}
-              </Text>
-              {item.stageName ? (
-                <Text style={styles.reqSub} numberOfLines={1}>
-                  <Ionicons name="git-branch-outline" size={12} color="#888" /> {item.stageName}
-                </Text>
-              ) : null}
-              {(item.projectName || item.scopeName) ? (
-                <Text style={[styles.reqSub, { color: '#1565C0' }]} numberOfLines={1}>
-                  {item.projectName || item.scopeName || ''}
-                </Text>
-              ) : null}
-            </View>
-            <StatusBadge label={getPlanStatusLabel(item.statusId)} color={getPlanStatusColor(item.statusId)} />
-          </View>
-
-          {item.itemCount != null && (
-            <View style={styles.planMeta}>
-              <Ionicons name="list-outline" size={13} color="#888" />
-              <Text style={styles.planMetaText}>
-                {item.itemCount} {lang === 'ar' ? 'بند' : 'items'}
-              </Text>
-              {item.expectedUnits != null && (
-                <>
-                  <Ionicons name="cube-outline" size={13} color="#888" style={{ marginLeft: 10 }} />
-                  <Text style={styles.planMetaText}>{item.expectedUnits} {t('expectedUnits')}</Text>
-                </>
-              )}
-            </View>
-          )}
-
-          {(item.startDate || item.endDate) && (
-            <Text style={styles.date}>
-              {item.startDate ? formatDate(item.startDate) : '—'} → {item.endDate ? formatDate(item.endDate) : '—'}
+    <View style={{ flex: 1 }}>
+      {/* Bulk action toolbar */}
+      {plans.length > 0 && (
+        <View style={styles.bulkBar}>
+          <TouchableOpacity
+            style={[styles.bulkToggleBtn, selectMode && styles.bulkToggleBtnActive]}
+            onPress={() => { setSelectMode(v => !v); setSelectedIds(new Set()); }}
+          >
+            <Ionicons name={selectMode ? 'close-outline' : 'checkbox-outline'} size={15} color={selectMode ? '#fff' : '#1565C0'} />
+            <Text style={[styles.bulkToggleText, selectMode && { color: '#fff' }]}>
+              {selectMode ? 'إلغاء' : 'تحديد'}
             </Text>
-          )}
+          </TouchableOpacity>
 
-          <View style={[styles.actions, { marginTop: 10 }]}>
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.approveBtn, { opacity: actionLoading ? 0.6 : 1 }]}
-              onPress={() => handleApprove(item)}
-              disabled={!!actionLoading}
-            >
-              {actionLoading === `approve-${item.id}`
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <><Ionicons name="checkmark-outline" size={15} color="#fff" /><Text style={styles.actionText}>{t('approve')}</Text></>
-              }
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.rejectBtn, { opacity: actionLoading ? 0.6 : 1 }]}
-              onPress={() => handleReject(item)}
-              disabled={!!actionLoading}
-            >
-              {actionLoading === `reject-${item.id}`
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <><Ionicons name="close-outline" size={15} color="#fff" /><Text style={styles.actionText}>{t('reject')}</Text></>
-              }
-            </TouchableOpacity>
-          </View>
-        </Card>
+          {selectMode && (
+            <>
+              <TouchableOpacity style={styles.bulkSelectAllBtn} onPress={toggleSelectAll}>
+                <Ionicons name={allSelected ? 'checkmark-circle' : 'ellipse-outline'} size={15} color="#1565C0" />
+                <Text style={styles.bulkSelectAllText}>{allSelected ? 'إلغاء الكل' : 'تحديد الكل'}</Text>
+              </TouchableOpacity>
+
+              {selectedIds.size > 0 && (
+                <TouchableOpacity
+                  style={styles.bulkApproveBtn}
+                  onPress={handleBulkApprove}
+                  disabled={bulkLoading}
+                >
+                  {bulkLoading
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <>
+                        <Ionicons name="checkmark-done-outline" size={15} color="#fff" />
+                        <Text style={styles.bulkApproveText}>اعتماد ({selectedIds.size})</Text>
+                      </>
+                  }
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </View>
       )}
-    />
+
+      <FlatList
+        data={plans}
+        keyExtractor={(item) => String(item.id)}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1565C0']} />}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Ionicons name="document-text-outline" size={48} color="#ccc" />
+            <Text style={styles.emptyText}>
+              {lang === 'ar' ? 'لا توجد خطط بانتظار الاعتماد' : 'No plans pending approval'}
+            </Text>
+            <Text style={[styles.emptyText, { fontSize: 12, marginTop: 8 }]}>
+              {lang === 'ar'
+                ? 'يمكنك اعتماد الخطط من: المشاريع ← النطاق ← المرحلة ← الخطة'
+                : 'You can approve plans from: Projects → Scope → Stage → Plan'}
+            </Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          const isSelected = selectedIds.has(item.id);
+          return (
+            <TouchableOpacity
+              activeOpacity={selectMode ? 0.7 : 1}
+              onPress={() => selectMode && toggleSelect(item.id)}
+              onLongPress={() => { if (!selectMode) { setSelectMode(true); toggleSelect(item.id); } }}
+            >
+              <Card style={[styles.reqCard, isSelected && styles.reqCardSelected]}>
+                <View style={styles.reqHeader}>
+                  {selectMode && (
+                    <TouchableOpacity onPress={() => toggleSelect(item.id)} style={{ marginLeft: 8 }}>
+                      <Ionicons
+                        name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={22}
+                        color={isSelected ? '#1565C0' : '#ccc'}
+                      />
+                    </TouchableOpacity>
+                  )}
+                  <View style={styles.reqLeft}>
+                    <Text style={styles.reqTitle}>
+                      {lang === 'ar' ? 'خطة' : 'Plan'} #{item.id}
+                    </Text>
+                    {item.stageName ? (
+                      <Text style={styles.reqSub} numberOfLines={1}>
+                        <Ionicons name="git-branch-outline" size={12} color="#888" /> {item.stageName}
+                      </Text>
+                    ) : null}
+                    {(item.projectName || item.scopeName) ? (
+                      <Text style={[styles.reqSub, { color: '#1565C0' }]} numberOfLines={1}>
+                        {item.projectName || item.scopeName || ''}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <StatusBadge label={getPlanStatusLabel(item.statusId)} color={getPlanStatusColor(item.statusId)} />
+                </View>
+
+                {item.itemCount != null && (
+                  <View style={styles.planMeta}>
+                    <Ionicons name="list-outline" size={13} color="#888" />
+                    <Text style={styles.planMetaText}>
+                      {item.itemCount} {lang === 'ar' ? 'بند' : 'items'}
+                    </Text>
+                    {item.expectedUnits != null && (
+                      <>
+                        <Ionicons name="cube-outline" size={13} color="#888" style={{ marginLeft: 10 }} />
+                        <Text style={styles.planMetaText}>{item.expectedUnits} {t('expectedUnits')}</Text>
+                      </>
+                    )}
+                  </View>
+                )}
+
+                {(item.startDate || item.endDate) && (
+                  <Text style={styles.date}>
+                    {item.startDate ? formatDate(item.startDate) : '—'} → {item.endDate ? formatDate(item.endDate) : '—'}
+                  </Text>
+                )}
+
+                {!selectMode && (
+                  <View style={[styles.actions, { marginTop: 10 }]}>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.approveBtn, { opacity: actionLoading ? 0.6 : 1 }]}
+                      onPress={() => handleApprove(item)}
+                      disabled={!!actionLoading}
+                    >
+                      {actionLoading === `approve-${item.id}`
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <><Ionicons name="checkmark-outline" size={15} color="#fff" /><Text style={styles.actionText}>{t('approve')}</Text></>
+                      }
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.rejectBtn, { opacity: actionLoading ? 0.6 : 1 }]}
+                      onPress={() => handleReject(item)}
+                      disabled={!!actionLoading}
+                    >
+                      {actionLoading === `reject-${item.id}`
+                        ? <ActivityIndicator size="small" color="#fff" />
+                        : <><Ionicons name="close-outline" size={15} color="#fff" /><Text style={styles.actionText}>{t('reject')}</Text></>
+                      }
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </Card>
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </View>
   );
 }
 
@@ -760,6 +874,16 @@ const styles = StyleSheet.create({
   chipTextActive: { color: '#fff', fontWeight: '600' },
   list: { padding: 12, paddingTop: 8, paddingBottom: 32 },
   reqCard: { marginBottom: 10 },
+  reqCardSelected: { borderWidth: 2, borderColor: '#1565C0' },
+  // Bulk toolbar
+  bulkBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  bulkToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1.5, borderColor: '#1565C0' },
+  bulkToggleBtnActive: { backgroundColor: '#1565C0' },
+  bulkToggleText: { fontSize: 12, fontWeight: '700', color: '#1565C0' },
+  bulkSelectAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#E3F2FD' },
+  bulkSelectAllText: { fontSize: 12, fontWeight: '700', color: '#1565C0' },
+  bulkApproveBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#388E3C', marginLeft: 'auto' },
+  bulkApproveText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   reqHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
   reqLeft: { flex: 1, marginRight: 8 },
   reqTitle: { fontSize: 14, fontWeight: '700', color: '#222' },

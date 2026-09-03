@@ -77,20 +77,28 @@ function Dropdown({ label, options, value, onSelect, getLabel, placeholder, load
         <View style={s.dropList}>
           {options.length === 0
             ? <Text style={s.dropEmpty}>لا توجد خيارات</Text>
-            : options.map((o, i) => {
-                const id = o.id ?? o.key;
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    style={[s.dropItem, value === id && s.dropItemActive]}
-                    onPress={() => { onSelect(id, o); setOpen(false); }}
-                  >
-                    <Text style={[s.dropItemText, value === id && s.dropItemTextActive]} numberOfLines={2}>
-                      {getLabel(o)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })
+            : (
+              <ScrollView
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                style={{ maxHeight: 220 }}
+              >
+                {options.map((o, i) => {
+                  const id = o.id ?? o.key;
+                  return (
+                    <TouchableOpacity
+                      key={i}
+                      style={[s.dropItem, value === id && s.dropItemActive]}
+                      onPress={() => { onSelect(id, o); setOpen(false); }}
+                    >
+                      <Text style={[s.dropItemText, value === id && s.dropItemTextActive]} numberOfLines={2}>
+                        {getLabel(o)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )
           }
         </View>
       )}
@@ -925,7 +933,7 @@ const s = StyleSheet.create({
   },
   dropBtnDisabled: { backgroundColor: '#f5f5f5' },
   dropVal: { fontSize: 14, color: '#1a1a1a', flex: 1, textAlign: 'right' },
-  dropList: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, backgroundColor: '#fff', marginTop: 4, maxHeight: 200 },
+  dropList: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, backgroundColor: '#fff', marginTop: 4 },
   dropItem: { paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderColor: '#f5f5f5' },
   dropItemActive: { backgroundColor: '#E3F2FD' },
   dropItemText: { fontSize: 13, color: '#333', textAlign: 'right' },
