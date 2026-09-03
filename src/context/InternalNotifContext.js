@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../api/supabase';
 import { useAuth } from './AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const InternalNotifContext = createContext(null);
 
@@ -123,8 +124,60 @@ export function InternalNotifProvider({ children }) {
     };
   }, [userId, onNewNotif, loadUnread]);
 
-  // Also poll the CRM API notifications for project-related events
-  // (handled by existing NotificationsContext)
+  // Poll CRM for pending plans submitted from CRM web (manager/admin only)
+  useEffect(() => {
+    if (!userId) return;
+    const SEEN_KEY = `crm_seen_plan_ids_${userId}`;
+    const POLL_MS  = 3 * 60 * 1000; // every 3 minutes
+
+    const checkPendingPlans = async () => {
+      try {
+        // Lazy-load to avoid circular imports
+        const { getPendingPlans } = require('../api/projects');
+        const { getMyTeamRecord, createNotification } = require('../api/internal');
+
+        const rec = await getMyTeamRecord(userId).catch(() => null);
+        const role = rec?.role || 'admin';
+        if (role !== 'admin' && role !== 'manager') return;
+
+        // Fetch submitted plans
+        const res = await getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 200 });
+        const { extractList, extractData } = require('../utils/helpers');
+        const plans = extractList(res) || extractData(res) || [];
+        if (!plans.length) return;
+
+        const raw = await AsyncStorage.getItem(SEEN_KEY).catch(() => null);
+        const seenIds = new Set(raw ? JSON.parse(raw) : []);
+        const newPlans = plans.filter(p => !seenIds.has(String(p.id)));
+
+        if (newPlans.length > 0) {
+          // Update seen set
+          plans.forEach(p => seenIds.add(String(p.id)));
+          await AsyncStorage.setItem(SEEN_KEY, JSON.stringify([...seenIds])).catch(() => {});
+
+          // Create notification for each new plan
+          for (const p of newPlans) {
+            const label = p.stageName || `خطة #${p.id}`;
+            await createNotification({
+              to_user_id: userId,
+              type: 'approval',
+              message: `📋 خطة بانتظار اعتمادك: ${label}`,
+              is_read: false,
+            }).catch(() => {});
+          }
+        }
+      } catch (_) {}
+    };
+
+    // Initial check after 10s, then every 3min
+    const t = setTimeout(() => {
+      checkPendingPlans();
+      const interval = setInterval(checkPendingPlans, POLL_MS);
+      return () => clearInterval(interval);
+    }, 10000);
+
+    return () => clearTimeout(t);
+  }, [userId]);
 
   // Re-check on foreground
   useEffect(() => {

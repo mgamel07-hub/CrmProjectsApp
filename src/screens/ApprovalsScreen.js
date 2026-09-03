@@ -229,14 +229,25 @@ function PlansTab({ lang, navigation }) {
 
   const load = useCallback(async () => {
     try {
-      // Load both draft (1) and submitted (2) plans
-      const [res1, res2] = await Promise.allSettled([
-        getPendingPlans({ statusId: 1, pageNumber: 1, pageSize: 100 }),
-        getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 100 }),
+      // Fetch statusId 1 (draft), 2 (submitted), and no-filter (all) to catch any CRM-submitted plans
+      const [res1, res2, resAll] = await Promise.allSettled([
+        getPendingPlans({ statusId: 1, pageNumber: 1, pageSize: 200 }),
+        getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 200 }),
+        getPendingPlans({ pageNumber: 1, pageSize: 200 }),
       ]);
-      const list1 = res1.status === 'fulfilled' ? (extractList(res1.value) || extractData(res1.value) || []) : [];
-      const list2 = res2.status === 'fulfilled' ? (extractList(res2.value) || extractData(res2.value) || []) : [];
-      setPlans([...list2, ...list1]); // submitted first, then drafts
+      const list1   = res1.status   === 'fulfilled' ? (extractList(res1.value)   || extractData(res1.value)   || []) : [];
+      const list2   = res2.status   === 'fulfilled' ? (extractList(res2.value)   || extractData(res2.value)   || []) : [];
+      const listAll = resAll.status === 'fulfilled' ? (extractList(resAll.value) || extractData(resAll.value) || []) : [];
+
+      // Merge all, deduplicate by id, exclude approved (3) plans
+      const seen = new Set();
+      const merged = [...list2, ...list1, ...listAll].filter(p => {
+        const id = String(p.id);
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return (p.statusId ?? p.status) !== 3; // hide already-approved
+      });
+      setPlans(merged);
       setError(null);
     } catch (e) {
       const status = e?.response?.status;
