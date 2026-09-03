@@ -262,8 +262,10 @@ function PlansTab({ lang, navigation }) {
                 if (!stageId) return;
                 try {
                   const planRes = await getPlansByScope({ projectScopeStageId: stageId, pageNumber: 1, pageSize: 50 });
-                  const plans = extractList(planRes) || extractData(planRes) || [];
+                  const rawPlans = extractList(planRes) || extractData(planRes) || [];
+                  const plans = Array.isArray(rawPlans) ? rawPlans : [];
                   plans.forEach(p => {
+                    if (!p.id) return; // skip wrapper/ghost objects with no real id
                     const s = p.statusId ?? p.status;
                     if (s === 1 || s === 2) {
                       collected.push({
@@ -404,19 +406,15 @@ function PlansTab({ lang, navigation }) {
   };
 
   const handleBulkApprove = async () => {
-    const ids = Array.from(selectedIds);
-    console.log('[BulkApprove] selectedIds size:', selectedIds.size, 'ids:', ids);
-    console.log('[BulkApprove] plans count:', plans.length, 'plan ids:', plans.map(p => p.id));
-    if (!ids.length) { console.log('[BulkApprove] empty — returning'); return; }
+    const ids = Array.from(selectedIds).filter(id => !!id); // skip ghost id=0
+    if (!ids.length) return;
 
     setBulkLoading(true);
     let failed = 0;
     let firstErr = null;
     for (const id of ids) {
       try {
-        console.log('[BulkApprove] calling approvePlan for id:', id);
         await approvePlan(id);
-        console.log('[BulkApprove] approved id:', id);
         const plan = plans.find(p => p.id === id);
         if (plan) await notifyImplementer(plan, true).catch(() => {});
       } catch (e) {
@@ -424,11 +422,9 @@ function PlansTab({ lang, navigation }) {
         const errMsg = e?.response?.data?.message
           || (typeof e?.response?.data === 'string' ? e.response.data : null)
           || e?.message;
-        console.error('[BulkApprove] FAILED id:', id, 'error:', errMsg, e?.response?.status);
         if (!firstErr) firstErr = errMsg;
       }
     }
-    console.log('[BulkApprove] done — failed:', failed);
     setBulkLoading(false);
     setSelectedIds(new Set());
     setSelectMode(false);
