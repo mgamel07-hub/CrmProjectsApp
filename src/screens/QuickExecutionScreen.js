@@ -604,7 +604,7 @@ export default function QuickExecutionScreen({ navigation }) {
         // Keep by default
         return true;
       });
-      console.log('[Stages] all:', all.map(s => ({ id: s.id, statusId: s.statusId, status: s.status, isFinished: s.isFinished, name: s.stageName || s.name || s.value })));
+      all.forEach((s, i) => console.log(`[Stage${i}]`, JSON.stringify({ id: s.id, key: s.key, statusId: s.statusId, status: s.status, statusName: s.statusName, isFinished: s.isFinished, isCompleted: s.isCompleted, name: s.stageName || s.stageDef?.name || s.name || s.value || s.title })));
       setStages(active);
     }
     catch { setStages([]); }
