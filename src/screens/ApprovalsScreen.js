@@ -368,15 +368,12 @@ function PlansTab({ lang, navigation }) {
   const handleApprove = async (plan) => {
     setActionLoading(`approve-${plan.id}`);
     try {
-      // If still draft (statusId=1), submit first then approve
-      if ((plan.statusId ?? plan.status) === 1) {
-        await submitPlan(plan.id);
-      }
       await approvePlan(plan.id);
       await notifyImplementer(plan, true);
       load();
     } catch (e) {
-      Alert.alert(t('error'), e?.response?.data?.message || t('networkError'));
+      const msg = e?.response?.data?.message || e?.response?.data || e?.message || t('networkError');
+      Alert.alert(t('error'), String(msg));
     } finally {
       setActionLoading(null);
     }
@@ -429,15 +426,15 @@ function PlansTab({ lang, navigation }) {
             let firstErr = null;
             for (const plan of toApprove) {
               try {
-                const st = plan.statusId ?? plan.status;
-                if (st === 1) {
-                  try { await submitPlan(plan.id); } catch (_) {}
-                }
                 await approvePlan(plan.id);
                 await notifyImplementer(plan, true);
               } catch (e) {
                 failed++;
-                if (!firstErr) firstErr = e?.response?.data?.message || e?.message;
+                if (!firstErr) {
+                  firstErr = e?.response?.data?.message
+                    || (typeof e?.response?.data === 'string' ? e.response.data : null)
+                    || e?.message;
+                }
               }
             }
             setBulkLoading(false);
