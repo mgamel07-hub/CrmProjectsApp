@@ -52,10 +52,19 @@ function cardIcon(name = '') {
 
 // ─── Build stage cards from projects data ────────────────────────────────────
 
+// returns { cards, computedStats }
 async function fetchStageCards() {
   // 1. Fetch all projects (with embedded scopes)
   const projRes = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 200 });
   const projects = projRes?.data?.data ?? [];
+
+  // Compute stats directly from projects
+  const computedStats = {
+    totalProjects:      projects.length,
+    activeProjects:     projects.filter(p => p.statusId === 1 && !p.stopped).length,
+    completedProjects:  projects.filter(p => p.statusId === 3).length,
+    onHoldProjects:     projects.filter(p => p.statusId === 2 || p.stopped).length,
+  };
 
   // 2. Collect all scopes with project user IDs (for client-side role filtering)
   const allScopes = [];
@@ -79,7 +88,7 @@ async function fetchStageCards() {
     }
   }
 
-  if (allScopes.length === 0) return [];
+  if (allScopes.length === 0) return { cards: [], computedStats };
 
   // 3. Parallel-fetch stages for every scope
   const stageResults = await Promise.allSettled(
@@ -160,20 +169,26 @@ async function fetchStageCards() {
   }
 
   // 5. Sort by sortOrder and attach count
-  return Object.values(cardMap)
+  const cards = Object.values(cardMap)
     .map(card => ({ ...card, count: card.systems.length }))
     .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  return { cards, computedStats };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatCard({ icon, label, value, color, onPress }) {
+  const isLoading = value === null || value === undefined;
   return (
     <TouchableOpacity style={[styles.statCard, { borderTopColor: color }]} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
       <View style={[styles.statIcon, { backgroundColor: color + '18' }]}>
         <Ionicons name={icon} size={18} color={color} />
       </View>
-      <Text style={[styles.statValue, { color }]}>{value ?? '—'}</Text>
+      {isLoading
+        ? <ActivityIndicator size="small" color={color} style={{ marginVertical: 4 }} />
+        : <Text style={[styles.statValue, { color }]}>{value}</Text>
+      }
       <Text style={styles.statLabel}>{label}</Text>
     </TouchableOpacity>
   );
@@ -256,6 +271,7 @@ export default function DashboardScreen({ navigation }) {
   const { visibleCrmIds } = useRole();
 
   const [stats, setStats]         = useState(null);
+  const [computedStats, setComputedStats] = useState(null);
   const [stages, setStages]       = useState([]);
   const [stagesLoading, setStagesLoading] = useState(false);
   const [loading, setLoading]     = useState(true);
@@ -276,6 +292,12 @@ export default function DashboardScreen({ navigation }) {
   const load = useCallback(async () => {
     if (isDemo) {
       setStats(DEMO_STATS);
+      setComputedStats({
+        totalProjects: DEMO_STATS.totalProjects,
+        activeProjects: DEMO_STATS.activeProjects,
+        completedProjects: DEMO_STATS.completedProjects,
+        onHoldProjects: DEMO_STATS.pendingApprovals,
+      });
       setLoading(false);
       setRefreshing(false);
       return;
@@ -292,11 +314,12 @@ export default function DashboardScreen({ navigation }) {
       setRefreshing(false);
     }
 
-    // Load stage cards in background (separate loading state)
+    // Load stage cards + computed stats in background
     setStagesLoading(true);
     try {
-      const cards = await fetchStageCards();
+      const { cards, computedStats: cs } = await fetchStageCards();
       setStages(cards);
+      setComputedStats(cs);
     } catch (_) {
       // Stage cards are best-effort; don't surface error
     } finally {
@@ -347,31 +370,31 @@ export default function DashboardScreen({ navigation }) {
         <View style={styles.statsGrid2x2}>
           <StatCard
             icon="folder-open-outline"
-            label={t('totalProjects')}
-            value={stats?.totalProjects}
+            label="إجمالي المشاريع"
+            value={computedStats?.totalProjects ?? (stagesLoading ? null : stats?.totalProjects)}
             color="#1565C0"
             onPress={() => navigation.navigate('Projects')}
           />
           <StatCard
             icon="play-circle-outline"
-            label={t('activeProjects')}
-            value={stats?.activeProjects}
+            label="المشاريع النشطة"
+            value={computedStats?.activeProjects ?? (stagesLoading ? null : stats?.activeProjects)}
             color="#F57C00"
             onPress={() => navigation.navigate('Projects', { statusId: 1 })}
           />
           <StatCard
             icon="checkmark-circle-outline"
-            label={t('completedProjects')}
-            value={stats?.completedProjects}
+            label="المشاريع المكتملة"
+            value={computedStats?.completedProjects ?? (stagesLoading ? null : stats?.completedProjects)}
             color="#388E3C"
             onPress={() => navigation.navigate('Projects', { statusId: 3 })}
           />
           <StatCard
-            icon="time-outline"
-            label={t('pendingApprovals')}
-            value={stats?.pendingApprovals}
+            icon="pause-circle-outline"
+            label="المشاريع المعلقة"
+            value={computedStats?.onHoldProjects ?? (stagesLoading ? null : stats?.pendingApprovals)}
             color="#9C27B0"
-            onPress={() => navigation.navigate('Approvals')}
+            onPress={() => navigation.navigate('Projects', { statusId: 2 })}
           />
         </View>
 
@@ -393,9 +416,14 @@ export default function DashboardScreen({ navigation }) {
         </View>
 
         {/* ── Bar chart ──────────────────────────────────────────────── */}
-        {!stagesLoading && visibleStages.length > 0 && (
+        {stagesLoading ? (
+          <View style={styles.chartWrap}>
+            <Text style={styles.chartTitle}>توزيع الأنظمة على المراحل</Text>
+            <ActivityIndicator color="#1565C0" style={{ marginVertical: 12 }} />
+          </View>
+        ) : visibleStages.length > 0 ? (
           <MiniBarChart cards={visibleStages} />
-        )}
+        ) : null}
 
         {/* ── كروت المراحل ──────────────────────────────────────────── */}
         <View style={styles.sectionRow}>
