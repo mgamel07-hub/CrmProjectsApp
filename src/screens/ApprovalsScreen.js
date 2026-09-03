@@ -404,50 +404,35 @@ function PlansTab({ lang, navigation }) {
     );
   };
 
-  const handleBulkApprove = () => {
+  const handleBulkApprove = async () => {
     if (selectedIds.size === 0) return;
-    // snapshot selected IDs at call time to avoid closure staleness
     const snapshotIds = new Set(selectedIds);
     const toApprove = plans.filter(p => snapshotIds.has(p.id));
-    if (toApprove.length === 0) {
-      Alert.alert('تنبيه', 'لم يتم تحديد أي خطة');
-      return;
+    if (toApprove.length === 0) return;
+
+    setBulkLoading(true);
+    let failed = 0;
+    let firstErr = null;
+    for (const plan of toApprove) {
+      try {
+        await approvePlan(plan.id);
+        await notifyImplementer(plan, true);
+      } catch (e) {
+        failed++;
+        if (!firstErr) {
+          firstErr = e?.response?.data?.message
+            || (typeof e?.response?.data === 'string' ? e.response.data : null)
+            || e?.message;
+        }
+      }
     }
-    Alert.alert(
-      'اعتماد جماعي',
-      `اعتماد ${toApprove.length} خطة؟`,
-      [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: 'اعتماد الكل',
-          onPress: async () => {
-            setBulkLoading(true);
-            let failed = 0;
-            let firstErr = null;
-            for (const plan of toApprove) {
-              try {
-                await approvePlan(plan.id);
-                await notifyImplementer(plan, true);
-              } catch (e) {
-                failed++;
-                if (!firstErr) {
-                  firstErr = e?.response?.data?.message
-                    || (typeof e?.response?.data === 'string' ? e.response.data : null)
-                    || e?.message;
-                }
-              }
-            }
-            setBulkLoading(false);
-            setSelectedIds(new Set());
-            setSelectMode(false);
-            load();
-            if (failed > 0) {
-              Alert.alert('تنبيه', `${failed} خطة لم تُعتمد${firstErr ? `\n${firstErr}` : ''}`);
-            }
-          },
-        },
-      ]
-    );
+    setBulkLoading(false);
+    setSelectedIds(new Set());
+    setSelectMode(false);
+    load();
+    if (failed > 0) {
+      Alert.alert('تنبيه', `${failed} خطة لم تُعتمد${firstErr ? `\n${firstErr}` : ''}`);
+    }
   };
 
   const toggleSelect = (id) => {
