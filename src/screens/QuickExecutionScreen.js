@@ -1,7 +1,7 @@
 /**
  * QuickExecutionScreen — إضافة تنفيذ + توليد 4 نماذج رسمية
  */
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Alert, Platform,
@@ -447,6 +447,8 @@ const webInputStyle = {
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function QuickExecutionScreen({ navigation }) {
+  const submittedRef = useRef(false);
+
   // Common state
   const [projects,       setProjects]       = useState([]);
   const [scopes,         setScopes]         = useState([]);
@@ -706,8 +708,10 @@ export default function QuickExecutionScreen({ navigation }) {
   }, [formType, description, trainees, clientNotes, finishedSystems, systemChanges, procedureChanges, visitEvents, visitRequests]);
 
   const handleSave = async () => {
+    if (submittedRef.current) return;
     if (!planId)  return Alert.alert('تنبيه', 'اختر الخطة أولاً');
     if (!date)    return Alert.alert('تنبيه', 'أدخل تاريخ التنفيذ');
+    submittedRef.current = true;
     setSaving(true);
     try {
       const res = await createProjectVisit({
@@ -738,11 +742,16 @@ export default function QuickExecutionScreen({ navigation }) {
       // Auto-save any new trainees entered
       trainees.forEach(t => { if (t.name.trim()) saveTrainee(t.name, t.job); });
 
-      Alert.alert('تم ✓', 'تم حفظ الإجراء بنجاح', [
-        { text: 'إنشاء النموذج', onPress: handleGeneratePdf },
-        { text: 'إغلاق', onPress: () => navigation.goBack() },
-      ]);
+      Alert.alert(
+        'تم ✓',
+        'تم حفظ الإجراء بنجاح',
+        [
+          { text: 'إنشاء النموذج', onPress: () => { navigation.goBack(); handleGeneratePdf(); } },
+          { text: 'إغلاق', onPress: () => navigation.goBack() },
+        ],
+      );
     } catch (e) {
+      submittedRef.current = false;
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message;
       Alert.alert('خطأ', msg || 'حدث خطأ في الحفظ');
     } finally { setSaving(false); }
