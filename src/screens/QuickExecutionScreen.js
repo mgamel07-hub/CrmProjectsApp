@@ -25,7 +25,7 @@ function nowTimeStr() {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 import {
-  getProjectsDropdown, getScopesDropdown, getStagesDropdown,
+  getProjectsDropdown, getScopesDropdown, getStagesDropdown, getStagesByScope,
   getPlansDropDown, getPlanItems,
   createProjectVisit, uploadPlanExecutionAttachment,
 } from '../api/projects';
@@ -534,8 +534,13 @@ export default function QuickExecutionScreen({ navigation }) {
               setScopeId(last.scopeId);
               setScopeName(last.scopeName || '');
               setLoadingStages(true);
-              const stageRes = await getStagesDropdown(last.scopeId).catch(() => null);
-              const stageList = extractList(stageRes) || [];
+              const stageRes = await getStagesByScope(last.scopeId).catch(() => null);
+              const stageAll = extractList(stageRes) || [];
+              const stageList = stageAll.filter(st => {
+                const sid = st.statusId ?? st.status;
+                const sname = String(st.statusName ?? st.statusValue ?? '').toLowerCase();
+                return sid !== 2 && sid !== 3 && !sname.includes('complet') && !sname.includes('finish');
+              });
               setStages(stageList);
               setLoadingStages(false);
 
@@ -577,7 +582,16 @@ export default function QuickExecutionScreen({ navigation }) {
     setStages([]); setPlans([]); setPlanItems([]); setSelectedItems([]);
     saveLastUsed({ scopeId: id, scopeName: name, stageId: null });
     setLoadingStages(true);
-    try { setStages(extractList(await getStagesDropdown(id)) || []); }
+    try {
+      const res = await getStagesByScope(id);
+      const all = extractList(res) || [];
+      const active = all.filter(st => {
+        const sid = st.statusId ?? st.status;
+        const sname = String(st.statusName ?? st.statusValue ?? '').toLowerCase();
+        return sid !== 2 && sid !== 3 && !sname.includes('complet') && !sname.includes('finish');
+      });
+      setStages(active);
+    }
     catch { setStages([]); }
     finally { setLoadingStages(false); }
   }, [saveLastUsed]);
