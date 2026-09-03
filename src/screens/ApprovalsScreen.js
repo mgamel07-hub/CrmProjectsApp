@@ -222,6 +222,9 @@ function UnitsTab({ lang, isDemo }) {
 
 // ── Plan Approvals Section ────────────────────────────────────────────────────
 
+// Module-level flag: once we know GetByFilter returns 404, skip it forever this session
+let planFilterEndpointAvailable = true;
+
 function PlansTab({ lang, navigation }) {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -285,11 +288,15 @@ function PlansTab({ lang, navigation }) {
     try {
       // First try GetByFilter (fast but may not exist on all servers)
       const tryFilter = async (params) => {
+        if (!planFilterEndpointAvailable) return [];
         try {
           const r = await getPendingPlans(params);
           return extractList(r) || extractData(r) || [];
         } catch (e) {
-          if (e?.response?.status === 404) return []; // endpoint not available
+          if (e?.response?.status === 404) {
+            planFilterEndpointAvailable = false; // skip all future calls this session
+            return [];
+          }
           throw e;
         }
       };
