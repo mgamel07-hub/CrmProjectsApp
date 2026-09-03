@@ -207,9 +207,9 @@ function DonutChart({ cs }) {
   const total = a + c + h;
   if (total === 0) return null;
 
-  const size = 130;
+  const size = 190;
   const cx = size / 2, cy = size / 2;
-  const R = 50, r = 32;
+  const R = 72, r = 46;
   const toRad = (deg) => (deg * Math.PI) / 180;
 
   const segs = [
@@ -242,8 +242,8 @@ function DonutChart({ cs }) {
       <View style={styles.donutRow}>
         <Svg width={size} height={size}>
           {paths.map((s, i) => <Path key={i} d={s.d} fill={s.color} />)}
-          <SvgText x={cx} y={cy + 5} textAnchor="middle" fontSize="20" fontWeight="bold" fill="#1a1a1a">{total}</SvgText>
-          <SvgText x={cx} y={cy + 18} textAnchor="middle" fontSize="9" fill="#888">مشروع</SvgText>
+          <SvgText x={cx} y={cy + 7} textAnchor="middle" fontSize="28" fontWeight="bold" fill="#1a1a1a">{total}</SvgText>
+          <SvgText x={cx} y={cy + 22} textAnchor="middle" fontSize="12" fill="#888">مشروع</SvgText>
         </Svg>
         <View style={styles.donutLegend}>
           {segs.map((s, i) => (
@@ -761,29 +761,29 @@ const styles = StyleSheet.create({
 
   // Progress summary card (stacked bar)
   psCard: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12,
+    backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 14,
     elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
   },
-  psHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  psPct:       { fontSize: 13, fontWeight: '800', color: '#388E3C' },
-  psBar:       { flexDirection: 'row', height: 14, borderRadius: 7, overflow: 'hidden', marginBottom: 14, backgroundColor: '#EEE' },
-  psBarSeg:    { height: 14 },
+  psHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  psPct:       { fontSize: 16, fontWeight: '800', color: '#388E3C' },
+  psBar:       { flexDirection: 'row', height: 22, borderRadius: 11, overflow: 'hidden', marginBottom: 18, backgroundColor: '#EEE' },
+  psBarSeg:    { height: 22 },
   psLegendRow: { flexDirection: 'row', justifyContent: 'space-around' },
-  psLegendItem: { alignItems: 'center', gap: 3 },
-  psLegendVal: { fontSize: 16, fontWeight: '900' },
-  psLegendLbl: { fontSize: 10, color: '#888' },
+  psLegendItem: { alignItems: 'center', gap: 4 },
+  psLegendVal: { fontSize: 24, fontWeight: '900' },
+  psLegendLbl: { fontSize: 12, color: '#888' },
 
   // Donut chart card
   donutCard: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 12,
+    backgroundColor: '#fff', borderRadius: 16, padding: 20, marginBottom: 14,
     elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4,
   },
-  donutRow:   { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  donutLegend: { flex: 1, gap: 12 },
-  legendRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  legendDot:  { width: 10, height: 10, borderRadius: 5 },
-  legendLabel: { flex: 1, fontSize: 13, color: '#555', textAlign: 'right' },
-  legendValue: { fontSize: 15, fontWeight: '800', minWidth: 28, textAlign: 'right' },
+  donutRow:   { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  donutLegend: { flex: 1, gap: 16 },
+  legendRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  legendDot:  { width: 14, height: 14, borderRadius: 7 },
+  legendLabel: { flex: 1, fontSize: 15, color: '#555', textAlign: 'right' },
+  legendValue: { fontSize: 20, fontWeight: '900', minWidth: 32, textAlign: 'right' },
 
   // Implementers vertical bar chart
   implCard: {
