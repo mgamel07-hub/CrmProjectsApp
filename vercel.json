@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npx expo export --platform web && mkdir -p dist/pdfs && cp assets/pdfs/policy.pdf dist/pdfs/policy.pdf && cp assets/pdfs/client_receipt.pdf dist/pdfs/client_receipt.pdf",
+  "buildCommand": "npx expo export --platform web && mkdir -p dist/pdfs && cp assets/pdfs/policy.pdf dist/pdfs/policy.pdf && cp assets/pdfs/client_receipt.pdf dist/pdfs/client_receipt.pdf && cp assets/pdfs/end_impl.pdf dist/pdfs/end_impl.pdf",
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/:path*", "destination": "https://crm.yemensoft.net:3346/api/:path*" },

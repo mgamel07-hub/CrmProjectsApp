@@ -67,8 +67,10 @@ function detectFormTypeFromStage(stageName) {
 // Returns array of {uri, name, mimeType} auto-attachments for a given stage name
 async function getAutoAttachments(stageName) {
   const n = (stageName || '').toLowerCase();
-  const isCall = n.includes('مكالم') || n.includes('call');
-  const isFirst = n.includes('استلام') || n.includes('تسليم') || n.includes('بيانات');
+  const isCall    = n.includes('مكالم') || n.includes('call');
+  const isFirst   = n.includes('استلام') || n.includes('تسليم') || n.includes('بيانات');
+  const isEndImpl = (n.includes('تشغيل') && (n.includes('فعل') || n.includes('live')))
+                 || n.includes('انتهاء') || n.includes('goLive');
   const files = [];
   const fetchPdf = async (path, name) => {
     try {
@@ -92,6 +94,10 @@ async function getAutoAttachments(stageName) {
   }
   if (isFirst) {
     const f = await fetchPdf('/pdfs/client_receipt.pdf', 'نموذج استلام عميل من المبيعات.pdf');
+    if (f) files.push(f);
+  }
+  if (isEndImpl) {
+    const f = await fetchPdf('/pdfs/end_impl.pdf', 'نموذج انهاء التنفيذ.pdf');
     if (f) files.push(f);
   }
   return files;
