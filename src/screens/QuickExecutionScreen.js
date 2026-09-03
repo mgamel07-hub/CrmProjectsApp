@@ -25,11 +25,12 @@ function nowTimeStr() {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 import {
-  getProjectsDropdown, getScopesDropdown, getStagesDropdown, getStagesByScope,
+  getProjects, getScopesDropdown, getStagesDropdown, getStagesByScope,
   getPlansDropDown, getPlanItems,
   createProjectVisit, uploadPlanExecutionAttachment,
 } from '../api/projects';
 import { extractList } from '../utils/helpers';
+import { useRole, projectMatchesRole } from '../context/RoleContext';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const LOCATIONS = [
@@ -549,6 +550,7 @@ const webInputStyle = {
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function QuickExecutionScreen({ navigation }) {
   const submittedRef = useRef(false);
+  const { visibleCrmIds } = useRole();
 
   // Common state
   const [projects,       setProjects]       = useState([]);
@@ -610,11 +612,21 @@ export default function QuickExecutionScreen({ navigation }) {
     // Load projects + restore last-used selection + load saved trainees
     setLoadingProjects(true);
     Promise.all([
-      getProjectsDropdown().catch(() => null),
+      getProjects({ pageNo: 1, pageSize: 500 }).catch(() => null),
       AsyncStorage.getItem(LAST_USED_KEY).catch(() => null),
       AsyncStorage.getItem(SAVED_TRAINEES_KEY).catch(() => null),
     ]).then(async ([projRes, lastRaw, traineesRaw]) => {
-      const projs = extractList(projRes) || [];
+      // Full project list → filter by role, then convert to picker shape
+      const allProjs = projRes?.data?.data ?? [];
+      const filtered = visibleCrmIds
+        ? allProjs.filter(p => projectMatchesRole(p, visibleCrmIds))
+        : allProjs;
+      const projs = filtered.map(p => ({
+        id:    p.id,
+        key:   p.id,
+        label: p.customerName || p.name || String(p.id),
+        value: p.customerName || p.name || String(p.id),
+      }));
       setProjects(projs);
 
       if (traineesRaw) {
@@ -651,7 +663,8 @@ export default function QuickExecutionScreen({ navigation }) {
         } catch { }
       }
     }).finally(() => setLoadingProjects(false));
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleCrmIds]);
 
   const saveLastUsed = useCallback((patch) => {
     AsyncStorage.getItem(LAST_USED_KEY).then(raw => {

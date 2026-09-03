@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import { getDashboardStats } from '../api/projects';
 import { useAuth } from '../context/AuthContext';
-import { useRole } from '../context/RoleContext';
+import { useRole, projectMatchesRole } from '../context/RoleContext';
 import { DEMO_STATS } from '../api/demoData';
 import { useLang } from '../context/LangContext';
 import { t } from '../i18n';
@@ -53,12 +53,17 @@ function cardIcon(name = '') {
 // ─── Build stage cards from projects data ────────────────────────────────────
 
 // returns { cards, computedStats }
-async function fetchStageCards() {
+async function fetchStageCards(visibleCrmIds) {
   // 1. Fetch all projects (with embedded scopes)
   const projRes = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 200 });
-  const projects = projRes?.data?.data ?? [];
+  const allProjects = projRes?.data?.data ?? [];
 
-  // Compute stats directly from projects
+  // Role filter: non-admins only see their assigned projects (unassigned → hidden)
+  const projects = visibleCrmIds
+    ? allProjects.filter(p => projectMatchesRole(p, visibleCrmIds))
+    : allProjects;
+
+  // Compute stats directly from (role-filtered) projects
   const computedStats = {
     totalProjects:      projects.length,
     activeProjects:     projects.filter(p => p.statusId === 1 && !p.stopped).length,
@@ -317,7 +322,7 @@ export default function DashboardScreen({ navigation }) {
     // Load stage cards + computed stats in background
     setStagesLoading(true);
     try {
-      const { cards, computedStats: cs } = await fetchStageCards();
+      const { cards, computedStats: cs } = await fetchStageCards(visibleCrmIds);
       setStages(cards);
       setComputedStats(cs);
     } catch (_) {
@@ -325,7 +330,7 @@ export default function DashboardScreen({ navigation }) {
     } finally {
       setStagesLoading(false);
     }
-  }, [isDemo]);
+  }, [isDemo, visibleCrmIds]);
 
   useEffect(() => { load(); }, [load]);
 
