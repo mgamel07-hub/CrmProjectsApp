@@ -300,10 +300,9 @@ function PlansTab({ lang, navigation }) {
           throw e;
         }
       };
-      const [list2, listAll] = await Promise.all([
-        tryFilter({ statusId: 2, pageNumber: 1, pageSize: 200 }),
-        tryFilter({ pageNumber: 1, pageSize: 200 }),
-      ]);
+      // Sequential so the 404 flag from first call stops the second
+      const list2   = await tryFilter({ statusId: 2, pageNumber: 1, pageSize: 200 });
+      const listAll = await tryFilter({ pageNumber: 1, pageSize: 200 });
 
       const seen = new Set();
       let merged = [...list2, ...listAll].filter(p => {
