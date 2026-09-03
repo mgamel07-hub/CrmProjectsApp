@@ -275,13 +275,20 @@ function PlansTab({ lang, navigation }) {
 
   const load = useCallback(async () => {
     try {
-      // First try GetByFilter (fast but user-scoped)
-      const [res2, resAll] = await Promise.allSettled([
-        getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 200 }),
-        getPendingPlans({ pageNumber: 1, pageSize: 200 }),
+      // First try GetByFilter (fast but may not exist on all servers)
+      const tryFilter = async (params) => {
+        try {
+          const r = await getPendingPlans(params);
+          return extractList(r) || extractData(r) || [];
+        } catch (e) {
+          if (e?.response?.status === 404) return []; // endpoint not available
+          throw e;
+        }
+      };
+      const [list2, listAll] = await Promise.all([
+        tryFilter({ statusId: 2, pageNumber: 1, pageSize: 200 }),
+        tryFilter({ pageNumber: 1, pageSize: 200 }),
       ]);
-      const list2   = res2.status   === 'fulfilled' ? (extractList(res2.value)   || extractData(res2.value)   || []) : [];
-      const listAll = resAll.status === 'fulfilled' ? (extractList(resAll.value) || extractData(resAll.value) || []) : [];
 
       const seen = new Set();
       let merged = [...list2, ...listAll].filter(p => {

@@ -140,8 +140,14 @@ export function InternalNotifProvider({ children }) {
         const role = rec?.role || 'admin';
         if (role !== 'admin' && role !== 'manager') return;
 
-        // Fetch submitted plans
-        const res = await getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 200 });
+        // Fetch submitted plans — endpoint may not exist on all servers; bail silently on 404
+        let res;
+        try {
+          res = await getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 200 });
+        } catch (err) {
+          if (err?.response?.status === 404) return; // endpoint not available
+          throw err;
+        }
         const { extractList, extractData } = require('../utils/helpers');
         const plans = extractList(res) || extractData(res) || [];
         if (!plans.length) return;
