@@ -61,7 +61,12 @@ export function NotificationsProvider({ children }) {
         });
       }
       prevUnreadRef.current = newUnread;
-    } catch (_) {}
+    } catch (e) {
+      // 401/403 = no permission → stop polling to avoid repeated noise
+      if (e?.response?.status === 401 || e?.response?.status === 403) {
+        if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+      }
+    }
     finally { if (!silent) setLoading(false); }
   }, [token, isDemo]);
 

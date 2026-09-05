@@ -222,8 +222,9 @@ function UnitsTab({ lang, isDemo }) {
 
 // ── Plan Approvals Section ────────────────────────────────────────────────────
 
-// Module-level flag: once we know GetByFilter returns 404, skip it forever this session
+// Module-level flags
 let planFilterEndpointAvailable = true;
+let planLoadInProgress = false; // prevent concurrent load() calls
 
 function PlansTab({ lang, navigation }) {
   const [plans, setPlans] = useState([]);
@@ -239,7 +240,7 @@ function PlansTab({ lang, navigation }) {
   // planItems cache: { [planId]: { loading, items } }
   const [planItemsCache, setPlanItemsCache] = useState({});
 
-  // Full traversal: projects → scopes → stages → plans, collect statusId=1,2
+  // Full traversal: projects → scopes → stages → plans, collect statusId=2 (submitted for approval)
   const fetchAllSubmittedPlans = useCallback(async () => {
     const collected = [];
     try {
@@ -267,7 +268,7 @@ function PlansTab({ lang, navigation }) {
                   plans.forEach(p => {
                     if (!p.id) return; // skip wrapper/ghost objects with no real id
                     const s = p.statusId ?? p.status;
-                    if (s === 1 || s === 2) {
+                    if (s === 2) { // only "submitted for approval" plans
                       collected.push({
                         ...p,
                         stageName: p.stageName || stage.value || stage.name || `مرحلة #${stageId}`,
@@ -287,6 +288,8 @@ function PlansTab({ lang, navigation }) {
   }, []);
 
   const load = useCallback(async () => {
+    if (planLoadInProgress) return; // prevent concurrent calls (avoids duplicate 404s)
+    planLoadInProgress = true;
     try {
       // First try GetByFilter (fast but may not exist on all servers)
       const tryFilter = async (params) => {
@@ -332,6 +335,7 @@ function PlansTab({ lang, navigation }) {
       if (status === 404 || status === 405) { setPlans([]); setError(null); }
       else setError(e?.response?.data?.message || t('networkError'));
     } finally {
+      planLoadInProgress = false;
       setLoading(false);
       setRefreshing(false);
     }
@@ -423,6 +427,7 @@ function PlansTab({ lang, navigation }) {
         failed++;
         const errMsg = e?.response?.data?.message
           || (typeof e?.response?.data === 'string' ? e.response.data : null)
+          || (e?.response?.status === 403 ? 'غير مصرح باعتماد هذه الخطة' : null)
           || e?.message;
         if (!firstErr) firstErr = errMsg;
       }
