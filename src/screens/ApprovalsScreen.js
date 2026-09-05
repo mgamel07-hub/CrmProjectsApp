@@ -224,7 +224,8 @@ function UnitsTab({ lang, isDemo }) {
 
 // Module-level flags
 let planFilterEndpointAvailable = true;
-let planLoadInProgress = false; // prevent concurrent load() calls
+let planLoadInProgress = false;   // prevent concurrent load() calls
+let planLastLoadTime   = 0;       // debounce: ignore calls within 2s of each other
 
 function PlansTab({ lang, navigation }) {
   const [plans, setPlans] = useState([]);
@@ -268,7 +269,7 @@ function PlansTab({ lang, navigation }) {
                   plans.forEach(p => {
                     if (!p.id) return; // skip wrapper/ghost objects with no real id
                     const s = p.statusId ?? p.status;
-                    if (s === 2) { // only "submitted for approval" plans
+                    if (s === 1 || s === 2) {
                       collected.push({
                         ...p,
                         stageName: p.stageName || stage.value || stage.name || `مرحلة #${stageId}`,
@@ -288,8 +289,10 @@ function PlansTab({ lang, navigation }) {
   }, []);
 
   const load = useCallback(async () => {
-    if (planLoadInProgress) return; // prevent concurrent calls (avoids duplicate 404s)
+    const now = Date.now();
+    if (planLoadInProgress || (now - planLastLoadTime < 2000)) return;
     planLoadInProgress = true;
+    planLastLoadTime   = now;
     try {
       // First try GetByFilter (fast but may not exist on all servers)
       const tryFilter = async (params) => {
