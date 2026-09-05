@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
-import { StatusBar, I18nManager } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { StatusBar, I18nManager, Platform } from 'react-native';
 import * as Updates from 'expo-updates';
+import * as Notifications from 'expo-notifications';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -125,11 +126,24 @@ function MainTabs({ navigation }) {
 
 function AppNavigator() {
   const { user, loading } = useAuth();
+  const navRef = useRef(null);
+
+  // Navigate to Notifications when user taps a push/local notification
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const screen = response.notification.request.content.data?.screen;
+      if (navRef.current && screen) {
+        navRef.current.navigate(screen);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   if (loading) return <LoadingScreen />;
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navRef}>
       <StatusBar barStyle="light-content" backgroundColor={BLUE} />
       <Stack.Navigator
         screenOptions={{
