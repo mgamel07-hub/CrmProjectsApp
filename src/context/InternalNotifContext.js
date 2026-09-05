@@ -13,6 +13,9 @@ import { supabase } from '../api/supabase';
 import { useAuth } from './AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Skip GetByFilter after first 404 — endpoint absent on this server
+let planFilterAvailable = false;
+
 const InternalNotifContext = createContext(null);
 
 // ── Banner component ──────────────────────────────────────────────────────────
@@ -140,12 +143,13 @@ export function InternalNotifProvider({ children }) {
         const role = rec?.role || 'admin';
         if (role !== 'admin' && role !== 'manager') return;
 
-        // Fetch submitted plans — endpoint may not exist on all servers; bail silently on 404
+        // Fetch submitted plans — endpoint absent on this server; skip entirely
+        if (!planFilterAvailable) return;
         let res;
         try {
           res = await getPendingPlans({ statusId: 2, pageNumber: 1, pageSize: 200 });
         } catch (err) {
-          if (err?.response?.status === 404) return; // endpoint not available
+          if (err?.response?.status === 404) { planFilterAvailable = false; return; }
           throw err;
         }
         const { extractList, extractData } = require('../utils/helpers');
