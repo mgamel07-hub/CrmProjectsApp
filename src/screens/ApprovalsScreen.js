@@ -223,7 +223,7 @@ function UnitsTab({ lang, isDemo }) {
 // ── Plan Approvals Section ────────────────────────────────────────────────────
 
 // Module-level flags
-let planFilterEndpointAvailable = true;
+let planFilterEndpointAvailable = false; // endpoint returns 404 on this server — skip entirely
 let planLoadInProgress = false;   // prevent concurrent load() calls
 let planLastLoadTime   = 0;       // debounce: ignore calls within 2s of each other
 
