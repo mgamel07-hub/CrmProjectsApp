@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { LangProvider, useLang } from './src/context/LangContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
-import { RoleProvider } from './src/context/RoleContext';
+import { RoleProvider, useRole } from './src/context/RoleContext';
 import { t } from './src/i18n';
 
 import LoginScreen            from './src/screens/LoginScreen';
@@ -60,6 +60,8 @@ const BLUE = '#1565C0';
 
 function MainTabs({ navigation }) {
   const { lang } = useLang();
+  const { myRole } = useRole();
+  const canApprove = myRole === 'admin' || myRole === 'manager';
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -105,11 +107,13 @@ function MainTabs({ navigation }) {
         component={ReportsScreen}
         options={{ title: t('reports'), tabBarLabel: t('reports') }}
       />
-      <Tab.Screen
-        name="Approvals"
-        component={ApprovalsScreen}
-        options={{ title: t('approvals'), tabBarLabel: t('approvals') }}
-      />
+      {canApprove && (
+        <Tab.Screen
+          name="Approvals"
+          component={ApprovalsScreen}
+          options={{ title: t('approvals'), tabBarLabel: t('approvals') }}
+        />
+      )}
       <Tab.Screen
         name="Team"
         component={TeamHomeScreen}
