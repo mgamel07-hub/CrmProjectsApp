@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getTeamWeekSchedule, getTeamMembers, getMyTeamRecord } from '../../api/internal';
@@ -8,7 +8,8 @@ import { getUsers } from '../../api/projects';
 import { extractList } from '../../utils/helpers';
 import { useAuth } from '../../context/AuthContext';
 
-const DAYS_SHORT = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمس', 'جمع', 'سبت'];
+const DAYS_SHORT   = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمس', 'جمع', 'سبت'];
+const DAYS_AR_FULL = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const TYPE_COLORS = { visit: '#1565C0', office: '#388E3C', vacation: '#E65100' };
 const TYPE_LABELS = { visit: 'زيارة', office: 'مكتب', vacation: 'إجازة' };
 const TYPE_SHORT  = { visit: 'ز', office: 'م', vacation: 'إ' };
@@ -41,6 +42,7 @@ export default function TeamScheduleScreen({ route }) {
   const [entries,    setEntries]    = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [myRole,     setMyRole]     = useState('employee'); // 'admin' | 'manager' | 'employee'
+  const [detailModal, setDetailModal] = useState(null); // { entry, name } | null
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,8 +129,80 @@ export default function TeamScheduleScreen({ route }) {
     return acc;
   }, {});
 
+  const dm = detailModal;
+
   return (
     <View style={styles.root}>
+      {/* Entry detail modal */}
+      <Modal
+        visible={!!dm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDetailModal(null)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setDetailModal(null)}
+        >
+          <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
+            {dm && (
+              <>
+                <View style={[styles.modalTypeBar, { backgroundColor: TYPE_COLORS[dm.entry.type] }]}>
+                  <Ionicons name={TYPE_ICONS[dm.entry.type]} size={20} color="#fff" />
+                  <Text style={styles.modalTypeText}>{TYPE_LABELS[dm.entry.type]}</Text>
+                </View>
+
+                <View style={styles.modalBody}>
+                  <View style={styles.modalRow}>
+                    <Ionicons name="person-outline" size={16} color="#555" />
+                    <Text style={styles.modalLabel}>الموظف</Text>
+                    <Text style={styles.modalValue}>{dm.name}</Text>
+                  </View>
+
+                  <View style={styles.modalRow}>
+                    <Ionicons name="calendar-outline" size={16} color="#555" />
+                    <Text style={styles.modalLabel}>التاريخ</Text>
+                    <Text style={styles.modalValue}>
+                      {DAYS_AR_FULL[new Date(dm.entry.date).getDay()]} {dm.entry.date}
+                    </Text>
+                  </View>
+
+                  {dm.entry.type === 'visit' && (
+                    <View style={styles.modalRow}>
+                      <Ionicons name="location-outline" size={16} color="#1565C0" />
+                      <Text style={styles.modalLabel}>الموقع</Text>
+                      <Text style={[styles.modalValue, { color: '#1565C0', fontWeight: '700' }]}>
+                        {dm.entry.client_name || '—'}
+                      </Text>
+                    </View>
+                  )}
+
+                  {dm.entry.type === 'vacation' && dm.entry.vacation_type && (
+                    <View style={styles.modalRow}>
+                      <Ionicons name="information-circle-outline" size={16} color="#E65100" />
+                      <Text style={styles.modalLabel}>نوع الإجازة</Text>
+                      <Text style={styles.modalValue}>{dm.entry.vacation_type}</Text>
+                    </View>
+                  )}
+
+                  {dm.entry.notes ? (
+                    <View style={styles.modalRow}>
+                      <Ionicons name="document-text-outline" size={16} color="#555" />
+                      <Text style={styles.modalLabel}>ملاحظات</Text>
+                      <Text style={styles.modalValue}>{dm.entry.notes}</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <TouchableOpacity style={styles.modalClose} onPress={() => setDetailModal(null)}>
+                  <Text style={styles.modalCloseText}>إغلاق</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
       {/* Week navigator */}
       <View style={styles.nav}>
         <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={styles.navBtn}>
@@ -231,15 +305,7 @@ export default function TeamScheduleScreen({ route }) {
                         <View key={`${ui}-${di}`} style={[styles.dayCol, isToday && styles.todayDayCol]}>
                           {entry ? (
                             <TouchableOpacity
-                              onPress={() => {
-                                const label = TYPE_LABELS[entry.type];
-                                const detail = entry.client_name
-                                  ? `${label}\n📍 ${entry.client_name}`
-                                  : entry.vacation_type
-                                  ? `${label} — ${entry.vacation_type}`
-                                  : label;
-                                Alert.alert(name, detail);
-                              }}
+                              onPress={() => setDetailModal({ entry, name })}
                               activeOpacity={0.75}
                             >
                               <View style={[styles.cell, { backgroundColor: TYPE_COLORS[entry.type] }]}>
@@ -322,4 +388,28 @@ const styles = StyleSheet.create({
   roleBannerText: { fontSize: 12, fontWeight: '700', color: '#1565C0' },
   empty:     { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   emptyText: { fontSize: 14, color: '#bbb' },
+
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center', padding: 24,
+  },
+  modalCard: {
+    backgroundColor: '#fff', borderRadius: 16, width: '100%', maxWidth: 380,
+    overflow: 'hidden', elevation: 8,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+  },
+  modalTypeBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 20, paddingVertical: 14,
+  },
+  modalTypeText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  modalBody: { padding: 20, gap: 14 },
+  modalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  modalLabel: { fontSize: 13, color: '#888', width: 80, flexShrink: 0 },
+  modalValue: { fontSize: 14, color: '#1a1a1a', fontWeight: '600', flex: 1, textAlign: 'right' },
+  modalClose: {
+    marginHorizontal: 20, marginBottom: 16, backgroundColor: '#F5F5F5',
+    borderRadius: 10, paddingVertical: 10, alignItems: 'center',
+  },
+  modalCloseText: { fontSize: 14, fontWeight: '700', color: '#555' },
 });
