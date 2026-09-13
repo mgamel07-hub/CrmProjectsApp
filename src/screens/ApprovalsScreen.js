@@ -676,11 +676,13 @@ function PlansTab({ lang, navigation }) {
 // ── Schedule Entry Approval Tab ───────────────────────────────────────────────
 
 function ScheduleApprovalTab({ userId }) {
-  const [entries, setEntries]   = useState([]);
-  const [nameMap, setNameMap]   = useState({});
-  const [loading, setLoading]   = useState(true);
+  const [entries, setEntries]       = useState([]);
+  const [nameMap, setNameMap]       = useState({});
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [acting, setActing]     = useState(null);
+  const [acting, setActing]         = useState(null);
+  const [filterEmp, setFilterEmp]   = useState(null); // crm_user_id string or null = all
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -717,68 +719,160 @@ function ScheduleApprovalTab({ userId }) {
     }, 'plain-text');
   };
 
+  const visibleEntries = filterEmp
+    ? entries.filter(e => String(e.crm_user_id) === filterEmp)
+    : entries;
+
+  const handleApproveAll = () => {
+    const count = visibleEntries.length;
+    if (!count) return;
+    const label = filterEmp ? (nameMap[filterEmp] || filterEmp) : 'الكل';
+    Alert.alert(
+      'اعتماد الكل',
+      `هل تريد اعتماد ${count} طلب${count > 1 ? 'ات' : ''} (${label})؟`,
+      [
+        { text: 'إلغاء', style: 'cancel' },
+        {
+          text: 'اعتماد', style: 'default',
+          onPress: async () => {
+            setBulkLoading(true);
+            try {
+              await Promise.allSettled(visibleEntries.map(e => approveScheduleEntry(e.id)));
+              load();
+            } catch (_) {}
+            finally { setBulkLoading(false); }
+          },
+        },
+      ],
+    );
+  };
+
+  // Unique employees that have pending entries
+  const empOptions = [...new Set(entries.map(e => String(e.crm_user_id)))];
+
   if (loading) return <LoadingScreen />;
   return (
-    <FlatList
-      data={entries}
-      keyExtractor={i => i.id}
-      contentContainerStyle={styles.list}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={['#1565C0']} />}
-      ListEmptyComponent={
-        <View style={styles.empty}>
-          <Ionicons name="calendar-outline" size={48} color="#ccc" />
-          <Text style={styles.emptyText}>لا توجد خطط بانتظار الاعتماد</Text>
+    <View style={{ flex: 1 }}>
+      {/* Employee filter chips */}
+      {empOptions.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8, gap: 8, flexDirection: 'row' }}
+        >
+          <TouchableOpacity
+            onPress={() => setFilterEmp(null)}
+            style={{
+              paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
+              backgroundColor: !filterEmp ? '#1565C0' : '#E3F2FD',
+            }}
+          >
+            <Text style={{ color: !filterEmp ? '#fff' : '#1565C0', fontWeight: '600', fontSize: 13 }}>الكل ({entries.length})</Text>
+          </TouchableOpacity>
+          {empOptions.map(id => {
+            const name = nameMap[id] || id;
+            const cnt  = entries.filter(e => String(e.crm_user_id) === id).length;
+            const sel  = filterEmp === id;
+            return (
+              <TouchableOpacity
+                key={id}
+                onPress={() => setFilterEmp(sel ? null : id)}
+                style={{
+                  paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
+                  backgroundColor: sel ? '#1565C0' : '#E3F2FD',
+                }}
+              >
+                <Text style={{ color: sel ? '#fff' : '#1565C0', fontWeight: '600', fontSize: 13 }}>{name} ({cnt})</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {/* Approve All bar */}
+      {visibleEntries.length > 0 && (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
+          <TouchableOpacity
+            onPress={handleApproveAll}
+            disabled={bulkLoading || !!acting}
+            style={{
+              backgroundColor: '#2E7D32', borderRadius: 10, paddingVertical: 10,
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+              opacity: (bulkLoading || !!acting) ? 0.6 : 1,
+            }}
+          >
+            {bulkLoading
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
+            }
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>
+              اعتماد الكل ({visibleEntries.length})
+            </Text>
+          </TouchableOpacity>
         </View>
-      }
-      renderItem={({ item }) => {
-        const dayName = DAYS_AR[new Date(item.date).getDay()];
-        const emp = nameMap[String(item.crm_user_id)] || item.crm_user_id;
-        return (
-          <Card style={styles.reqCard}>
-            <View style={styles.reqHeader}>
-              <View style={styles.reqLeft}>
-                <Text style={styles.reqTitle}>{emp}</Text>
-                <Text style={styles.reqSub}>{dayName} {item.date}</Text>
+      )}
+
+      <FlatList
+        data={visibleEntries}
+        keyExtractor={i => i.id}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={['#1565C0']} />}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Ionicons name="calendar-outline" size={48} color="#ccc" />
+            <Text style={styles.emptyText}>لا توجد خطط بانتظار الاعتماد</Text>
+          </View>
+        }
+        renderItem={({ item }) => {
+          const dayName = DAYS_AR[new Date(item.date).getDay()];
+          const emp = nameMap[String(item.crm_user_id)] || item.crm_user_id;
+          return (
+            <Card style={styles.reqCard}>
+              <View style={styles.reqHeader}>
+                <View style={styles.reqLeft}>
+                  <Text style={styles.reqTitle}>{emp}</Text>
+                  <Text style={styles.reqSub}>{dayName} {item.date}</Text>
+                </View>
+                <View style={[styles.typePill, { backgroundColor: TYPE_COLORS[item.type] }]}>
+                  <Text style={styles.typePillText}>{TYPE_LABELS[item.type]}</Text>
+                </View>
               </View>
-              <View style={[styles.typePill, { backgroundColor: TYPE_COLORS[item.type] }]}>
-                <Text style={styles.typePillText}>{TYPE_LABELS[item.type]}</Text>
+              {item.client_name ? (
+                <View style={styles.detailRow}>
+                  <Ionicons name="location-outline" size={13} color="#888" />
+                  <Text style={styles.detailText}>{item.client_name}</Text>
+                </View>
+              ) : null}
+              {item.vacation_type ? (
+                <Text style={styles.detailText}>نوع الإجازة: {item.vacation_type}</Text>
+              ) : null}
+              <View style={styles.actions}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.approveBtn]}
+                  onPress={() => handleApprove(item)}
+                  disabled={!!acting || bulkLoading}
+                >
+                  {acting === item.id + '-approve'
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <><Ionicons name="checkmark-outline" size={15} color="#fff" /><Text style={styles.actionText}>اعتماد</Text></>
+                  }
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.rejectBtn]}
+                  onPress={() => handleReject(item)}
+                  disabled={!!acting || bulkLoading}
+                >
+                  {acting === item.id + '-reject'
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : <><Ionicons name="close-outline" size={15} color="#fff" /><Text style={styles.actionText}>رفض</Text></>
+                  }
+                </TouchableOpacity>
               </View>
-            </View>
-            {item.client_name ? (
-              <View style={styles.detailRow}>
-                <Ionicons name="location-outline" size={13} color="#888" />
-                <Text style={styles.detailText}>{item.client_name}</Text>
-              </View>
-            ) : null}
-            {item.vacation_type ? (
-              <Text style={styles.detailText}>نوع الإجازة: {item.vacation_type}</Text>
-            ) : null}
-            <View style={styles.actions}>
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.approveBtn]}
-                onPress={() => handleApprove(item)}
-                disabled={!!acting}
-              >
-                {acting === item.id + '-approve'
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <><Ionicons name="checkmark-outline" size={15} color="#fff" /><Text style={styles.actionText}>اعتماد</Text></>
-                }
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.rejectBtn]}
-                onPress={() => handleReject(item)}
-                disabled={!!acting}
-              >
-                {acting === item.id + '-reject'
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <><Ionicons name="close-outline" size={15} color="#fff" /><Text style={styles.actionText}>رفض</Text></>
-                }
-              </TouchableOpacity>
-            </View>
-          </Card>
-        );
-      }}
-    />
+            </Card>
+          );
+        }}
+      />
+    </View>
   );
 }
 
