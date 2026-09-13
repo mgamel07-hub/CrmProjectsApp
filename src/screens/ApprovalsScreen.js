@@ -723,28 +723,19 @@ function ScheduleApprovalTab({ userId }) {
     ? entries.filter(e => String(e.crm_user_id) === filterEmp)
     : entries;
 
-  const handleApproveAll = () => {
+  const [confirmAll, setConfirmAll] = useState(false);
+
+  const handleApproveAll = async () => {
     const count = visibleEntries.length;
     if (!count) return;
-    const label = filterEmp ? (nameMap[filterEmp] || filterEmp) : 'الكل';
-    Alert.alert(
-      'اعتماد الكل',
-      `هل تريد اعتماد ${count} طلب${count > 1 ? 'ات' : ''} (${label})؟`,
-      [
-        { text: 'إلغاء', style: 'cancel' },
-        {
-          text: 'اعتماد', style: 'default',
-          onPress: async () => {
-            setBulkLoading(true);
-            try {
-              await Promise.allSettled(visibleEntries.map(e => approveScheduleEntry(e.id)));
-              load();
-            } catch (_) {}
-            finally { setBulkLoading(false); }
-          },
-        },
-      ],
-    );
+    if (!confirmAll) { setConfirmAll(true); return; }
+    setConfirmAll(false);
+    setBulkLoading(true);
+    try {
+      await Promise.allSettled(visibleEntries.map(e => approveScheduleEntry(e.id)));
+      load();
+    } catch (_) {}
+    finally { setBulkLoading(false); }
   };
 
   // Unique employees that have pending entries
@@ -754,7 +745,7 @@ function ScheduleApprovalTab({ userId }) {
   return (
     <View style={{ flex: 1 }}>
       {/* Employee filter chips */}
-      {empOptions.length > 1 && (
+      {empOptions.length > 0 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -791,24 +782,33 @@ function ScheduleApprovalTab({ userId }) {
 
       {/* Approve All bar */}
       {visibleEntries.length > 0 && (
-        <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
+        <View style={{ paddingHorizontal: 12, paddingBottom: 8, gap: 6 }}>
           <TouchableOpacity
             onPress={handleApproveAll}
             disabled={bulkLoading || !!acting}
             style={{
-              backgroundColor: '#2E7D32', borderRadius: 10, paddingVertical: 10,
+              backgroundColor: confirmAll ? '#B71C1C' : '#2E7D32',
+              borderRadius: 10, paddingVertical: 10,
               flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
               opacity: (bulkLoading || !!acting) ? 0.6 : 1,
             }}
           >
             {bulkLoading
               ? <ActivityIndicator size="small" color="#fff" />
-              : <Ionicons name="checkmark-done-outline" size={18} color="#fff" />
+              : <Ionicons name={confirmAll ? 'warning-outline' : 'checkmark-done-outline'} size={18} color="#fff" />
             }
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>
-              اعتماد الكل ({visibleEntries.length})
+              {confirmAll
+                ? `تأكيد اعتماد ${visibleEntries.length} طلب — اضغط مرة أخرى`
+                : `اعتماد الكل (${visibleEntries.length})`
+              }
             </Text>
           </TouchableOpacity>
+          {confirmAll && (
+            <TouchableOpacity onPress={() => setConfirmAll(false)}>
+              <Text style={{ textAlign: 'center', color: '#888', fontSize: 12 }}>إلغاء</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
