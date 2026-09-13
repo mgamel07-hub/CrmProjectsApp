@@ -188,30 +188,30 @@ export default function TeamScheduleScreen({ route }) {
           <Text style={styles.emptyText}>لا يوجد أعضاء في الفريق</Text>
         </View>
       ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View>
-            {/* Header row */}
-            <View style={styles.headerRow}>
-              <View style={styles.nameCol}>
-                <Text style={styles.headerCell}>الموظف</Text>
+        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View>
+              {/* Header row */}
+              <View style={styles.headerRow}>
+                <View style={styles.nameCol}>
+                  <Text style={styles.headerCell}>الموظف</Text>
+                </View>
+                {days.map((d, i) => {
+                  const isToday = fmt(d) === todayStr;
+                  return (
+                    <View key={i} style={[styles.dayCol, isToday && styles.todayCol]}>
+                      <Text style={[styles.headerCell, isToday && styles.todayHeaderText]}>
+                        {DAYS_SHORT[d.getDay()]}
+                      </Text>
+                      <Text style={[styles.headerDate, isToday && styles.todayHeaderDate]}>
+                        {d.getDate()}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
-              {days.map((d, i) => {
-                const isToday = fmt(d) === todayStr;
-                return (
-                  <View key={i} style={[styles.dayCol, isToday && styles.todayCol]}>
-                    <Text style={[styles.headerCell, isToday && styles.todayHeaderText]}>
-                      {DAYS_SHORT[d.getDay()]}
-                    </Text>
-                    <Text style={[styles.headerDate, isToday && styles.todayHeaderDate]}>
-                      {d.getDate()}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
 
-            {/* User rows */}
-            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* User rows — no nested ScrollView so touch events reach the cells */}
               {users.map((u, ui) => {
                 const uid  = u.id;
                 const name = u.fullName || String(uid);
@@ -221,7 +221,7 @@ export default function TeamScheduleScreen({ route }) {
                       <View style={styles.avatarWrap}>
                         <Text style={styles.avatarText}>{(name || '?')[0]}</Text>
                       </View>
-                      <Text style={styles.userName} numberOfLines={1}>{name}</Text>
+                      <Text style={styles.userName} numberOfLines={2}>{name}</Text>
                     </View>
                     {days.map((d, di) => {
                       const dateStr = fmt(d);
@@ -255,8 +255,8 @@ export default function TeamScheduleScreen({ route }) {
                   </View>
                 );
               })}
-            </ScrollView>
-          </View>
+            </View>
+          </ScrollView>
         </ScrollView>
       )}
     </View>
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
   todayHeaderText: { color: '#FFD54F' },
   todayHeaderDate: { color: '#FFD54F' },
 
-  nameCol: { width: 110, paddingHorizontal: 8, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 6 },
+  nameCol: { width: 150, paddingHorizontal: 8, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 6 },
   dayCol:  { width: 54, alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
   todayDayCol: { backgroundColor: '#E3F2FD' },
 
