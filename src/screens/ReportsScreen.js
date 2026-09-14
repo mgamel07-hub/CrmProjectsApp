@@ -432,41 +432,41 @@ function MultiSelectDropdown({ label, items, selected, onToggle, onClear, color 
   const [open, setOpen] = useState(false);
   const count = selected.length;
   return (
-    <View style={[s.msWrap, open && { zIndex: 100 }]}>
+    <View style={s.msWrap}>
       <TouchableOpacity
-        style={[s.msBtn, count > 0 && { borderColor: color, backgroundColor: color + '12' }]}
+        style={[s.msBtn, count > 0 && { borderColor: color, backgroundColor: color + '15' }]}
         onPress={() => setOpen(v => !v)}
+        activeOpacity={0.75}
       >
         <Text style={[s.msBtnText, count > 0 && { color }]} numberOfLines={1}>
           {count === 0 ? label : `${label} (${count})`}
         </Text>
-        {count > 0 ? (
+        {count > 0 && (
           <TouchableOpacity
             onPress={(e) => { e?.stopPropagation?.(); onClear(); setOpen(false); }}
-            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="close-circle" size={14} color={color} />
+            <Ionicons name="close-circle" size={16} color={color} />
           </TouchableOpacity>
-        ) : null}
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={count > 0 ? color : '#aaa'} />
+        )}
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={15} color={count > 0 ? color : '#aaa'} />
       </TouchableOpacity>
       {open && (
-        <View style={[s.msDropdown, { borderTopColor: color, borderTopWidth: 2.5 }]}>
-          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-            {items.map(item => {
-              const checked = selected.includes(item);
-              return (
-                <TouchableOpacity
-                  key={item}
-                  style={[s.msItem, checked && { backgroundColor: color + '12' }]}
-                  onPress={() => onToggle(item)}
-                >
-                  <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={18} color={checked ? color : '#ccc'} />
-                  <Text style={[s.msItemText, checked && { color, fontWeight: '700' }]} numberOfLines={2}>{item}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+        <View style={[s.msDropdown, { borderTopColor: color }]}>
+          {items.map(item => {
+            const checked = selected.includes(item);
+            return (
+              <TouchableOpacity
+                key={item}
+                style={[s.msItem, checked && { backgroundColor: color + '12' }]}
+                onPress={() => onToggle(item)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={20} color={checked ? color : '#bbb'} />
+                <Text style={[s.msItemText, checked && { color, fontWeight: '700' }]} numberOfLines={2}>{item}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
     </View>
@@ -1271,19 +1271,19 @@ const s = StyleSheet.create({
   clearBtnText: { fontSize: 11, color: '#C62828', fontWeight: '700' },
 
   // Filters block (systems/stages)
-  filtersBlock: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingBottom: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
+  filtersBlock: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingBottom: 4, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
   filterGroup:  { paddingTop: 6 },
   filterGroupLabel: { fontSize: 10, color: '#bbb', fontWeight: '700', paddingHorizontal: 12, marginBottom: 4 },
   chipRow: { paddingHorizontal: 10, gap: 6 },
   chip:    { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#E8E8E8' },
   chipText:{ fontSize: 11, color: '#555', fontWeight: '600' },
   // ─── Multi-select dropdown styles ─────────────────────────────────────────
-  msWrap:      { position: 'relative', zIndex: 10, marginHorizontal: 6, marginVertical: 4, minWidth: 100, maxWidth: 180, alignSelf: 'flex-start' },
-  msBtn:       { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, borderWidth: 1.5, borderColor: '#ddd', backgroundColor: '#fafafa' },
-  msBtnText:   { flex: 1, fontSize: 12, color: '#555', fontWeight: '600', textAlign: 'right' },
-  msDropdown:  { position: 'absolute', top: '110%', left: 0, right: 0, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#ddd', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 8, zIndex: 200 },
-  msItem:      { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  msItemText:  { flex: 1, fontSize: 12, color: '#333', textAlign: 'right' },
+  msWrap:     { marginHorizontal: 8, marginVertical: 6, minWidth: 140 },
+  msBtn:      { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#ddd', backgroundColor: '#fafafa' },
+  msBtnText:  { flex: 1, fontSize: 14, color: '#555', fontWeight: '700', textAlign: 'right' },
+  msDropdown: { marginTop: 4, borderRadius: 10, borderWidth: 1.5, borderTopWidth: 3, borderColor: '#ddd', backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
+  msItem:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  msItemText: { flex: 1, fontSize: 14, color: '#333', textAlign: 'right' },
 
   // Visit period pills
   periodBar:        { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', maxHeight: 46 },
