@@ -920,35 +920,53 @@ export default function QuickExecutionScreen({ navigation }) {
   };
 
   const sendWhatsApp = useCallback(async () => {
-    const visitTypeLabel = formType === 0 ? 'مكالمة' : formType === 1 ? 'جلسة تدريب' : formType === 2 ? 'انهاء تدريب'
-      : formType === 3 ? 'محاكاة على النظام' : formType === 5 ? 'انهاء التنفيذ' : 'زيارة متابعة';
-    const lines = [
-      `السلام عليكم ورحمة الله وبركاته،`,
-      `نود إبلاغكم بأنه تم إتمام ${visitTypeLabel} بتاريخ ${date || '—'}.`,
-      ``,
-      `📋 المشروع: ${projectName || '—'}`,
-      scopeName ? `🖥️ النظام: ${scopeName}` : null,
-      startTime ? `🕐 من: ${startTime}${endTime ? ` — إلى: ${endTime}` : ''}` : null,
-    ].filter(Boolean).join('\n');
-    const text = lines + '\n\n' + WEB_ORIGIN;
-    const waUrl = Platform.OS === 'web'
-      ? `https://wa.me/?text=${encodeURIComponent(text)}`
-      : `whatsapp://send?text=${encodeURIComponent(text)}`;
+    const label = formType === 0 ? 'تقرير مكالمة' : formType === 1 ? 'نموذج تدريب'
+      : formType === 2 ? 'انهاء تدريب' : formType === 3 ? 'محاكاة'
+      : formType === 5 ? 'نموذج انهاء التنفيذ' : 'تقرير متابعة';
+    setGeneratingPdf(true);
     try {
-      if (Platform.OS === 'web') {
-        window.open(waUrl, '_blank');
+      const common = { clientName: projectName, systemName: scopeName, date, startTime, endTime, location };
+      let html = '';
+      if (formType === 1) {
+        html = buildTrainingFormHtml({ ...common, planItems, selectedItems, trainees: trainees.filter(t => t.name.trim()), trainerNotes: description, clientNotes });
+      } else if (formType === 2) {
+        html = buildEndTrainingHtml({ ...common, finishedSystems: finishedSystems.filter(s => s.name.trim()), generalNotes: description });
+      } else if (formType === 3) {
+        html = buildSimulationHtml({ ...common, systemChanges: systemChanges.filter(c => c.system.trim() || c.change.trim()), procedureChanges });
+      } else if (formType === 5) {
+        html = buildEndImplHtml({ ...common, finishedSystems: finishedSystems.filter(s => s.name.trim()), generalNotes: description });
       } else {
-        const ok = await Linking.canOpenURL(waUrl);
-        if (ok) {
-          await Linking.openURL(waUrl);
-        } else {
-          Alert.alert('تنبيه', 'واتساب غير مثبت على الجهاز');
-        }
+        html = buildFollowUpHtml({ ...common, visitReason, visitEvents, visitRequests });
       }
-    } catch {
-      Alert.alert('خطأ', 'تعذر فتح واتساب');
+
+      if (Platform.OS === 'web') {
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const fileName = `${label}_${date || 'form'}.html`;
+        if (typeof navigator !== 'undefined' && navigator.canShare) {
+          const file = new File([blob], fileName, { type: 'text/html' });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: label });
+            return;
+          }
+        }
+        // Fallback: open in new tab so user can download/share manually
+        window.open(URL.createObjectURL(blob), '_blank');
+      } else {
+        const { printToFileAsync } = await import('expo-print');
+        const { shareAsync } = await import('expo-sharing');
+        const { uri } = await printToFileAsync({ html, base64: false });
+        await shareAsync(uri, {
+          mimeType: 'application/pdf',
+          UTI: 'com.adobe.pdf',
+          dialogTitle: `إرسال ${label} عبر واتساب`,
+        });
+      }
+    } catch (e) {
+      Alert.alert('خطأ', 'فشل إنشاء النموذج: ' + (e?.message || ''));
+    } finally {
+      setGeneratingPdf(false);
     }
-  }, [formType, date, projectName, scopeName, startTime, endTime]);
+  }, [formType, date, projectName, scopeName, startTime, endTime, location, planItems, selectedItems, trainees, description, clientNotes, finishedSystems, systemChanges, procedureChanges, visitReason, visitEvents, visitRequests]);
 
   const handleGeneratePdf = async () => {
     setGeneratingPdf(true);
@@ -1401,7 +1419,7 @@ export default function QuickExecutionScreen({ navigation }) {
           <Text style={s.pdfBtnText}>{formTypeLabel}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={s.waBtn} onPress={sendWhatsApp}>
+        <TouchableOpacity style={[s.waBtn, generatingPdf && { opacity: 0.6 }]} onPress={sendWhatsApp} disabled={generatingPdf}>
           <Ionicons name="logo-whatsapp" size={20} color="#fff" />
           <Text style={s.waBtnText}>واتساب</Text>
         </TouchableOpacity>
