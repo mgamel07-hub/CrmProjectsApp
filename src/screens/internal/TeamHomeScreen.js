@@ -64,10 +64,10 @@ export default function TeamHomeScreen({ navigation }) {
     },
     {
       title: 'متابعة المهام',
-      subtitle: 'إسناد ومتابعة مهام الفريق',
+      subtitle: myRole === 'employee' ? 'سجّل مهامك المكتبية' : 'إسناد ومتابعة مهام الفريق',
       icon: 'people-outline',
       color: '#6A1B9A',
-      roles: ['admin', 'manager'],
+      roles: ['admin', 'manager', 'employee'],
       onPress: () => navigation.navigate('ManageTasks', { userId, allUsers }),
     },
     {

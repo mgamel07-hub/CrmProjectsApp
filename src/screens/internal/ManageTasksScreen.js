@@ -30,7 +30,12 @@ const PRIORITY = {
 
 const PRIORITY_ORDER = { high: 0, normal: 1, low: 2 };
 
-const EMPTY_FORM = { title: '', description: '', assignedTo: null, dueDate: null, priority: 'normal' };
+const TASK_TYPES = {
+  general: { label: 'مهمة عامة',    color: '#1565C0', bg: '#E3F2FD', icon: 'list-outline' },
+  office:  { label: 'عمل مكتبي',   color: '#00695C', bg: '#E0F2F1', icon: 'business-outline' },
+};
+
+const EMPTY_FORM = { title: '', description: '', assignedTo: null, dueDate: null, priority: 'normal', taskType: 'general', taskDate: null };
 
 export default function ManageTasksScreen({ route, navigation }) {
   const { user } = useAuth();
@@ -53,7 +58,9 @@ export default function ManageTasksScreen({ route, navigation }) {
   const [editingTaskId, setEditingTaskId] = useState(null); // null = create
   const [form,          setForm]          = useState(EMPTY_FORM);
   const [saving,        setSaving]        = useState(false);
-  const [showDatePicker,setShowDatePicker]= useState(false);
+  const [showDatePicker,    setShowDatePicker]    = useState(false);
+  const [showTaskDatePicker,setShowTaskDatePicker] = useState(false);
+  const [typeFilter,        setTypeFilter]         = useState(null); // null|'general'|'office'
 
   // Completion notes modal
   const [doneModal, setDoneModal] = useState({ visible: false, task: null, notes: '' });
@@ -74,7 +81,12 @@ export default function ManageTasksScreen({ route, navigation }) {
       else if (role === 'manager')
         visible = resolvedRec?.team_id ? members.filter(m => m.team_id === resolvedRec.team_id) : members;
       else visible = members;
-      setAssignableUsers(visible.filter(m => String(m.crm_user_id) !== selfId).map(memberToUser));
+      const selfMember = members.find(m => String(m.crm_user_id) === selfId);
+      const selfItem   = selfMember
+        ? { key: selfId, value: (selfMember.display_name || selfId) + ' (أنا)' }
+        : null;
+      const others = visible.filter(m => String(m.crm_user_id) !== selfId).map(memberToUser);
+      setAssignableUsers(selfItem ? [selfItem, ...others] : others);
       const memberIds = visible.map(m => String(m.crm_user_id));
       const allIds = selfId && !memberIds.includes(selfId) ? [selfId, ...memberIds] : memberIds;
       const taskData = allIds.length ? await getTeamTasks(allIds) : [];
@@ -114,6 +126,7 @@ export default function ManageTasksScreen({ route, navigation }) {
       if (statusFilter !== 'all' && t.status !== statusFilter) return false;
       if (assigneeFilter && String(t.assigned_to) !== assigneeFilter) return false;
       if (priorityFilter && t.priority !== priorityFilter) return false;
+      if (typeFilter && (t.task_type || 'general') !== typeFilter) return false;
       return true;
     })
     .sort((a, b) => {
@@ -171,8 +184,10 @@ export default function ManageTasksScreen({ route, navigation }) {
       title:      task.title || '',
       description:task.description || '',
       assignedTo: assignedUser,
-      dueDate:    task.due_date ? new Date(task.due_date) : null,
-      priority:   task.priority || 'normal',
+      dueDate:    task.due_date   ? new Date(task.due_date)   : null,
+      priority:   task.priority   || 'normal',
+      taskType:   task.task_type  || 'general',
+      taskDate:   task.task_date  ? new Date(task.task_date)  : null,
     });
     setModal(true);
   };
@@ -181,28 +196,42 @@ export default function ManageTasksScreen({ route, navigation }) {
 
   const save = async () => {
     if (!form.title.trim())       { Alert.alert('', 'أدخل عنوان المهمة'); return; }
-    if (!form.description.trim()) { Alert.alert('', 'الملاحظات إجبارية — أدخل تفاصيل المهمة'); return; }
+    if (!form.description.trim()) { Alert.alert('', 'أدخل التفاصيل'); return; }
     if (!form.assignedTo)         { Alert.alert('', 'اختر موظفاً'); return; }
+    if (form.taskType === 'office' && !form.taskDate) {
+      Alert.alert('', 'أدخل تاريخ يوم العمل في المكتب');
+      return;
+    }
     setSaving(true);
+    const isSelfOffice = form.taskType === 'office' && form.assignedTo.key === userId;
     try {
-      const dueDateStr = form.dueDate ? form.dueDate.toISOString().split('T')[0] : null;
+      const dueDateStr  = form.dueDate   ? form.dueDate.toISOString().split('T')[0]   : null;
+      const taskDateStr = form.taskDate  ? form.taskDate.toISOString().split('T')[0]  : null;
       const payload = {
         title:       form.title.trim(),
         description: form.description.trim(),
         assigned_to: form.assignedTo.key,
         due_date:    dueDateStr,
         priority:    form.priority,
+        task_type:   form.taskType,
+        task_date:   taskDateStr,
+        // مهام مكتبية على نفسه → تُنشأ منجزة مباشرة
+        ...(isSelfOffice && !editingTaskId
+          ? { status: 'done', done_at: taskDateStr }
+          : {}),
       };
       if (editingTaskId) {
         await updateTask(editingTaskId, payload);
       } else {
         await createTask({ ...payload, assigned_by: userId });
-        await createNotification({
-          to_user_id: form.assignedTo.key,
-          type: 'task_assigned',
-          message: `تم إسناد مهمة لك: ${form.title}`,
-          ref_type: 'task',
-        }).catch(() => {});
+        if (!isSelfOffice) {
+          await createNotification({
+            to_user_id: form.assignedTo.key,
+            type: 'task_assigned',
+            message: `تم إسناد مهمة لك: ${form.title}`,
+            ref_type: 'task',
+          }).catch(() => {});
+        }
       }
       setModal(false);
       load();
@@ -216,6 +245,10 @@ export default function ManageTasksScreen({ route, navigation }) {
   const dueDateLabel = form.dueDate
     ? form.dueDate.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })
     : 'اختر تاريخ...';
+
+  const taskDateLabel = form.taskDate
+    ? form.taskDate.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
+    : 'اختر تاريخ يوم المكتب...';
 
   const roleInfo = myRecord ? ROLE_LABELS[myRecord.role] : ROLE_LABELS['admin'];
   const teamName = myRecord?.teams?.name;
@@ -244,6 +277,14 @@ export default function ManageTasksScreen({ route, navigation }) {
             <Text style={styles.completionNote} numberOfLines={1}>💬 {item.completion_notes}</Text>
           ) : null}
           <View style={styles.metaRow}>
+            {item.task_type === 'office' && (
+              <View style={[styles.prioBadge, { backgroundColor: '#E0F2F1' }]}>
+                <Ionicons name="business-outline" size={9} color="#00695C" />
+                <Text style={[styles.prioBadgeText, { color: '#00695C' }]}>
+                  مكتبي{item.task_date ? ` · ${item.task_date}` : ''}
+                </Text>
+              </View>
+            )}
             {showPrio && (
               <View style={[styles.prioBadge, { backgroundColor: prio.bg }]}>
                 <Ionicons name={prio.icon} size={9} color={prio.color} />
@@ -357,6 +398,20 @@ export default function ManageTasksScreen({ route, navigation }) {
         ))}
       </ScrollView>
 
+      {/* Type filter chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.chipScroll, { borderTopWidth: 0 }]} contentContainerStyle={styles.chipRow}>
+        <TouchableOpacity style={[styles.chip, !typeFilter && styles.chipActive]} onPress={() => setTypeFilter(null)}>
+          <Text style={[styles.chipText, !typeFilter && styles.chipActiveText]}>كل الأنواع</Text>
+        </TouchableOpacity>
+        {Object.entries(TASK_TYPES).map(([k, t]) => (
+          <TouchableOpacity key={k} style={[styles.chip, typeFilter === k && { backgroundColor: t.color, borderColor: t.color }]}
+            onPress={() => setTypeFilter(typeFilter === k ? null : k)}>
+            <Ionicons name={t.icon} size={11} color={typeFilter === k ? '#fff' : t.color} />
+            <Text style={[styles.chipText, typeFilter === k && { color: '#fff' }]}>{t.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       {/* Assignee filter chips */}
       {allMembers.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.chipScroll, { borderTopWidth: 0 }]} contentContainerStyle={styles.chipRow}>
@@ -436,15 +491,49 @@ export default function ManageTasksScreen({ route, navigation }) {
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.sheetScroll} keyboardShouldPersistTaps="handled">
             <View style={styles.sheet}>
-              <Text style={styles.sheetTitle}>{editingTaskId ? 'تعديل المهمة' : 'إسناد مهمة جديدة'}</Text>
+              <Text style={styles.sheetTitle}>
+                {editingTaskId ? 'تعديل المهمة' : form.taskType === 'office' ? 'تسجيل عمل مكتبي' : 'إسناد مهمة جديدة'}
+              </Text>
 
-              <Text style={styles.label}>العنوان *</Text>
-              <TextInput style={styles.input} placeholder="عنوان المهمة..."
+              {/* Task type selector */}
+              {!editingTaskId && (
+                <>
+                  <Text style={styles.label}>النوع</Text>
+                  <View style={[styles.prioRow, { marginBottom: 16 }]}>
+                    {Object.entries(TASK_TYPES).map(([k, t]) => (
+                      <TouchableOpacity key={k}
+                        style={[styles.prioBtn, form.taskType === k && { backgroundColor: t.color, borderColor: t.color }]}
+                        onPress={() => setForm(f => ({ ...f, taskType: k, taskDate: null }))}>
+                        <Ionicons name={t.icon} size={13} color={form.taskType === k ? '#fff' : t.color} />
+                        <Text style={[styles.prioBtnText, form.taskType === k && { color: '#fff' }]}>{t.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {/* Auto-done notice for self office tasks */}
+              {form.taskType === 'office' && form.assignedTo?.key === userId && (
+                <View style={{ backgroundColor: '#E0F2F1', borderRadius: 8, padding: 10, marginBottom: 14, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                  <Ionicons name="checkmark-circle" size={16} color="#00695C" />
+                  <Text style={{ fontSize: 12, color: '#00695C', fontWeight: '600', flex: 1 }}>
+                    سيتم تسجيلها منجزة تلقائياً
+                  </Text>
+                </View>
+              )}
+
+              <Text style={styles.label}>
+                {form.taskType === 'office' ? 'ما الذي قمت به؟ *' : 'العنوان *'}
+              </Text>
+              <TextInput style={styles.input}
+                placeholder={form.taskType === 'office' ? 'اكتب العمل الذي قمت به...' : 'عنوان المهمة...'}
                 value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))} />
 
-              <Text style={styles.label}>الملاحظات *</Text>
+              <Text style={styles.label}>
+                {form.taskType === 'office' ? 'التفاصيل *' : 'الملاحظات *'}
+              </Text>
               <TextInput style={[styles.input, { height: 72 }]} multiline
-                placeholder="اكتب ملاحظات وتفاصيل المهمة..."
+                placeholder={form.taskType === 'office' ? 'تفاصيل ما تم إنجازه...' : 'اكتب ملاحظات وتفاصيل المهمة...'}
                 value={form.description} onChangeText={v => setForm(f => ({ ...f, description: v }))} />
 
               {/* Priority selector */}
@@ -459,6 +548,35 @@ export default function ManageTasksScreen({ route, navigation }) {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {/* task_date — required for office tasks */}
+              {form.taskType === 'office' && (
+                <>
+                  <Text style={styles.label}>تاريخ يوم المكتب *</Text>
+                  <TouchableOpacity style={[styles.dateBtn, { borderWidth: 1, borderColor: form.taskDate ? '#00695C' : '#ddd' }]}
+                    onPress={() => setShowTaskDatePicker(true)}>
+                    <Ionicons name="business-outline" size={16} color={form.taskDate ? '#00695C' : '#aaa'} />
+                    <Text style={[styles.dateBtnText, form.taskDate && { color: '#00695C' }]}>{taskDateLabel}</Text>
+                    {form.taskDate && (
+                      <TouchableOpacity onPress={() => setForm(f => ({ ...f, taskDate: null }))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="close-circle" size={16} color="#aaa" />
+                      </TouchableOpacity>
+                    )}
+                  </TouchableOpacity>
+                  {showTaskDatePicker && (
+                    <DateTimePicker
+                      value={form.taskDate || new Date()}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                      onChange={(event, selectedDate) => {
+                        setShowTaskDatePicker(Platform.OS === 'ios');
+                        if (event.type !== 'dismissed' && selectedDate) setForm(f => ({ ...f, taskDate: selectedDate }));
+                        if (Platform.OS === 'android') setShowTaskDatePicker(false);
+                      }}
+                    />
+                  )}
+                </>
+              )}
 
               <Text style={styles.label}>تاريخ الاستحقاق (اختياري)</Text>
               <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
