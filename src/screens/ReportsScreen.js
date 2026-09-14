@@ -6,7 +6,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, FlatList, StyleSheet, TouchableOpacity,
-  TextInput, RefreshControl, ActivityIndicator, Modal, Animated, Linking, Share,
+  TextInput, RefreshControl, ActivityIndicator, Modal, Animated, Linking, Share, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
@@ -110,6 +110,32 @@ function filterByPeriod(visits, period) {
     if (!d) return true;
     if (from && d < from) return false;
     if (to   && d > to)   return false;
+    return true;
+  });
+}
+
+// ─── Date filter constants + helper ──────────────────────────────────────────
+
+const CY = new Date().getFullYear();
+const DF_YEARS   = Array.from({ length: 6 }, (_, i) => CY - 3 + i);
+const DF_MONTHS  = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+const DF_QUARTERS= ['الربع الأول (يناير-مارس)','الربع الثاني (أبريل-يونيو)','الربع الثالث (يوليو-سبتمبر)','الربع الرابع (أكتوبر-ديسمبر)'];
+
+function filterByDateFilter(visits, df) {
+  if (!df || !df.mode) return visits;
+  return visits.filter(v => {
+    const d = visitDate(v).slice(0, 10);
+    if (!d) return true;
+    const dt = new Date(d + 'T00:00:00');
+    if (df.mode === 'day')     return d === df.from;
+    if (df.mode === 'year')    return dt.getFullYear() === df.year;
+    if (df.mode === 'month')   return dt.getFullYear() === df.year && dt.getMonth() === df.month;
+    if (df.mode === 'quarter') return dt.getFullYear() === df.year && Math.floor(dt.getMonth() / 3) === df.quarter;
+    if (df.mode === 'range') {
+      if (df.from && d < df.from) return false;
+      if (df.to   && d > df.to)   return false;
+      return true;
+    }
     return true;
   });
 }
@@ -430,12 +456,14 @@ function SystemModal({ item, onClose }) {
 
 function MultiSelectDropdown({ label, items, selected, onToggle, onClear, color = '#1565C0' }) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
   const count = selected.length;
+  const filtered = q.trim() ? items.filter(i => i.toLowerCase().includes(q.toLowerCase())) : items;
   return (
     <View style={s.msWrap}>
       <TouchableOpacity
         style={[s.msBtn, count > 0 && { borderColor: color, backgroundColor: color + '15' }]}
-        onPress={() => setOpen(v => !v)}
+        onPress={() => { setOpen(v => !v); setQ(''); }}
         activeOpacity={0.75}
       >
         <Text style={[s.msBtnText, count > 0 && { color }]} numberOfLines={1}>
@@ -443,7 +471,7 @@ function MultiSelectDropdown({ label, items, selected, onToggle, onClear, color 
         </Text>
         {count > 0 && (
           <TouchableOpacity
-            onPress={(e) => { e?.stopPropagation?.(); onClear(); setOpen(false); }}
+            onPress={(e) => { e?.stopPropagation?.(); onClear(); setOpen(false); setQ(''); }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons name="close-circle" size={16} color={color} />
@@ -453,7 +481,25 @@ function MultiSelectDropdown({ label, items, selected, onToggle, onClear, color 
       </TouchableOpacity>
       {open && (
         <View style={[s.msDropdown, { borderTopColor: color }]}>
-          {items.map(item => {
+          <View style={s.msSearchRow}>
+            <Ionicons name="search-outline" size={15} color="#aaa" />
+            <TextInput
+              style={s.msSearchInput}
+              value={q}
+              onChangeText={setQ}
+              placeholder={`بحث في ${label}…`}
+              placeholderTextColor="#bbb"
+              autoCorrect={false}
+            />
+            {q.length > 0 && (
+              <TouchableOpacity onPress={() => setQ('')} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <Ionicons name="close" size={14} color="#aaa" />
+              </TouchableOpacity>
+            )}
+          </View>
+          {filtered.length === 0 ? (
+            <Text style={s.msEmpty}>لا توجد نتائج</Text>
+          ) : filtered.map(item => {
             const checked = selected.includes(item);
             return (
               <TouchableOpacity
@@ -473,26 +519,146 @@ function MultiSelectDropdown({ label, items, selected, onToggle, onClear, color 
   );
 }
 
-// ─── Visit period pills ───────────────────────────────────────────────────────
+// ─── Date filter bar ─────────────────────────────────────────────────────────
 
-function VisitPeriodBar({ period, onSelect }) {
-  const opts = [
-    { key: null,      label: 'الكل' },
-    { key: 'week',    label: 'هذا الأسبوع' },
-    { key: 'month',   label: 'هذا الشهر' },
-    { key: 'quarter', label: 'هذا الربع' },
-    { key: 'year',    label: 'هذه السنة' },
-  ];
+function WebDateInput({ value, onChange, placeholder }) {
+  if (Platform.OS !== 'web') {
+    return (
+      <TextInput
+        style={s.dfDateInput}
+        value={value || ''}
+        onChangeText={onChange}
+        placeholder={placeholder || 'YYYY-MM-DD'}
+        placeholderTextColor="#bbb"
+      />
+    );
+  }
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.periodBar} contentContainerStyle={s.periodBarContent}>
-      {opts.map(o => (
-        <TouchableOpacity key={String(o.key)} style={[s.periodPill, period === o.key && s.periodPillActive]} onPress={() => onSelect(o.key)}>
-          <Text style={[s.periodPillText, period === o.key && s.periodPillTextActive]}>{o.label}</Text>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
+    <input
+      type="date"
+      value={value || ''}
+      onChange={e => onChange(e.target.value)}
+      style={{
+        fontSize: 13, padding: '6px 10px', borderRadius: 8,
+        border: '1.5px solid #ddd', color: '#333',
+        backgroundColor: '#fafafa', outline: 'none',
+        fontFamily: 'inherit', cursor: 'pointer',
+      }}
+    />
   );
 }
+
+function DateFilterBar({ df, onChange }) {
+  const MODES = [
+    { key: null,      label: 'الكل',        icon: 'time-outline' },
+    { key: 'day',     label: 'يوم',         icon: 'today-outline' },
+    { key: 'month',   label: 'شهر',         icon: 'calendar-outline' },
+    { key: 'quarter', label: 'ربع سنوي',    icon: 'stats-chart-outline' },
+    { key: 'year',    label: 'سنة',         icon: 'calendar-number-outline' },
+    { key: 'range',   label: 'نطاق مخصص',   icon: 'swap-horizontal-outline' },
+  ];
+  const mode  = df?.mode ?? null;
+  const year  = df?.year  ?? CY;
+  const month = df?.month ?? 0;
+  const quarter = df?.quarter ?? 0;
+
+  const setMode = m => onChange({ mode: m, year: CY, month: 0, quarter: 0, from: null, to: null });
+  const patch   = p  => onChange({ ...df, ...p });
+
+  return (
+    <View style={s.dfWrap}>
+      {/* Mode pills */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dfPillRow}>
+        {MODES.map(o => (
+          <TouchableOpacity
+            key={String(o.key)}
+            style={[s.dfPill, mode === o.key && s.dfPillActive]}
+            onPress={() => setMode(o.key)}
+            activeOpacity={0.75}
+          >
+            <Ionicons name={o.icon} size={13} color={mode === o.key ? '#fff' : '#666'} />
+            <Text style={[s.dfPillText, mode === o.key && { color: '#fff' }]}>{o.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Day picker */}
+      {mode === 'day' && (
+        <View style={s.dfPanel}>
+          <Text style={s.dfLabel}>اختر يوم:</Text>
+          <WebDateInput value={df?.from} onChange={v => patch({ from: v })} placeholder="اختر تاريخ" />
+        </View>
+      )}
+
+      {/* Month picker */}
+      {mode === 'month' && (
+        <View style={s.dfPanel}>
+          <View style={s.dfYearRow}>
+            {DF_YEARS.map(y => (
+              <TouchableOpacity key={y} style={[s.dfYearPill, year === y && s.dfYearActive]} onPress={() => patch({ year: y })}>
+                <Text style={[s.dfYearText, year === y && { color: '#fff' }]}>{y}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={s.dfMonthGrid}>
+            {DF_MONTHS.map((m, i) => (
+              <TouchableOpacity key={i} style={[s.dfMonthCell, month === i && s.dfMonthActive]} onPress={() => patch({ month: i })}>
+                <Text style={[s.dfMonthText, month === i && { color: '#fff' }]}>{m}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Quarter picker */}
+      {mode === 'quarter' && (
+        <View style={s.dfPanel}>
+          <View style={s.dfYearRow}>
+            {DF_YEARS.map(y => (
+              <TouchableOpacity key={y} style={[s.dfYearPill, year === y && s.dfYearActive]} onPress={() => patch({ year: y })}>
+                <Text style={[s.dfYearText, year === y && { color: '#fff' }]}>{y}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={s.dfQuarterRow}>
+            {DF_QUARTERS.map((q, i) => (
+              <TouchableOpacity key={i} style={[s.dfQuarterPill, quarter === i && s.dfQuarterActive]} onPress={() => patch({ quarter: i })}>
+                <Text style={[s.dfQuarterText, quarter === i && { color: '#fff' }]}>{q}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Year picker */}
+      {mode === 'year' && (
+        <View style={s.dfPanel}>
+          <View style={s.dfYearRow}>
+            {DF_YEARS.map(y => (
+              <TouchableOpacity key={y} style={[s.dfYearPill, year === y && s.dfYearActive]} onPress={() => patch({ year: y })}>
+                <Text style={[s.dfYearText, year === y && { color: '#fff' }]}>{y}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Range picker */}
+      {mode === 'range' && (
+        <View style={s.dfPanel}>
+          <View style={s.dfRangeRow}>
+            <Text style={s.dfLabel}>من:</Text>
+            <WebDateInput value={df?.from} onChange={v => patch({ from: v })} />
+            <Text style={[s.dfLabel, { marginHorizontal: 8 }]}>إلى:</Text>
+            <WebDateInput value={df?.to} onChange={v => patch({ to: v })} />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ─── Visit period pills (kept for reference, replaced by DateFilterBar) ───────
 
 // ─── Visit view toggle ────────────────────────────────────────────────────────
 
@@ -654,6 +820,7 @@ export default function ReportsScreen() {
 
   // Visits filters + state
   const [visitPeriod,    setVisitPeriod]    = useState(null);
+  const [dateFilter,     setDateFilter]     = useState({ mode: null });
   const [visitViewMode,  setVisitViewMode]  = useState('list');  // 'list' | 'client' | 'system' | 'calendar'
   const [visitSearch,    setVisitSearch]    = useState('');
   const [selectedVisit,  setSelectedVisit]  = useState(null);
@@ -731,7 +898,7 @@ export default function ReportsScreen() {
 
   // ── visits filter pipeline ───────────────────────────────────────────────
 
-  const periodFiltered = filterByPeriod(roleVisits, visitPeriod);
+  const periodFiltered = filterByDateFilter(filterByPeriod(roleVisits, visitPeriod), dateFilter);
 
   const filteredVisits = periodFiltered.filter(v => {
     if (onlyWithUnits && !hasUnits(v)) return false;
@@ -904,7 +1071,7 @@ export default function ReportsScreen() {
           <View style={s.stagesGrid}>
             {stageCards.map(card => (
               <StageCard key={card.name} name={card.name} count={card.count} sortOrder={card.sortOrder}
-                onPress={() => { setStageFilter(card.name); setTab('systems'); }} />
+                onPress={() => { setStageFilter([card.name]); setTab('systems'); }} />
             ))}
           </View>
           {stageCards.map(card => {
@@ -937,8 +1104,8 @@ export default function ReportsScreen() {
       {/* ════════════ VISITS TAB ═════════════════════════════════════════════ */}
       {tab === 'visits' && (
         <>
-          {/* Period filter pills */}
-          <VisitPeriodBar period={visitPeriod} onSelect={setVisitPeriod} />
+          {/* Date filter */}
+          <DateFilterBar df={dateFilter} onChange={setDateFilter} />
 
           {/* View mode toggle */}
           <VisitViewToggle mode={visitViewMode} onSelect={setVisitViewMode} />
@@ -1282,16 +1449,41 @@ const s = StyleSheet.create({
   msBtn:      { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5, borderColor: '#ddd', backgroundColor: '#fafafa' },
   msBtnText:  { flex: 1, fontSize: 14, color: '#555', fontWeight: '700', textAlign: 'right' },
   msDropdown: { marginTop: 4, borderRadius: 10, borderWidth: 1.5, borderTopWidth: 3, borderColor: '#ddd', backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
-  msItem:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  msItemText: { flex: 1, fontSize: 14, color: '#333', textAlign: 'right' },
+  msItem:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  msItemText:    { flex: 1, fontSize: 14, color: '#333', textAlign: 'right' },
+  msSearchRow:   { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: '#fafafa' },
+  msSearchInput: { flex: 1, fontSize: 13, color: '#333', textAlign: 'right', paddingVertical: 2 },
+  msEmpty:       { textAlign: 'center', fontSize: 13, color: '#bbb', paddingVertical: 14 },
 
-  // Visit period pills
+  // Visit period pills (kept, may still be used elsewhere)
   periodBar:        { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', maxHeight: 46 },
   periodBarContent: { paddingHorizontal: 10, paddingVertical: 8, gap: 6 },
   periodPill:       { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 5, backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#E8E8E8' },
   periodPillActive: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
   periodPillText:   { fontSize: 12, color: '#666', fontWeight: '600' },
   periodPillTextActive: { color: '#fff' },
+  // ─── Date filter bar ─────────────────────────────────────────────────────
+  dfWrap:        { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  dfPillRow:     { paddingHorizontal: 10, paddingVertical: 8, gap: 6 },
+  dfPill:        { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#f5f5f5', borderWidth: 1.5, borderColor: '#E8E8E8' },
+  dfPillActive:  { backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  dfPillText:    { fontSize: 12, color: '#555', fontWeight: '700' },
+  dfPanel:       { paddingHorizontal: 12, paddingBottom: 12, paddingTop: 4 },
+  dfLabel:       { fontSize: 12, color: '#888', fontWeight: '600', marginBottom: 6 },
+  dfYearRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  dfYearPill:    { borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: '#f5f5f5', borderWidth: 1.5, borderColor: '#ddd' },
+  dfYearActive:  { backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  dfYearText:    { fontSize: 13, color: '#444', fontWeight: '700' },
+  dfMonthGrid:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  dfMonthCell:   { borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#f5f5f5', borderWidth: 1.5, borderColor: '#ddd', minWidth: 70, alignItems: 'center' },
+  dfMonthActive: { backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  dfMonthText:   { fontSize: 12, color: '#444', fontWeight: '600' },
+  dfQuarterRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  dfQuarterPill: { flex: 1, minWidth: '45%', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#f5f5f5', borderWidth: 1.5, borderColor: '#ddd', alignItems: 'center' },
+  dfQuarterActive:{ backgroundColor: '#1565C0', borderColor: '#1565C0' },
+  dfQuarterText: { fontSize: 13, color: '#444', fontWeight: '700', textAlign: 'center' },
+  dfRangeRow:    { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  dfDateInput:   { borderRadius: 8, borderWidth: 1.5, borderColor: '#ddd', paddingHorizontal: 10, paddingVertical: 7, fontSize: 13, color: '#333', backgroundColor: '#fafafa', minWidth: 120 },
 
   // Visit view toggle
   viewToggle: { flexDirection: 'row', backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 6, gap: 6, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
