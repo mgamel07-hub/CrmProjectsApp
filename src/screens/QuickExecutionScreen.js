@@ -942,15 +942,26 @@ export default function QuickExecutionScreen({ navigation }) {
       if (Platform.OS === 'web') {
         const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
         const fileName = `${label}_${date || 'form'}.html`;
+        // Try Web Share API with file (works on mobile browsers like Chrome on Android)
         if (typeof navigator !== 'undefined' && navigator.canShare) {
-          const file = new File([blob], fileName, { type: 'text/html' });
-          if (navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: label });
-            return;
-          }
+          try {
+            const file = new File([blob], fileName, { type: 'text/html' });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({ files: [file], title: label });
+              return;
+            }
+          } catch { /* cancelled or not supported, fall through */ }
         }
-        // Fallback: open in new tab so user can download/share manually
-        window.open(URL.createObjectURL(blob), '_blank');
+        // Fallback: auto-download the file
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        Alert.alert('تم تنزيل النموذج', 'يمكنك الآن إرساله عبر واتساب من مجلد التنزيلات');
       } else {
         const { printToFileAsync } = await import('expo-print');
         const { shareAsync } = await import('expo-sharing');
