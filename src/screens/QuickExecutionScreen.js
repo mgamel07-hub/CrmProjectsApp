@@ -1,7 +1,7 @@
 /**
  * QuickExecutionScreen — إضافة تنفيذ + توليد 4 نماذج رسمية
  */
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Alert, Platform, Linking,
@@ -605,6 +605,11 @@ export default function QuickExecutionScreen({ navigation }) {
   const [visitEvents,   setVisitEvents]   = useState('');
   const [visitRequests, setVisitRequests] = useState('');
 
+  // Email preview
+  const [emailBody,     setEmailBody]     = useState('');
+  const [emailModified, setEmailModified] = useState(false);
+  const [emailExpanded, setEmailExpanded] = useState(false);
+
   // Loading flags
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingScopes,   setLoadingScopes]   = useState(false);
@@ -876,6 +881,30 @@ export default function QuickExecutionScreen({ navigation }) {
     return parts.join('\n\n') || null;
   }, [formType, description, trainees, clientNotes, finishedSystems, systemChanges, procedureChanges, visitEvents, visitRequests, sendPolicy]);
 
+  const buildEmailBody = useMemo(() => {
+    const selected = planItems.filter(item => selectedItems.includes(item.id));
+    const desc = buildDescription();
+    const lines = [
+      `الأخوة / ${projectName || '...'}`,
+      '',
+      'السلام عليكم ورحمة الله وبركاته،',
+      '',
+      'نفيدكم بأنه تم تنفيذ البنود التالية ضمن خطة المشروع:',
+      '',
+      ...(selected.length > 0 ? selected.map(i => `• ${i.title || i.name || ''}`) : ['• ...']),
+      '',
+      'الوصف:',
+      ...(desc ? [desc] : []),
+      '',
+      'مع خالص التحية،',
+    ];
+    return lines.join('\n');
+  }, [projectName, planItems, selectedItems, buildDescription]);
+
+  useEffect(() => {
+    if (!emailModified) setEmailBody(buildEmailBody);
+  }, [buildEmailBody, emailModified]);
+
   const handleSave = async () => {
     if (submittedRef.current) return;
     if (!planId)  return Alert.alert('تنبيه', 'اختر الخطة أولاً');
@@ -883,12 +912,29 @@ export default function QuickExecutionScreen({ navigation }) {
     submittedRef.current = true;
     setSaving(true);
     try {
+      let finalDesc;
+      if (emailModified) {
+        const marker = 'الوصف:\n';
+        const closeMarker = '\n\nمع خالص التحية،';
+        const start = emailBody.indexOf(marker);
+        if (start !== -1) {
+          const end = emailBody.indexOf(closeMarker, start);
+          finalDesc = (end !== -1
+            ? emailBody.slice(start + marker.length, end)
+            : emailBody.slice(start + marker.length)
+          ).trim() || null;
+        } else {
+          finalDesc = emailBody.trim() || null;
+        }
+      } else {
+        finalDesc = buildDescription();
+      }
       const res = await createProjectVisit({
         projectPlanId: planId,
         executionDate: date,
         startTime: startTime || null,
         endTime: endTime || null,
-        description: buildDescription(),
+        description: finalDesc,
         projectPlanItemIds: selectedItems,
         hideItemsInEmail: false,
         skipEmailNotification: false,
@@ -1416,6 +1462,41 @@ export default function QuickExecutionScreen({ navigation }) {
         </View>
       </Field>
 
+      {/* Email Preview */}
+      <View style={s.emailSection}>
+        <TouchableOpacity
+          style={s.emailHeader}
+          onPress={() => setEmailExpanded(v => !v)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="mail-outline" size={18} color="#1565C0" />
+          <Text style={s.emailHeaderText}>صيغة البريد الإلكتروني</Text>
+          {emailModified && <View style={s.emailModifiedDot} />}
+          <View style={{ flex: 1 }} />
+          {emailExpanded && emailModified && (
+            <TouchableOpacity
+              onPress={() => { setEmailBody(buildEmailBody); setEmailModified(false); }}
+              style={s.emailResetBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={s.emailResetText}>إعادة الضبط</Text>
+            </TouchableOpacity>
+          )}
+          <Ionicons name={emailExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#888" />
+        </TouchableOpacity>
+        {emailExpanded && (
+          <TextInput
+            style={s.emailInput}
+            multiline
+            value={emailBody}
+            onChangeText={(t) => { setEmailBody(t); setEmailModified(true); }}
+            textAlign="right"
+            placeholder="صيغة البريد الإلكتروني..."
+            scrollEnabled={false}
+          />
+        )}
+      </View>
+
       {/* Action buttons */}
       <View style={s.buttonsRow}>
         <TouchableOpacity
@@ -1594,5 +1675,29 @@ const s = StyleSheet.create({
   policyBtnSub: { fontSize: 11, color: '#888', marginTop: 1 },
   policyDot: {
     width: 10, height: 10, borderRadius: 5, backgroundColor: '#4CAF50',
+  },
+
+  emailSection: {
+    borderWidth: 1.5, borderColor: '#1565C0', borderRadius: 12,
+    backgroundColor: '#fff', overflow: 'hidden', marginBottom: 4,
+  },
+  emailHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: '#E3F2FD',
+  },
+  emailHeaderText: { fontSize: 14, fontWeight: '700', color: '#1565C0' },
+  emailModifiedDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: '#E65100',
+  },
+  emailResetBtn: {
+    backgroundColor: '#fff', borderRadius: 6, borderWidth: 1, borderColor: '#1565C0',
+    paddingHorizontal: 8, paddingVertical: 4, marginRight: 4,
+  },
+  emailResetText: { fontSize: 12, color: '#1565C0', fontWeight: '600' },
+  emailInput: {
+    padding: 14, fontSize: 13, color: '#1a1a1a', lineHeight: 22,
+    textAlignVertical: 'top', minHeight: 200,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
 });
