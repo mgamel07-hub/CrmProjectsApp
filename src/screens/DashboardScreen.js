@@ -548,13 +548,22 @@ export default function DashboardScreen({ navigation }) {
             </Text>
             <Text style={styles.quickCardSub}>أضف إجراء زيارة مباشرة</Text>
           </View>
-          <TouchableOpacity
-            style={styles.quickCardBtn}
-            onPress={() => navigation.navigate('QuickExecution')}
-          >
-            <Ionicons name="add-circle" size={20} color="#fff" />
-            <Text style={styles.quickCardBtnText}>إجراء سريع</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              style={[styles.quickCardBtn, { backgroundColor: '#6A1B9A' }]}
+              onPress={() => navigation.navigate('ManageTasks', { userId: user?.userId != null ? String(user.userId) : String(user?.id ?? '') })}
+            >
+              <Ionicons name="people-outline" size={20} color="#fff" />
+              <Text style={styles.quickCardBtnText}>المهام</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickCardBtn}
+              onPress={() => navigation.navigate('QuickExecution')}
+            >
+              <Ionicons name="add-circle" size={20} color="#fff" />
+              <Text style={styles.quickCardBtnText}>إجراء سريع</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ── Donut: project status distribution ─────────────────────── */}
