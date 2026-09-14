@@ -9,6 +9,7 @@ import {
   getTeamTasks, createTask, updateTask, deleteTask,
   markTaskDone, markTaskPending,
   createNotification, getTeamMembers, getMyTeamRecord,
+  getWeekSchedule,
 } from '../../api/internal';
 import { useAuth } from '../../context/AuthContext';
 
@@ -58,9 +59,15 @@ export default function ManageTasksScreen({ route, navigation }) {
   const [editingTaskId, setEditingTaskId] = useState(null); // null = create
   const [form,          setForm]          = useState(EMPTY_FORM);
   const [saving,        setSaving]        = useState(false);
-  const [showDatePicker,    setShowDatePicker]    = useState(false);
-  const [showTaskDatePicker,setShowTaskDatePicker] = useState(false);
-  const [typeFilter,        setTypeFilter]         = useState(null); // null|'general'|'office'
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [typeFilter,     setTypeFilter]     = useState(null); // null|'general'|'office'
+
+  // Office days (from approved schedule_entries)
+  const [officeDays,        setOfficeDays]        = useState([]);
+  const [officeDaysLoading, setOfficeDaysLoading] = useState(false);
+
+  // Bullet points for office task description
+  const [bullets, setBullets] = useState(['']);
 
   // Completion notes modal
   const [doneModal, setDoneModal] = useState({ visible: false, task: null, notes: '' });
@@ -100,6 +107,33 @@ export default function ManageTasksScreen({ route, navigation }) {
   }, [userId, user?.fullName]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Fetch approved office schedule days for a user (last 120 days)
+  const loadOfficeDays = useCallback(async (targetUserId) => {
+    if (!targetUserId) return;
+    setOfficeDaysLoading(true);
+    try {
+      const to   = new Date().toISOString().split('T')[0];
+      const from = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const entries = await getWeekSchedule(targetUserId, from, to);
+      const days = (entries || [])
+        .filter(e => e.type === 'office' && e.status === 'approved')
+        .map(e => e.date)
+        .sort((a, b) => b.localeCompare(a)); // newest first
+      setOfficeDays(days);
+    } catch {
+      setOfficeDays([]);
+    } finally {
+      setOfficeDaysLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (modal && form.taskType === 'office') {
+      const targetId = form.assignedTo?.key || userId;
+      loadOfficeDays(targetId);
+    }
+  }, [modal, form.taskType, form.assignedTo?.key, userId, loadOfficeDays]);
 
   const nameOf = (id) => {
     if (!id) return '—';
@@ -174,45 +208,68 @@ export default function ManageTasksScreen({ route, navigation }) {
   const openCreate = () => {
     setEditingTaskId(null);
     setForm(EMPTY_FORM);
+    setBullets(['']);
+    setOfficeDays([]);
     setModal(true);
   };
 
   const openEdit = (task) => {
     setEditingTaskId(task.id);
     const assignedUser = assignableUsers.find(u => u.key === String(task.assigned_to)) || null;
+    const ttype = task.task_type || 'general';
     setForm({
       title:      task.title || '',
-      description:task.description || '',
+      description:ttype === 'office' ? '' : (task.description || ''),
       assignedTo: assignedUser,
-      dueDate:    task.due_date   ? new Date(task.due_date)   : null,
-      priority:   task.priority   || 'normal',
-      taskType:   task.task_type  || 'general',
-      taskDate:   task.task_date  ? new Date(task.task_date)  : null,
+      dueDate:    ttype === 'office' ? null : (task.due_date ? new Date(task.due_date) : null),
+      priority:   task.priority || 'normal',
+      taskType:   ttype,
+      taskDate:   task.task_date ? new Date(task.task_date + 'T12:00:00') : null,
     });
+    if (ttype === 'office' && task.description) {
+      const parsed = task.description.split('\n')
+        .map(l => l.replace(/^•\s*/, '').trim())
+        .filter(Boolean);
+      setBullets(parsed.length ? parsed : ['']);
+    } else {
+      setBullets(['']);
+    }
+    setOfficeDays([]);
     setModal(true);
   };
 
   // ── Save (create or update) ───────────────────────────────────────────────────
 
   const save = async () => {
-    if (!form.title.trim())       { Alert.alert('', 'أدخل عنوان المهمة'); return; }
-    if (!form.description.trim()) { Alert.alert('', 'أدخل التفاصيل'); return; }
-    if (!form.assignedTo)         { Alert.alert('', 'اختر موظفاً'); return; }
-    if (form.taskType === 'office' && !form.taskDate) {
-      Alert.alert('', 'أدخل تاريخ يوم العمل في المكتب');
+    if (!form.title.trim()) { Alert.alert('', 'أدخل عنوان المهمة'); return; }
+    if (!form.assignedTo)   { Alert.alert('', 'اختر موظفاً'); return; }
+
+    const isOffice = form.taskType === 'office';
+    let descStr = '';
+    if (isOffice) {
+      const filled = bullets.filter(b => b.trim());
+      if (!filled.length) { Alert.alert('', 'أضف نقطة واحدة على الأقل'); return; }
+      descStr = filled.map(b => `• ${b.trim()}`).join('\n');
+    } else {
+      if (!form.description.trim()) { Alert.alert('', 'أدخل التفاصيل'); return; }
+      descStr = form.description.trim();
+    }
+
+    if (isOffice && !form.taskDate) {
+      Alert.alert('', 'اختر يوم العمل في المكتب');
       return;
     }
     setSaving(true);
-    const isSelfOffice = form.taskType === 'office' && form.assignedTo.key === userId;
+    const isSelfOffice = isOffice && form.assignedTo.key === userId;
     try {
-      const dueDateStr  = form.dueDate   ? form.dueDate.toISOString().split('T')[0]   : null;
-      const taskDateStr = form.taskDate  ? form.taskDate.toISOString().split('T')[0]  : null;
+      const dueDateStr  = isOffice ? null : (form.dueDate ? form.dueDate.toISOString().split('T')[0] : null);
+      const taskDateStr = form.taskDate ? form.taskDate.toISOString().split('T')[0] : null;
       const payload = {
         title:       form.title.trim(),
-        description: form.description.trim(),
+        description: descStr,
         assigned_to: form.assignedTo.key,
         due_date:    dueDateStr,
-        priority:    form.priority,
+        priority:    isOffice ? 'normal' : form.priority,
         task_type:   form.taskType,
         task_date:   taskDateStr,
         // مهام مكتبية على نفسه → تُنشأ منجزة مباشرة
@@ -245,10 +302,6 @@ export default function ManageTasksScreen({ route, navigation }) {
   const dueDateLabel = form.dueDate
     ? form.dueDate.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })
     : 'اختر تاريخ...';
-
-  const taskDateLabel = form.taskDate
-    ? form.taskDate.toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })
-    : 'اختر تاريخ يوم المكتب...';
 
   const roleInfo = myRecord ? ROLE_LABELS[myRecord.role] : ROLE_LABELS['admin'];
   const teamName = myRecord?.teams?.name;
@@ -503,7 +556,11 @@ export default function ManageTasksScreen({ route, navigation }) {
                     {Object.entries(TASK_TYPES).map(([k, t]) => (
                       <TouchableOpacity key={k}
                         style={[styles.prioBtn, form.taskType === k && { backgroundColor: t.color, borderColor: t.color }]}
-                        onPress={() => setForm(f => ({ ...f, taskType: k, taskDate: null }))}>
+                        onPress={() => {
+                        setForm(f => ({ ...f, taskType: k, taskDate: null, dueDate: null }));
+                        setBullets(['']);
+                        setOfficeDays([]);
+                      }}>
                         <Ionicons name={t.icon} size={13} color={form.taskType === k ? '#fff' : t.color} />
                         <Text style={[styles.prioBtnText, form.taskType === k && { color: '#fff' }]}>{t.label}</Text>
                       </TouchableOpacity>
@@ -526,81 +583,126 @@ export default function ManageTasksScreen({ route, navigation }) {
                 {form.taskType === 'office' ? 'ما الذي قمت به؟ *' : 'العنوان *'}
               </Text>
               <TextInput style={styles.input}
-                placeholder={form.taskType === 'office' ? 'اكتب العمل الذي قمت به...' : 'عنوان المهمة...'}
+                placeholder={form.taskType === 'office' ? 'اكتب ملخص يوم العمل...' : 'عنوان المهمة...'}
                 value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))} />
 
-              <Text style={styles.label}>
-                {form.taskType === 'office' ? 'التفاصيل *' : 'الملاحظات *'}
-              </Text>
-              <TextInput style={[styles.input, { height: 72 }]} multiline
-                placeholder={form.taskType === 'office' ? 'تفاصيل ما تم إنجازه...' : 'اكتب ملاحظات وتفاصيل المهمة...'}
-                value={form.description} onChangeText={v => setForm(f => ({ ...f, description: v }))} />
-
-              {/* Priority selector */}
-              <Text style={styles.label}>الأولوية</Text>
-              <View style={styles.prioRow}>
-                {Object.entries(PRIORITY).map(([k, p]) => (
-                  <TouchableOpacity key={k}
-                    style={[styles.prioBtn, form.priority === k && { backgroundColor: p.color, borderColor: p.color }]}
-                    onPress={() => setForm(f => ({ ...f, priority: k }))}>
-                    <Ionicons name={p.icon} size={13} color={form.priority === k ? '#fff' : p.color} />
-                    <Text style={[styles.prioBtnText, form.priority === k && { color: '#fff' }]}>{p.label}</Text>
+              {/* Description: bullet points for office, textarea for general */}
+              {form.taskType === 'office' ? (
+                <>
+                  <Text style={styles.label}>ما الذي تم إنجازه؟ (نقاط) *</Text>
+                  {bullets.map((b, i) => (
+                    <View key={i} style={styles.bulletRow}>
+                      <Text style={styles.bulletDot}>•</Text>
+                      <TextInput
+                        style={[styles.input, styles.bulletInput]}
+                        placeholder="أضف نقطة..."
+                        value={b}
+                        onChangeText={v => { const n = [...bullets]; n[i] = v; setBullets(n); }}
+                        onSubmitEditing={() => { if (i === bullets.length - 1) setBullets([...bullets, '']); }}
+                        returnKeyType="next"
+                        blurOnSubmit={false}
+                      />
+                      {bullets.length > 1 && (
+                        <TouchableOpacity onPress={() => setBullets(bullets.filter((_, j) => j !== i))}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                          <Ionicons name="remove-circle" size={20} color="#e57373" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                  <TouchableOpacity style={styles.addBulletBtn} onPress={() => setBullets([...bullets, ''])}>
+                    <Ionicons name="add-circle-outline" size={16} color="#00695C" />
+                    <Text style={styles.addBulletText}>إضافة نقطة</Text>
                   </TouchableOpacity>
-                ))}
-              </View>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.label}>الملاحظات *</Text>
+                  <TextInput style={[styles.input, { height: 72 }]} multiline
+                    placeholder="اكتب ملاحظات وتفاصيل المهمة..."
+                    value={form.description} onChangeText={v => setForm(f => ({ ...f, description: v }))} />
+                </>
+              )}
 
-              {/* task_date — required for office tasks */}
+              {/* Priority selector — hidden for office tasks */}
+              {form.taskType !== 'office' && (
+                <>
+                  <Text style={styles.label}>الأولوية</Text>
+                  <View style={styles.prioRow}>
+                    {Object.entries(PRIORITY).map(([k, p]) => (
+                      <TouchableOpacity key={k}
+                        style={[styles.prioBtn, form.priority === k && { backgroundColor: p.color, borderColor: p.color }]}
+                        onPress={() => setForm(f => ({ ...f, priority: k }))}>
+                        <Ionicons name={p.icon} size={13} color={form.priority === k ? '#fff' : p.color} />
+                        <Text style={[styles.prioBtnText, form.priority === k && { color: '#fff' }]}>{p.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {/* task_date — office days chips from approved schedule */}
               {form.taskType === 'office' && (
                 <>
-                  <Text style={styles.label}>تاريخ يوم المكتب *</Text>
-                  <TouchableOpacity style={[styles.dateBtn, { borderWidth: 1, borderColor: form.taskDate ? '#00695C' : '#ddd' }]}
-                    onPress={() => setShowTaskDatePicker(true)}>
-                    <Ionicons name="business-outline" size={16} color={form.taskDate ? '#00695C' : '#aaa'} />
-                    <Text style={[styles.dateBtnText, form.taskDate && { color: '#00695C' }]}>{taskDateLabel}</Text>
-                    {form.taskDate && (
-                      <TouchableOpacity onPress={() => setForm(f => ({ ...f, taskDate: null }))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Ionicons name="close-circle" size={16} color="#aaa" />
-                      </TouchableOpacity>
-                    )}
-                  </TouchableOpacity>
-                  {showTaskDatePicker && (
-                    <DateTimePicker
-                      value={form.taskDate || new Date()}
-                      mode="date"
-                      display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                      onChange={(event, selectedDate) => {
-                        setShowTaskDatePicker(Platform.OS === 'ios');
-                        if (event.type !== 'dismissed' && selectedDate) setForm(f => ({ ...f, taskDate: selectedDate }));
-                        if (Platform.OS === 'android') setShowTaskDatePicker(false);
-                      }}
-                    />
+                  <Text style={styles.label}>يوم العمل في المكتب *</Text>
+                  {officeDaysLoading ? (
+                    <ActivityIndicator color="#00695C" style={{ marginBottom: 14 }} />
+                  ) : officeDays.length === 0 ? (
+                    <View style={{ backgroundColor: '#FFF8E1', borderRadius: 8, padding: 10, marginBottom: 14 }}>
+                      <Text style={{ fontSize: 12, color: '#F57F17' }}>
+                        لا توجد أيام مكتب معتمدة في الجدول الأسبوعي لهذا الموظف
+                      </Text>
+                    </View>
+                  ) : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ gap: 8, paddingVertical: 6, marginBottom: 14 }}>
+                      {officeDays.map(date => {
+                        const dateObj  = new Date(date + 'T12:00:00');
+                        const isSelected = form.taskDate
+                          ? form.taskDate.toISOString().split('T')[0] === date
+                          : false;
+                        return (
+                          <TouchableOpacity key={date}
+                            style={[styles.dayChip, isSelected && styles.dayChipSelected]}
+                            onPress={() => setForm(f => ({ ...f, taskDate: dateObj }))}>
+                            <Text style={[styles.dayChipText, isSelected && styles.dayChipTextSelected]}>
+                              {dateObj.toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
                   )}
                 </>
               )}
 
-              <Text style={styles.label}>تاريخ الاستحقاق (اختياري)</Text>
-              <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
-                <Ionicons name="calendar-outline" size={16} color={form.dueDate ? '#1565C0' : '#aaa'} />
-                <Text style={[styles.dateBtnText, form.dueDate && { color: '#1565C0' }]}>{dueDateLabel}</Text>
-                {form.dueDate && (
-                  <TouchableOpacity onPress={() => setForm(f => ({ ...f, dueDate: null }))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close-circle" size={16} color="#aaa" />
+              {/* Due date — hidden for office tasks */}
+              {form.taskType !== 'office' && (
+                <>
+                  <Text style={styles.label}>تاريخ الاستحقاق (اختياري)</Text>
+                  <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
+                    <Ionicons name="calendar-outline" size={16} color={form.dueDate ? '#1565C0' : '#aaa'} />
+                    <Text style={[styles.dateBtnText, form.dueDate && { color: '#1565C0' }]}>{dueDateLabel}</Text>
+                    {form.dueDate && (
+                      <TouchableOpacity onPress={() => setForm(f => ({ ...f, dueDate: null }))} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="close-circle" size={16} color="#aaa" />
+                      </TouchableOpacity>
+                    )}
                   </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-
-              {showDatePicker && (
-                <DateTimePicker
-                  value={form.dueDate || new Date()}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                  minimumDate={new Date()}
-                  onChange={(event, selectedDate) => {
-                    setShowDatePicker(Platform.OS === 'ios');
-                    if (event.type !== 'dismissed' && selectedDate) setForm(f => ({ ...f, dueDate: selectedDate }));
-                    if (Platform.OS === 'android') setShowDatePicker(false);
-                  }}
-                />
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={form.dueDate || new Date()}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                      minimumDate={new Date()}
+                      onChange={(event, selectedDate) => {
+                        setShowDatePicker(Platform.OS === 'ios');
+                        if (event.type !== 'dismissed' && selectedDate) setForm(f => ({ ...f, dueDate: selectedDate }));
+                        if (Platform.OS === 'android') setShowDatePicker(false);
+                      }}
+                    />
+                  )}
+                </>
               )}
 
               <Text style={styles.label}>
@@ -727,4 +829,17 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: 14, color: '#666', fontWeight: '600' },
   saveBtn: { flex: 2, paddingVertical: 12, borderRadius: 10, backgroundColor: '#6A1B9A', alignItems: 'center', justifyContent: 'center' },
   saveText: { fontSize: 14, color: '#fff', fontWeight: '700' },
+
+  // Bullet points
+  bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  bulletDot: { fontSize: 18, color: '#00695C', width: 18, textAlign: 'center' },
+  bulletInput: { flex: 1, height: 40, marginBottom: 0 },
+  addBulletBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 4, marginBottom: 14 },
+  addBulletText: { fontSize: 13, color: '#00695C', fontWeight: '600' },
+
+  // Office day chips (inside modal)
+  dayChip: { paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#f0f0f0', borderRadius: 20, borderWidth: 1.5, borderColor: '#e0e0e0' },
+  dayChipSelected: { backgroundColor: '#00695C', borderColor: '#00695C' },
+  dayChipText: { fontSize: 13, color: '#444', fontWeight: '600' },
+  dayChipTextSelected: { color: '#fff' },
 });
