@@ -55,6 +55,7 @@ export default function WeeklyScheduleScreen({ route }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ type: 'office', client_name: '', vacation_type: 'عارضة', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   // Customer picker state
   const [customers, setCustomers] = useState([]);
@@ -154,12 +155,20 @@ export default function WeeklyScheduleScreen({ route }) {
   };
 
   const del = async (entry) => {
-    Alert.alert('حذف', 'حذف هذا اليوم من الجدول؟', [
-      { text: 'إلغاء', style: 'cancel' },
-      { text: 'حذف', style: 'destructive', onPress: async () => {
-        try { await deleteScheduleEntry(entry.id); load(); } catch (e) { Alert.alert('خطأ', e.message); }
-      }},
-    ]);
+    const isEmployee = myRole !== 'admin' && myRole !== 'manager';
+    if (isEmployee && entry.status === 'approved') {
+      Alert.alert('', 'لا يمكن حذف مدخل معتمد. يمكنك الضغط عليه لإرسال طلب تعديل.');
+      return;
+    }
+    try {
+      setDeletingId(entry.id);
+      await deleteScheduleEntry(entry.id);
+      load();
+    } catch (e) {
+      Alert.alert('خطأ', e.message);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const weekLabel = () => {
@@ -225,9 +234,18 @@ export default function WeeklyScheduleScreen({ route }) {
                     {entry.status === 'pending' ? (
                       <Text style={styles.pendingLabel}>بانتظار الاعتماد</Text>
                     ) : null}
-                    <TouchableOpacity style={styles.delBtn} onPress={() => del(entry)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Ionicons name="trash-outline" size={14} color="#aaa" />
-                    </TouchableOpacity>
+                    {(myRole === 'admin' || myRole === 'manager' || entry.status !== 'approved') && (
+                      <TouchableOpacity
+                        style={styles.delBtn}
+                        onPress={ev => { ev?.stopPropagation?.(); del(entry); }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        {deletingId === entry.id
+                          ? <ActivityIndicator size="small" color="#D32F2F" />
+                          : <Ionicons name="trash-outline" size={14} color={entry.status === 'pending' ? '#D32F2F' : '#aaa'} />
+                        }
+                      </TouchableOpacity>
+                    )}
                   </View>
                 ) : (
                   <View style={styles.emptyDay}>
