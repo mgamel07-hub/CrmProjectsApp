@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getTeamWeekSchedule, getTeamMembers, getMyTeamRecord } from '../../api/internal';
+import { getTeamWeekSchedule, getTeamMembers, getMyTeamRecord, getTeamTasks } from '../../api/internal';
 import { useAuth } from '../../context/AuthContext';
 
 const DAYS_SHORT   = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمس', 'جمع', 'سبت'];
@@ -42,6 +42,7 @@ export default function TeamScheduleScreen({ route }) {
   const [days,        setDays]        = useState([]);
   const [users,       setUsers]       = useState([]);   // [{ id, fullName, teamId, teamName }]
   const [entries,     setEntries]     = useState([]);
+  const [tasks,       setTasks]       = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [myRole,      setMyRole]      = useState('employee');
   const [detailModal, setDetailModal] = useState(null); // { entry, name } | null
@@ -82,11 +83,15 @@ export default function TeamScheduleScreen({ route }) {
 
       if (userList.length) {
         const ids     = userList.map(u => String(u.id));
-        const rawData = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));
+        const [rawData, taskData] = await Promise.all([
+          getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6])),
+          getTeamTasks(ids),
+        ]);
         const data    = role === 'employee'
           ? rawData
           : rawData.filter(e => !e.status || e.status === 'approved');
         setEntries(data);
+        setTasks(taskData || []);
 
         // Hide rows with no entries this week (unless nobody has entries)
         const visible = role === 'employee'
@@ -193,6 +198,33 @@ export default function TeamScheduleScreen({ route }) {
                       <Text style={styles.modalValue}>{dm.entry.notes}</Text>
                     </View>
                   ) : null}
+                  {/* Office tasks for this employee on this day */}
+                  {dm.entry.type === 'office' && (() => {
+                    const dayTasks = tasks.filter(t =>
+                      t.task_type === 'office' &&
+                      String(t.assigned_to) === String(dm.entry.crm_user_id) &&
+                      String(t.task_date || '').slice(0, 10) === String(dm.entry.date).slice(0, 10)
+                    );
+                    if (!dayTasks.length) return null;
+                    return (
+                      <View style={styles.officeTasks}>
+                        <View style={styles.officeTasksHeader}>
+                          <Ionicons name="checkmark-done-outline" size={14} color="#388E3C" />
+                          <Text style={styles.officeTasksTitle}>ما تم إنجازه</Text>
+                        </View>
+                        {dayTasks.map(t => (
+                          <View key={t.id} style={styles.officeTaskItem}>
+                            {t.description
+                              ? t.description.split('\n').filter(Boolean).map((line, i) => (
+                                  <Text key={i} style={styles.officeTaskLine}>{line}</Text>
+                                ))
+                              : <Text style={styles.officeTaskLine}>{t.title}</Text>
+                            }
+                          </View>
+                        ))}
+                      </View>
+                    );
+                  })()}
                 </View>
                 <TouchableOpacity style={styles.modalClose} onPress={() => setDetailModal(null)}>
                   <Text style={styles.modalCloseText}>إغلاق</Text>
@@ -495,4 +527,10 @@ const styles = StyleSheet.create({
   modalValue:    { fontSize: 14, color: '#1a1a1a', fontWeight: '600', flex: 1, textAlign: 'right' },
   modalClose:    { marginHorizontal: 20, marginBottom: 16, backgroundColor: '#F5F5F5', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   modalCloseText:{ fontSize: 14, fontWeight: '700', color: '#555' },
+
+  officeTasks:      { marginHorizontal: 16, marginBottom: 12, backgroundColor: '#F1F8E9', borderRadius: 10, padding: 12 },
+  officeTasksHeader:{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  officeTasksTitle: { fontSize: 13, fontWeight: '700', color: '#2E7D32' },
+  officeTaskItem:   { marginBottom: 4 },
+  officeTaskLine:   { fontSize: 13, color: '#333', lineHeight: 20 },
 });
