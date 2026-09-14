@@ -242,8 +242,7 @@ export default function ManageTasksScreen({ route, navigation }) {
   // ── Save (create or update) ───────────────────────────────────────────────────
 
   const save = async () => {
-    if (!form.title.trim()) { Alert.alert('', 'أدخل عنوان المهمة'); return; }
-    if (!form.assignedTo)   { Alert.alert('', 'اختر موظفاً'); return; }
+    if (!form.assignedTo) { Alert.alert('', 'اختر موظفاً'); return; }
 
     const isOffice = form.taskType === 'office';
     let descStr = '';
@@ -252,6 +251,7 @@ export default function ManageTasksScreen({ route, navigation }) {
       if (!filled.length) { Alert.alert('', 'أضف نقطة واحدة على الأقل'); return; }
       descStr = filled.map(b => `• ${b.trim()}`).join('\n');
     } else {
+      if (!form.title.trim())       { Alert.alert('', 'أدخل عنوان المهمة'); return; }
       if (!form.description.trim()) { Alert.alert('', 'أدخل التفاصيل'); return; }
       descStr = form.description.trim();
     }
@@ -265,8 +265,12 @@ export default function ManageTasksScreen({ route, navigation }) {
     try {
       const dueDateStr  = isOffice ? null : (form.dueDate ? form.dueDate.toISOString().split('T')[0] : null);
       const taskDateStr = form.taskDate ? form.taskDate.toISOString().split('T')[0] : null;
+      // For office tasks, auto-generate title from the selected date
+      const autoTitle = isOffice && form.taskDate
+        ? `عمل مكتبي — ${form.taskDate.toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' })}`
+        : form.title.trim();
       const payload = {
-        title:       form.title.trim(),
+        title:       autoTitle,
         description: descStr,
         assigned_to: form.assignedTo.key,
         due_date:    dueDateStr,
@@ -325,7 +329,11 @@ export default function ManageTasksScreen({ route, navigation }) {
         <View style={styles.taskBody}>
           <Text style={[styles.taskTitle, isDone && styles.doneTitle]} numberOfLines={2}>{item.title}</Text>
           {item.description ? (
-            <Text style={styles.taskDesc} numberOfLines={1}>{item.description}</Text>
+            item.task_type === 'office'
+              ? item.description.split('\n').filter(Boolean).map((line, i) => (
+                  <Text key={i} style={styles.taskDesc}>{line}</Text>
+                ))
+              : <Text style={styles.taskDesc} numberOfLines={1}>{item.description}</Text>
           ) : null}
           {item.completion_notes ? (
             <Text style={styles.completionNote} numberOfLines={1}>💬 {item.completion_notes}</Text>
@@ -580,12 +588,15 @@ export default function ManageTasksScreen({ route, navigation }) {
                 </View>
               )}
 
-              <Text style={styles.label}>
-                {form.taskType === 'office' ? 'ما الذي قمت به؟ *' : 'العنوان *'}
-              </Text>
-              <TextInput style={styles.input}
-                placeholder={form.taskType === 'office' ? 'اكتب ملخص يوم العمل...' : 'عنوان المهمة...'}
-                value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))} />
+              {/* Title — hidden for office tasks (auto-generated from date) */}
+              {form.taskType !== 'office' && (
+                <>
+                  <Text style={styles.label}>العنوان *</Text>
+                  <TextInput style={styles.input}
+                    placeholder="عنوان المهمة..."
+                    value={form.title} onChangeText={v => setForm(f => ({ ...f, title: v }))} />
+                </>
+              )}
 
               {/* Description: bullet points for office, textarea for general */}
               {form.taskType === 'office' ? (
