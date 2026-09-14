@@ -426,23 +426,49 @@ function SystemModal({ item, onClose }) {
   );
 }
 
-// ─── Filter chips ─────────────────────────────────────────────────────────────
+// ─── Multi-select dropdown ────────────────────────────────────────────────────
 
-function FilterChips({ label, items, active, onSelect, color = '#1565C0' }) {
+function MultiSelectDropdown({ label, items, selected, onToggle, onClear, color = '#1565C0' }) {
+  const [open, setOpen] = useState(false);
+  const count = selected.length;
   return (
-    <View style={s.filterGroup}>
-      <Text style={s.filterGroupLabel}>{label}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow}>
-        <TouchableOpacity style={[s.chip, !active && { backgroundColor: color, borderColor: color }]} onPress={() => onSelect(null)}>
-          <Text style={[s.chipText, !active && { color: '#fff' }]}>الكل</Text>
-        </TouchableOpacity>
-        {items.map(name => (
-          <TouchableOpacity key={name} style={[s.chip, active === name && { backgroundColor: color, borderColor: color }]}
-            onPress={() => onSelect(active === name ? null : name)}>
-            <Text style={[s.chipText, active === name && { color: '#fff' }]} numberOfLines={1}>{name}</Text>
+    <View style={[s.msWrap, open && { zIndex: 100 }]}>
+      <TouchableOpacity
+        style={[s.msBtn, count > 0 && { borderColor: color, backgroundColor: color + '12' }]}
+        onPress={() => setOpen(v => !v)}
+      >
+        <Text style={[s.msBtnText, count > 0 && { color }]} numberOfLines={1}>
+          {count === 0 ? label : `${label} (${count})`}
+        </Text>
+        {count > 0 ? (
+          <TouchableOpacity
+            onPress={(e) => { e?.stopPropagation?.(); onClear(); setOpen(false); }}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Ionicons name="close-circle" size={14} color={color} />
           </TouchableOpacity>
-        ))}
-      </ScrollView>
+        ) : null}
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={13} color={count > 0 ? color : '#aaa'} />
+      </TouchableOpacity>
+      {open && (
+        <View style={[s.msDropdown, { borderTopColor: color, borderTopWidth: 2.5 }]}>
+          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {items.map(item => {
+              const checked = selected.includes(item);
+              return (
+                <TouchableOpacity
+                  key={item}
+                  style={[s.msItem, checked && { backgroundColor: color + '12' }]}
+                  onPress={() => onToggle(item)}
+                >
+                  <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={18} color={checked ? color : '#ccc'} />
+                  <Text style={[s.msItemText, checked && { color, fontWeight: '700' }]} numberOfLines={2}>{item}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
     </View>
   );
 }
@@ -620,9 +646,9 @@ export default function ReportsScreen() {
 
   // Systems + Stages filters
   const [search,       setSearch]       = useState('');
-  const [clientFilter, setClientFilter] = useState(null);
-  const [empFilter,    setEmpFilter]    = useState(null);
-  const [stageFilter,  setStageFilter]  = useState(null);
+  const [clientFilter, setClientFilter] = useState([]);
+  const [empFilter,    setEmpFilter]    = useState([]);
+  const [stageFilter,  setStageFilter]  = useState([]);
   const [sortDesc,     setSortDesc]     = useState(false);
   const [selectedSystem, setSelectedSystem] = useState(null);
 
@@ -682,9 +708,9 @@ export default function ReportsScreen() {
 
   const filteredSystems = roleSystems
     .filter(s => {
-      if (stageFilter  && s.stageName  !== stageFilter)            return false;
-      if (clientFilter && s.clientName !== clientFilter)            return false;
-      if (empFilter    && !(s.employees ?? []).includes(empFilter)) return false;
+      if (stageFilter.length  && !stageFilter.includes(s.stageName))                            return false;
+      if (clientFilter.length && !clientFilter.includes(s.clientName))                         return false;
+      if (empFilter.length    && !(s.employees ?? []).some(e => empFilter.includes(e)))        return false;
       if (search) {
         const q = search.toLowerCase();
         if (!(s.clientName || '').toLowerCase().includes(q) &&
@@ -720,8 +746,8 @@ export default function ReportsScreen() {
 
   // ── misc ─────────────────────────────────────────────────────────────────
 
-  const clearFilters = () => { setClientFilter(null); setEmpFilter(null); setStageFilter(null); setSearch(''); };
-  const activeFilters = [clientFilter, empFilter, stageFilter].filter(Boolean).length + (search ? 1 : 0);
+  const clearFilters = () => { setClientFilter([]); setEmpFilter([]); setStageFilter([]); setSearch(''); };
+  const activeFilters = clientFilter.length + empFilter.length + stageFilter.length + (search ? 1 : 0);
   const onRefresh = () => { setRefreshing(true); load(); };
 
   // ── Client progress groups ────────────────────────────────────────────────
@@ -826,9 +852,36 @@ export default function ReportsScreen() {
           </View>
 
           <View style={s.filtersBlock}>
-            {uniqueClients.length > 0 && <FilterChips label="العميل" items={uniqueClients} active={clientFilter} onSelect={setClientFilter} color="#E65100" />}
-            {uniqueEmployees.length > 0 && <FilterChips label="الموظف" items={uniqueEmployees} active={empFilter} onSelect={setEmpFilter} color="#6A1B9A" />}
-            {tab === 'systems' && stageNames.length > 0 && <FilterChips label="المرحلة" items={stageNames} active={stageFilter} onSelect={setStageFilter} color="#1565C0" />}
+            {uniqueClients.length > 0 && (
+              <MultiSelectDropdown
+                label="العميل"
+                items={uniqueClients}
+                selected={clientFilter}
+                onToggle={item => setClientFilter(prev => prev.includes(item) ? prev.filter(x => x !== item) : [...prev, item])}
+                onClear={() => setClientFilter([])}
+                color="#E65100"
+              />
+            )}
+            {uniqueEmployees.length > 0 && (
+              <MultiSelectDropdown
+                label="الموظف"
+                items={uniqueEmployees}
+                selected={empFilter}
+                onToggle={item => setEmpFilter(prev => prev.includes(item) ? prev.filter(x => x !== item) : [...prev, item])}
+                onClear={() => setEmpFilter([])}
+                color="#6A1B9A"
+              />
+            )}
+            {tab === 'systems' && stageNames.length > 0 && (
+              <MultiSelectDropdown
+                label="المرحلة"
+                items={stageNames}
+                selected={stageFilter}
+                onToggle={item => setStageFilter(prev => prev.includes(item) ? prev.filter(x => x !== item) : [...prev, item])}
+                onClear={() => setStageFilter([])}
+                color="#1565C0"
+              />
+            )}
           </View>
         </>
       )}
@@ -1218,12 +1271,19 @@ const s = StyleSheet.create({
   clearBtnText: { fontSize: 11, color: '#C62828', fontWeight: '700' },
 
   // Filters block (systems/stages)
-  filtersBlock: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingBottom: 6 },
+  filtersBlock: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', paddingBottom: 8, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
   filterGroup:  { paddingTop: 6 },
   filterGroupLabel: { fontSize: 10, color: '#bbb', fontWeight: '700', paddingHorizontal: 12, marginBottom: 4 },
   chipRow: { paddingHorizontal: 10, gap: 6 },
   chip:    { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#E8E8E8' },
   chipText:{ fontSize: 11, color: '#555', fontWeight: '600' },
+  // ─── Multi-select dropdown styles ─────────────────────────────────────────
+  msWrap:      { position: 'relative', zIndex: 10, marginHorizontal: 6, marginVertical: 4, minWidth: 100, maxWidth: 180, alignSelf: 'flex-start' },
+  msBtn:       { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, borderWidth: 1.5, borderColor: '#ddd', backgroundColor: '#fafafa' },
+  msBtnText:   { flex: 1, fontSize: 12, color: '#555', fontWeight: '600', textAlign: 'right' },
+  msDropdown:  { position: 'absolute', top: '110%', left: 0, right: 0, backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#ddd', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 8, zIndex: 200 },
+  msItem:      { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  msItemText:  { flex: 1, fontSize: 12, color: '#333', textAlign: 'right' },
 
   // Visit period pills
   periodBar:        { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#F0F0F0', maxHeight: 46 },
