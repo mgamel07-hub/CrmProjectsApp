@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, Alert,
-  Modal, FlatList, ActivityIndicator,
+  Modal, FlatList, ActivityIndicator, TextInput, Linking, Share, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -35,12 +35,59 @@ export default function PlanDetailScreen({ navigation, route }) {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Email preview modal
+  const [emailModal, setEmailModal] = useState(false);
+  const [emailBody, setEmailBody] = useState('');
+
   // Catalog modal
   const [catalogModal, setCatalogModal] = useState(false);
   const [catalogItems, setCatalogItems] = useState([]);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [addingCatalog, setAddingCatalog] = useState(false);
+
+  const generateEmailBody = useCallback((planData, planItems) => {
+    const clientName = planData?.projectName || '';
+    const planName   = planData?.name || title || '';
+    const scopeName  = planData?.scopeName || '';
+    const stageName  = planData?.stageName || '';
+    const bullets    = planItems.map(i => `• ${i.title}`).join('\n');
+    return (
+`${clientName}،
+السلام عليكم ورحمة الله وبركاته،
+
+نفيدكم بأنه تم تنفيذ البنود التالية ضمن خطة "${planName}"${scopeName ? ` — ${scopeName}` : ''}${stageName ? ` (${stageName})` : ''}:
+
+${bullets || '• —'}
+
+مع خالص التحية وتمنياتنا لكم بالتوفيق.`
+    );
+  }, [title]);
+
+  const openEmailPreview = useCallback(() => {
+    setEmailBody(generateEmailBody(plan, items));
+    setEmailModal(true);
+  }, [plan, items, generateEmailBody]);
+
+  const sendEmail = useCallback(async (body) => {
+    const subject = encodeURIComponent(`تقرير تنفيذ خطة: ${plan?.name || ''}`);
+    const encodedBody = encodeURIComponent(body);
+    const url = `mailto:?subject=${subject}&body=${encodedBody}`;
+    try {
+      if (Platform.OS === 'web') {
+        window.open(url, '_blank');
+      } else {
+        const canOpen = await Linking.canOpenURL(url);
+        if (canOpen) {
+          await Linking.openURL(url);
+        } else {
+          await Share.share({ message: body, title: `تقرير تنفيذ خطة: ${plan?.name || ''}` });
+        }
+      }
+    } catch {
+      await Share.share({ message: body, title: `تقرير تنفيذ خطة: ${plan?.name || ''}` });
+    }
+  }, [plan]);
 
   const load = useCallback(async () => {
     try {
@@ -69,22 +116,27 @@ export default function PlanDetailScreen({ navigation, route }) {
     navigation.setOptions({
       title: title || t('planDetails'),
       headerRight: () => (
-        <TouchableOpacity
-          onPress={() => navigation.navigate('PlanPrint', {
-            planId,
-            projectId: plan?.projectId || route.params?.projectId,
-            clientName:  plan?.projectName  || route.params?.clientName  || '',
-            scopeName:   plan?.scopeName    || route.params?.scopeName    || '',
-            stageName:   plan?.stageName    || route.params?.stageName    || '',
-            planTitle:   plan?.name         || title || '',
-          })}
-          style={{ marginLeft: 14 }}
-        >
-          <Ionicons name="print-outline" size={22} color="#fff" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 4 }}>
+          <TouchableOpacity onPress={openEmailPreview} style={{ marginLeft: 8 }}>
+            <Ionicons name="mail-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('PlanPrint', {
+              planId,
+              projectId: plan?.projectId || route.params?.projectId,
+              clientName:  plan?.projectName  || route.params?.clientName  || '',
+              scopeName:   plan?.scopeName    || route.params?.scopeName    || '',
+              stageName:   plan?.stageName    || route.params?.stageName    || '',
+              planTitle:   plan?.name         || title || '',
+            })}
+            style={{ marginLeft: 8 }}
+          >
+            <Ionicons name="print-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
       ),
     });
-  }, [navigation, title, plan]);
+  }, [navigation, title, plan, openEmailPreview]);
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
@@ -338,6 +390,50 @@ export default function PlanDetailScreen({ navigation, route }) {
           </Card>
         ))
       )}
+      {/* Email Preview Modal */}
+      <Modal visible={emailModal} transparent animationType="slide" onRequestClose={() => setEmailModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>معاينة البريد الإلكتروني</Text>
+              <TouchableOpacity onPress={() => setEmailModal(false)}>
+                <Ionicons name="close" size={22} color="#444" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
+              <Text style={styles.emailLabel}>نص الرسالة (يمكن التعديل قبل الإرسال):</Text>
+              <TextInput
+                style={styles.emailBodyInput}
+                multiline
+                value={emailBody}
+                onChangeText={setEmailBody}
+                textAlign="right"
+                textAlignVertical="top"
+                placeholder="سيظهر نص الرسالة هنا..."
+              />
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.emailResetBtn}
+                onPress={() => setEmailBody(generateEmailBody(plan, items))}
+              >
+                <Ionicons name="refresh-outline" size={16} color="#1565C0" />
+                <Text style={styles.emailResetBtnText}>إعادة توليد</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.addBtn, { paddingHorizontal: 20 }]}
+                onPress={() => { setEmailModal(false); sendEmail(emailBody); }}
+              >
+                <Ionicons name="send-outline" size={16} color="#fff" />
+                <Text style={styles.addBtnText}>إرسال</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Catalog Modal */}
       <Modal visible={catalogModal} transparent animationType="slide" onRequestClose={() => setCatalogModal(false)}>
         <View style={styles.modalOverlay}>
@@ -494,4 +590,22 @@ const styles = StyleSheet.create({
     padding: 16, borderTopWidth: 1, borderTopColor: '#F0F0F0',
   },
   selectedCount: { fontSize: 13, color: '#666', fontWeight: '500' },
+  emailLabel: { fontSize: 13, color: '#666', fontWeight: '600', marginBottom: 8 },
+  emailBodyInput: {
+    borderWidth: 1.5,
+    borderColor: '#D0D9F0',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    color: '#222',
+    minHeight: 260,
+    backgroundColor: '#FAFBFF',
+    lineHeight: 22,
+  },
+  emailResetBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: '#1565C0', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 8,
+  },
+  emailResetBtnText: { color: '#1565C0', fontSize: 13, fontWeight: '600' },
 });
