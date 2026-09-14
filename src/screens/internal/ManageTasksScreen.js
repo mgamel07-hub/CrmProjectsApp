@@ -108,17 +108,18 @@ export default function ManageTasksScreen({ route, navigation }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Fetch approved office schedule days for a user (last 120 days)
+  // Fetch approved office schedule days for a user (last 30 days only)
   const loadOfficeDays = useCallback(async (targetUserId) => {
     if (!targetUserId) return;
     setOfficeDaysLoading(true);
     try {
       const to   = new Date().toISOString().split('T')[0];
-      const from = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const entries = await getWeekSchedule(targetUserId, from, to);
       const days = (entries || [])
         .filter(e => e.type === 'office' && e.status === 'approved')
-        .map(e => e.date)
+        .map(e => String(e.date).slice(0, 10))  // ensure pure YYYY-MM-DD, no time component
+        .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
         .sort((a, b) => b.localeCompare(a)); // newest first
       setOfficeDays(days);
     } catch {
@@ -224,7 +225,7 @@ export default function ManageTasksScreen({ route, navigation }) {
       dueDate:    ttype === 'office' ? null : (task.due_date ? new Date(task.due_date) : null),
       priority:   task.priority || 'normal',
       taskType:   ttype,
-      taskDate:   task.task_date ? new Date(task.task_date + 'T12:00:00') : null,
+      taskDate:   task.task_date ? new Date(String(task.task_date).slice(0, 10) + 'T12:00:00') : null,
     });
     if (ttype === 'office' && task.description) {
       const parsed = task.description.split('\n')
@@ -657,7 +658,7 @@ export default function ManageTasksScreen({ route, navigation }) {
                     <ScrollView horizontal showsHorizontalScrollIndicator={false}
                       contentContainerStyle={{ gap: 8, paddingVertical: 6, marginBottom: 14 }}>
                       {officeDays.map(date => {
-                        const dateObj  = new Date(date + 'T12:00:00');
+                        const dateObj  = new Date(date.slice(0, 10) + 'T12:00:00');
                         const isSelected = form.taskDate
                           ? form.taskDate.toISOString().split('T')[0] === date
                           : false;
