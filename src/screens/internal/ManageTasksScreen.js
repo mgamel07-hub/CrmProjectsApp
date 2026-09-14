@@ -648,32 +648,50 @@ export default function ManageTasksScreen({ route, navigation }) {
                   <Text style={styles.label}>يوم العمل في المكتب *</Text>
                   {officeDaysLoading ? (
                     <ActivityIndicator color="#00695C" style={{ marginBottom: 14 }} />
-                  ) : officeDays.length === 0 ? (
-                    <View style={{ backgroundColor: '#FFF8E1', borderRadius: 8, padding: 10, marginBottom: 14 }}>
-                      <Text style={{ fontSize: 12, color: '#F57F17' }}>
-                        لا توجد أيام مكتب معتمدة في الجدول الأسبوعي لهذا الموظف
-                      </Text>
-                    </View>
-                  ) : (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={{ gap: 8, paddingVertical: 6, marginBottom: 14 }}>
-                      {officeDays.map(date => {
-                        const dateObj  = new Date(date.slice(0, 10) + 'T12:00:00');
-                        const isSelected = form.taskDate
-                          ? form.taskDate.toISOString().split('T')[0] === date
-                          : false;
-                        return (
-                          <TouchableOpacity key={date}
-                            style={[styles.dayChip, isSelected && styles.dayChipSelected]}
-                            onPress={() => setForm(f => ({ ...f, taskDate: dateObj }))}>
-                            <Text style={[styles.dayChipText, isSelected && styles.dayChipTextSelected]}>
-                              {dateObj.toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-                  )}
+                  ) : (() => {
+                    // Dates already used by existing office tasks for this assignee (exclude current editing task)
+                    const assigneeId = form.assignedTo?.key || userId;
+                    const usedDates = new Set(
+                      tasks
+                        .filter(t =>
+                          t.task_type === 'office' &&
+                          String(t.assigned_to) === assigneeId &&
+                          t.id !== editingTaskId
+                        )
+                        .map(t => String(t.task_date || '').slice(0, 10))
+                        .filter(Boolean)
+                    );
+                    const availableDays = officeDays.filter(d => !usedDates.has(d));
+                    if (availableDays.length === 0) return (
+                      <View style={{ backgroundColor: '#FFF8E1', borderRadius: 8, padding: 10, marginBottom: 14 }}>
+                        <Text style={{ fontSize: 12, color: '#F57F17' }}>
+                          {officeDays.length === 0
+                            ? 'لا توجد أيام مكتب معتمدة في الجدول الأسبوعي لهذا الموظف'
+                            : 'جميع أيام المكتب المعتمدة تم تسجيل مهام عليها'}
+                        </Text>
+                      </View>
+                    );
+                    return (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ gap: 8, paddingVertical: 6, marginBottom: 14 }}>
+                        {availableDays.map(date => {
+                          const dateObj  = new Date(date.slice(0, 10) + 'T12:00:00');
+                          const isSelected = form.taskDate
+                            ? form.taskDate.toISOString().split('T')[0] === date
+                            : false;
+                          return (
+                            <TouchableOpacity key={date}
+                              style={[styles.dayChip, isSelected && styles.dayChipSelected]}
+                              onPress={() => setForm(f => ({ ...f, taskDate: dateObj }))}>
+                              <Text style={[styles.dayChipText, isSelected && styles.dayChipTextSelected]}>
+                                {dateObj.toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    );
+                  })()}
                 </>
               )}
 
