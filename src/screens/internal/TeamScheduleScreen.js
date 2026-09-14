@@ -1,11 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal, Platform,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getTeamWeekSchedule, getTeamMembers, getMyTeamRecord } from '../../api/internal';
-import { getUsers } from '../../api/projects';
-import { extractList } from '../../utils/helpers';
 import { useAuth } from '../../context/AuthContext';
 
 const DAYS_SHORT   = ['أحد', 'اثن', 'ثلا', 'أرب', 'خمس', 'جمع', 'سبت'];
@@ -14,6 +12,10 @@ const TYPE_COLORS = { visit: '#1565C0', office: '#388E3C', vacation: '#E65100' }
 const TYPE_LABELS = { visit: 'زيارة', office: 'مكتب', vacation: 'إجازة' };
 const TYPE_SHORT  = { visit: 'ز', office: 'م', vacation: 'إ' };
 const TYPE_ICONS  = { visit: 'car-outline', office: 'business-outline', vacation: 'umbrella-outline' };
+
+const NAME_COL = 150;
+const DAY_COL  = 54;
+const GRID_W   = NAME_COL + DAY_COL * 7;
 
 function getWeekDates(offset = 0) {
   const now = new Date();
@@ -33,15 +35,15 @@ const todayStr = new Date().toISOString().split('T')[0];
 export default function TeamScheduleScreen({ route }) {
   const { user } = useAuth();
   const authUserId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
-  // Use route.params.userId (same value WeeklyScheduleScreen uses) for consistency
   const userId = route?.params?.userId || authUserId;
 
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [days,       setDays]       = useState([]);
-  const [users,      setUsers]      = useState([]);
-  const [entries,    setEntries]    = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [myRole,     setMyRole]     = useState('employee'); // 'admin' | 'manager' | 'employee'
+  const [activeTab,   setActiveTab]   = useState('schedule'); // 'schedule' | 'office'
+  const [weekOffset,  setWeekOffset]  = useState(0);
+  const [days,        setDays]        = useState([]);
+  const [users,       setUsers]       = useState([]);   // [{ id, fullName, teamId, teamName }]
+  const [entries,     setEntries]     = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [myRole,      setMyRole]      = useState('employee');
   const [detailModal, setDetailModal] = useState(null); // { entry, name } | null
 
   const load = useCallback(async () => {
@@ -67,40 +69,32 @@ export default function TeamScheduleScreen({ route }) {
         filtered = self ? [self] : [];
       }
 
-      // Build userList from team_members; if empty, just show current user
-      let userList;
-      if (filtered.length > 0) {
-        userList = filtered.map(m => ({
-          id:       m.crm_user_id,
-          fullName: m.display_name || String(m.crm_user_id),
-        }));
-      } else {
-        // No team_members defined yet — show only current user
-        userList = [];
-      }
+      let userList = filtered.map(m => ({
+        id:       m.crm_user_id,
+        fullName: m.display_name || String(m.crm_user_id),
+        teamId:   m.team_id || 'noTeam',
+        teamName: m.teams?.name || (m.team_id ? `فريق ${m.team_id}` : 'بدون فريق'),
+      }));
 
-      // Always include the current user (their entries should always be visible)
       if (userId && !userList.some(u => String(u.id) === userId)) {
-        userList = [{ id: userId, fullName: user?.fullName || userId }, ...userList];
+        userList = [{ id: userId, fullName: user?.fullName || userId, teamId: 'noTeam', teamName: 'بدون فريق' }, ...userList];
       }
 
       if (userList.length) {
-        const ids  = userList.map(u => String(u.id));
+        const ids     = userList.map(u => String(u.id));
         const rawData = await getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6]));
-        // For team grid: admin/manager see only approved; employees see own (any status)
-        const data = role === 'employee'
+        const data    = role === 'employee'
           ? rawData
           : rawData.filter(e => !e.status || e.status === 'approved');
         setEntries(data);
 
-        // For admin/manager: hide rows with no entries — but only if SOMEONE has entries
-        // If nobody has entries this week, show everyone so the grid isn't blank
-        const usersWithEntries = role === 'employee'
+        // Hide rows with no entries this week (unless nobody has entries)
+        const visible = role === 'employee'
           ? userList
           : data.length > 0
             ? userList.filter(u => data.some(e => String(e.crm_user_id) === String(u.id)))
             : userList;
-        setUsers(usersWithEntries);
+        setUsers(visible);
       } else {
         setUsers([]);
       }
@@ -123,28 +117,43 @@ export default function TeamScheduleScreen({ route }) {
     return `${s} – ${e}`;
   };
 
-  // Summary: count per type this week
+  // Summary counts
   const summary = Object.keys(TYPE_COLORS).reduce((acc, t) => {
     acc[t] = entries.filter(e => e.type === t).length;
     return acc;
   }, {});
 
+  // Group users by team for the grid
+  const teamGroups = [];
+  const seenTeams  = {};
+  users.forEach(u => {
+    if (!seenTeams[u.teamId]) {
+      seenTeams[u.teamId] = teamGroups.length;
+      teamGroups.push({ teamId: u.teamId, teamName: u.teamName, users: [] });
+    }
+    teamGroups[seenTeams[u.teamId]].users.push(u);
+  });
+
+  // Office today list (Tab 2) — grouped by team
+  const officeToday = users.filter(u => getEntry(u.id, todayStr)?.type === 'office');
+  const officeTodayByTeam = [];
+  const seenOT = {};
+  officeToday.forEach(u => {
+    if (!seenOT[u.teamId]) {
+      seenOT[u.teamId] = officeTodayByTeam.length;
+      officeTodayByTeam.push({ teamId: u.teamId, teamName: u.teamName, users: [] });
+    }
+    officeTodayByTeam[seenOT[u.teamId]].users.push(u);
+  });
+
   const dm = detailModal;
 
   return (
     <View style={styles.root}>
-      {/* Entry detail modal */}
-      <Modal
-        visible={!!dm}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDetailModal(null)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setDetailModal(null)}
-        >
+
+      {/* Detail modal */}
+      <Modal visible={!!dm} transparent animationType="fade" onRequestClose={() => setDetailModal(null)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setDetailModal(null)}>
           <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
             {dm && (
               <>
@@ -152,32 +161,24 @@ export default function TeamScheduleScreen({ route }) {
                   <Ionicons name={TYPE_ICONS[dm.entry.type]} size={20} color="#fff" />
                   <Text style={styles.modalTypeText}>{TYPE_LABELS[dm.entry.type]}</Text>
                 </View>
-
                 <View style={styles.modalBody}>
                   <View style={styles.modalRow}>
                     <Ionicons name="person-outline" size={16} color="#555" />
                     <Text style={styles.modalLabel}>الموظف</Text>
                     <Text style={styles.modalValue}>{dm.name}</Text>
                   </View>
-
                   <View style={styles.modalRow}>
                     <Ionicons name="calendar-outline" size={16} color="#555" />
                     <Text style={styles.modalLabel}>التاريخ</Text>
-                    <Text style={styles.modalValue}>
-                      {DAYS_AR_FULL[new Date(dm.entry.date).getDay()]} {dm.entry.date}
-                    </Text>
+                    <Text style={styles.modalValue}>{DAYS_AR_FULL[new Date(dm.entry.date).getDay()]} {dm.entry.date}</Text>
                   </View>
-
                   {dm.entry.type === 'visit' && (
                     <View style={styles.modalRow}>
                       <Ionicons name="location-outline" size={16} color="#1565C0" />
                       <Text style={styles.modalLabel}>الموقع</Text>
-                      <Text style={[styles.modalValue, { color: '#1565C0', fontWeight: '700' }]}>
-                        {dm.entry.client_name || '—'}
-                      </Text>
+                      <Text style={[styles.modalValue, { color: '#1565C0', fontWeight: '700' }]}>{dm.entry.client_name || '—'}</Text>
                     </View>
                   )}
-
                   {dm.entry.type === 'vacation' && dm.entry.vacation_type && (
                     <View style={styles.modalRow}>
                       <Ionicons name="information-circle-outline" size={16} color="#E65100" />
@@ -185,7 +186,6 @@ export default function TeamScheduleScreen({ route }) {
                       <Text style={styles.modalValue}>{dm.entry.vacation_type}</Text>
                     </View>
                   )}
-
                   {dm.entry.notes ? (
                     <View style={styles.modalRow}>
                       <Ionicons name="document-text-outline" size={16} color="#555" />
@@ -194,7 +194,6 @@ export default function TeamScheduleScreen({ route }) {
                     </View>
                   ) : null}
                 </View>
-
                 <TouchableOpacity style={styles.modalClose} onPress={() => setDetailModal(null)}>
                   <Text style={styles.modalCloseText}>إغلاق</Text>
                 </TouchableOpacity>
@@ -203,126 +202,178 @@ export default function TeamScheduleScreen({ route }) {
           </View>
         </TouchableOpacity>
       </Modal>
-      {/* Week navigator */}
-      <View style={styles.nav}>
-        <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={styles.navBtn}>
-          <Ionicons name="chevron-back" size={26} color="#1565C0" />
-        </TouchableOpacity>
-        <View style={{ alignItems: 'center' }}>
-          <Text style={styles.navLabel}>{weekLabel()}</Text>
-          {weekOffset === 0 && <Text style={styles.navSub}>الأسبوع الحالي</Text>}
-        </View>
-        <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={styles.navBtn}>
-          <Ionicons name="chevron-forward" size={26} color="#1565C0" />
-        </TouchableOpacity>
-      </View>
 
-      {/* Role badge */}
-      {myRole === 'employee' && (
-        <View style={styles.roleBanner}>
-          <Ionicons name="person-outline" size={13} color="#1565C0" />
-          <Text style={styles.roleBannerText}>جدولك الشخصي فقط</Text>
-        </View>
-      )}
-      {myRole === 'manager' && (
-        <View style={[styles.roleBanner, { backgroundColor: '#FFF3E0' }]}>
-          <Ionicons name="people-outline" size={13} color="#E65100" />
-          <Text style={[styles.roleBannerText, { color: '#E65100' }]}>جدول فريقك</Text>
-        </View>
-      )}
-
-      {/* Summary chips */}
-      <View style={styles.summaryRow}>
-        {Object.entries(TYPE_COLORS).map(([k, c]) => (
-          <View key={k} style={[styles.summaryChip, { borderColor: c + '44', backgroundColor: c + '12' }]}>
-            <Ionicons name={TYPE_ICONS[k]} size={13} color={c} />
-            <Text style={[styles.summaryChipText, { color: c }]}>{summary[k]}</Text>
-            <Text style={[styles.summaryChipLabel, { color: c }]}>{TYPE_LABELS[k]}</Text>
+      {/* Week navigator — only for schedule tab */}
+      {activeTab === 'schedule' && (
+        <View style={styles.nav}>
+          <TouchableOpacity onPress={() => setWeekOffset(w => w - 1)} style={styles.navBtn}>
+            <Ionicons name="chevron-back" size={26} color="#1565C0" />
+          </TouchableOpacity>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={styles.navLabel}>{weekLabel()}</Text>
+            {weekOffset === 0 && <Text style={styles.navSub}>الأسبوع الحالي</Text>}
           </View>
-        ))}
+          <TouchableOpacity onPress={() => setWeekOffset(w => w + 1)} style={styles.navBtn}>
+            <Ionicons name="chevron-forward" size={26} color="#1565C0" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Tab bar */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === 'schedule' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('schedule')}
+        >
+          <Ionicons name="grid-outline" size={15} color={activeTab === 'schedule' ? '#1565C0' : '#888'} />
+          <Text style={[styles.tabText, activeTab === 'schedule' && styles.tabTextActive]}>الجدول الأسبوعي</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === 'office' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('office')}
+        >
+          <Ionicons name="business-outline" size={15} color={activeTab === 'office' ? '#388E3C' : '#888'} />
+          <Text style={[styles.tabText, activeTab === 'office' && styles.tabTextActive, activeTab === 'office' && { color: '#388E3C' }]}>
+            في المكتب اليوم
+            {!loading && officeToday.length > 0 && (
+              <Text style={styles.tabBadge}> ({officeToday.length})</Text>
+            )}
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Legend */}
-      <View style={styles.legend}>
-        {Object.entries(TYPE_COLORS).map(([k, c]) => (
-          <View key={k} style={styles.legendItem}>
-            <View style={[styles.legendCell, { backgroundColor: c }]}>
-              <Text style={styles.legendCellText}>{TYPE_SHORT[k]}</Text>
+      {/* Summary chips — only for schedule tab */}
+      {activeTab === 'schedule' && (
+        <View style={styles.summaryRow}>
+          {Object.entries(TYPE_COLORS).map(([k, c]) => (
+            <View key={k} style={[styles.summaryChip, { borderColor: c + '44', backgroundColor: c + '12' }]}>
+              <Ionicons name={TYPE_ICONS[k]} size={13} color={c} />
+              <Text style={[styles.summaryChipText, { color: c }]}>{summary[k]}</Text>
+              <Text style={[styles.summaryChipLabel, { color: c }]}>{TYPE_LABELS[k]}</Text>
             </View>
-            <Text style={styles.legendText}>{TYPE_LABELS[k]}</Text>
-          </View>
-        ))}
-      </View>
+          ))}
+        </View>
+      )}
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} color="#1565C0" size="large" />
-      ) : users.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="people-outline" size={56} color="#ddd" />
-          <Text style={styles.emptyText}>لا يوجد أعضاء في الفريق</Text>
-        </View>
-      ) : (
-        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View>
-              {/* Header row */}
-              <View style={styles.headerRow}>
-                <View style={styles.nameCol}>
-                  <Text style={styles.headerCell}>الموظف</Text>
-                </View>
-                {days.map((d, i) => {
-                  const isToday = fmt(d) === todayStr;
-                  return (
-                    <View key={i} style={[styles.dayCol, isToday && styles.todayCol]}>
-                      <Text style={[styles.headerCell, isToday && styles.todayHeaderText]}>
-                        {DAYS_SHORT[d.getDay()]}
-                      </Text>
-                      <Text style={[styles.headerDate, isToday && styles.todayHeaderDate]}>
-                        {d.getDate()}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
+      ) : activeTab === 'schedule' ? (
+        /* ── TAB 1: Weekly Grid grouped by team ── */
+        users.length === 0 ? (
+          <View style={styles.empty}>
+            <Ionicons name="people-outline" size={56} color="#ddd" />
+            <Text style={styles.emptyText}>لا يوجد أعضاء في الفريق</Text>
+          </View>
+        ) : (
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ minWidth: GRID_W }}>
 
-              {/* User rows — no nested ScrollView so touch events reach the cells */}
-              {users.map((u, ui) => {
-                const uid  = u.id;
-                const name = u.fullName || String(uid);
-                return (
-                  <View key={uid != null ? String(uid) : `u-${ui}`} style={[styles.userRow, ui % 2 === 1 && styles.userRowAlt]}>
-                    <View style={styles.nameCol}>
-                      <View style={styles.avatarWrap}>
-                        <Text style={styles.avatarText}>{(name || '?')[0]}</Text>
+                {/* Day-header row */}
+                <View style={styles.headerRow}>
+                  <View style={[styles.nameCol, { width: NAME_COL }]}>
+                    <Text style={styles.headerCell}>الموظف</Text>
+                  </View>
+                  {days.map((d, i) => {
+                    const isToday = fmt(d) === todayStr;
+                    return (
+                      <View key={i} style={[styles.dayCol, { width: DAY_COL }, isToday && styles.todayCol]}>
+                        <Text style={[styles.headerCell, isToday && styles.todayHeaderText]}>{DAYS_SHORT[d.getDay()]}</Text>
+                        <Text style={[styles.headerDate,  isToday && styles.todayHeaderDate]}>{d.getDate()}</Text>
                       </View>
-                      <Text style={styles.userName} numberOfLines={2}>{name}</Text>
+                    );
+                  })}
+                </View>
+
+                {/* Team groups */}
+                {teamGroups.map(group => (
+                  <View key={group.teamId}>
+                    {/* Team header */}
+                    <View style={[styles.teamHeaderRow, { width: GRID_W }]}>
+                      <Ionicons name="people-outline" size={13} color="#1565C0" />
+                      <Text style={styles.teamHeaderText}>{group.teamName}</Text>
+                      <Text style={styles.teamHeaderCount}>({group.users.length})</Text>
                     </View>
-                    {days.map((d, di) => {
-                      const dateStr = fmt(d);
-                      const entry   = getEntry(uid, dateStr);
-                      const isToday = dateStr === todayStr;
+
+                    {/* Member rows */}
+                    {group.users.map((u, ui) => {
+                      const name = u.fullName;
                       return (
-                        <View key={`${ui}-${di}`} style={[styles.dayCol, isToday && styles.todayDayCol]}>
-                          {entry ? (
-                            <TouchableOpacity
-                              onPress={() => setDetailModal({ entry, name })}
-                              activeOpacity={0.75}
-                            >
-                              <View style={[styles.cell, { backgroundColor: TYPE_COLORS[entry.type] }]}>
-                                <Text style={styles.cellText}>{TYPE_SHORT[entry.type]}</Text>
+                        <View key={String(u.id)} style={[styles.userRow, ui % 2 === 1 && styles.userRowAlt]}>
+                          <View style={[styles.nameCol, { width: NAME_COL }]}>
+                            <View style={styles.avatarWrap}>
+                              <Text style={styles.avatarText}>{(name || '?')[0]}</Text>
+                            </View>
+                            <Text style={styles.userName} numberOfLines={2}>{name}</Text>
+                          </View>
+                          {days.map((d, di) => {
+                            const dateStr = fmt(d);
+                            const entry   = getEntry(u.id, dateStr);
+                            const isToday = dateStr === todayStr;
+                            return (
+                              <View key={di} style={[styles.dayCol, { width: DAY_COL }, isToday && styles.todayDayCol]}>
+                                {entry ? (
+                                  <TouchableOpacity
+                                    onPress={() => setDetailModal({ entry, name })}
+                                    activeOpacity={0.75}
+                                  >
+                                    <View style={[styles.cell, { backgroundColor: TYPE_COLORS[entry.type] }]}>
+                                      <Text style={styles.cellText}>{TYPE_SHORT[entry.type]}</Text>
+                                    </View>
+                                  </TouchableOpacity>
+                                ) : (
+                                  <View style={[styles.emptyCell, isToday && styles.emptyCellToday]} />
+                                )}
                               </View>
-                            </TouchableOpacity>
-                          ) : (
-                            <View style={[styles.emptyCell, isToday && styles.emptyCellToday]} />
-                          )}
+                            );
+                          })}
                         </View>
                       );
                     })}
                   </View>
-                );
-              })}
-            </View>
+                ))}
+              </View>
+            </ScrollView>
           </ScrollView>
+        )
+      ) : (
+        /* ── TAB 2: In Office Today ── */
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12, gap: 12 }}>
+          <Text style={styles.officeDateLabel}>
+            {DAYS_AR_FULL[new Date().getDay()]} — {todayStr}
+          </Text>
+
+          {officeToday.length === 0 ? (
+            <View style={styles.empty}>
+              <Ionicons name="business-outline" size={56} color="#ddd" />
+              <Text style={styles.emptyText}>لا يوجد موظفون في المكتب اليوم</Text>
+            </View>
+          ) : (
+            officeTodayByTeam.map(group => (
+              <View key={group.teamId} style={styles.officeTeamBlock}>
+                <View style={styles.officeTeamHeader}>
+                  <Ionicons name="people-outline" size={14} color="#1565C0" />
+                  <Text style={styles.officeTeamName}>{group.teamName}</Text>
+                  <Text style={styles.officeTeamCount}>{group.users.length} موظف</Text>
+                </View>
+                {group.users.map(u => (
+                  <View key={String(u.id)} style={styles.officeCard}>
+                    <View style={styles.officeAvatar}>
+                      <Text style={styles.officeAvatarText}>{(u.fullName || '?')[0]}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.officeEmpName}>{u.fullName}</Text>
+                      <View style={styles.officeTypePill}>
+                        <Ionicons name="business-outline" size={11} color="#fff" />
+                        <Text style={styles.officeTypeText}>مكتب</Text>
+                      </View>
+                    </View>
+                    <Ionicons name="checkmark-circle" size={22} color="#388E3C" />
+                  </View>
+                ))}
+              </View>
+            ))
+          )}
         </ScrollView>
       )}
     </View>
@@ -341,6 +392,19 @@ const styles = StyleSheet.create({
   navLabel:{ fontSize: 17, fontWeight: '800', color: '#1a1a1a' },
   navSub:  { fontSize: 11, color: '#1565C0', marginTop: 1 },
 
+  tabBar: {
+    flexDirection: 'row', backgroundColor: '#fff',
+    borderBottomWidth: 2, borderBottomColor: '#eee',
+  },
+  tabBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 11, borderBottomWidth: 2, borderBottomColor: 'transparent',
+  },
+  tabBtnActive: { borderBottomColor: '#1565C0' },
+  tabText:      { fontSize: 13, fontWeight: '600', color: '#888' },
+  tabTextActive:{ color: '#1565C0' },
+  tabBadge:     { fontWeight: '800' },
+
   summaryRow: {
     flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingVertical: 10,
     backgroundColor: '#fff', borderBottomWidth: 1, borderColor: '#eee',
@@ -352,30 +416,29 @@ const styles = StyleSheet.create({
   summaryChipText:  { fontSize: 16, fontWeight: '800' },
   summaryChipLabel: { fontSize: 10, fontWeight: '600' },
 
-  legend: {
-    flexDirection: 'row', gap: 16, paddingHorizontal: 14, paddingVertical: 8,
-    backgroundColor: '#f8f8f8', borderBottomWidth: 1, borderColor: '#eee',
-  },
-  legendItem:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  legendCell:    { width: 22, height: 22, borderRadius: 6, justifyContent: 'center', alignItems: 'center' },
-  legendCellText:{ color: '#fff', fontSize: 11, fontWeight: '800' },
-  legendText:    { fontSize: 12, color: '#555', fontWeight: '600' },
-
-  headerRow:    { flexDirection: 'row', backgroundColor: '#1565C0', paddingVertical: 10 },
-  headerCell:   { color: '#fff', fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  headerDate:   { color: 'rgba(255,255,255,0.75)', fontSize: 11, textAlign: 'center', marginTop: 1 },
-  todayCol:     { backgroundColor: '#0D47A1' },
+  headerRow: { flexDirection: 'row', backgroundColor: '#1565C0', paddingVertical: 10 },
+  headerCell:{ color: '#fff', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  headerDate:{ color: 'rgba(255,255,255,0.75)', fontSize: 11, textAlign: 'center', marginTop: 1 },
+  todayCol:  { backgroundColor: '#0D47A1' },
   todayHeaderText: { color: '#FFD54F' },
   todayHeaderDate: { color: '#FFD54F' },
 
-  nameCol: { width: 150, paddingHorizontal: 8, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dayCol:  { width: 54, alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
+  teamHeaderRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#E3F2FD', paddingHorizontal: 12, paddingVertical: 7,
+    borderBottomWidth: 1, borderColor: '#BBDEFB',
+  },
+  teamHeaderText:  { fontSize: 13, fontWeight: '800', color: '#1565C0', flex: 1 },
+  teamHeaderCount: { fontSize: 12, color: '#1565C0', fontWeight: '600' },
+
+  nameCol: { paddingHorizontal: 8, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: 6 },
+  dayCol:  { alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
   todayDayCol: { backgroundColor: '#E3F2FD' },
 
   userRow:    { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#f0f0f0', backgroundColor: '#fff' },
   userRowAlt: { backgroundColor: '#FAFAFA' },
 
-  avatarWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#1565C0', justifyContent: 'center', alignItems: 'center' },
+  avatarWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#1565C0', justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   avatarText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   userName:   { fontSize: 12, color: '#333', fontWeight: '600', flex: 1 },
 
@@ -384,32 +447,52 @@ const styles = StyleSheet.create({
   emptyCell: { width: 38, height: 38, borderRadius: 10, backgroundColor: '#f0f0f0' },
   emptyCellToday: { backgroundColor: '#BBDEFB' },
 
-  roleBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#E3F2FD', paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: 1, borderColor: '#BBDEFB' },
-  roleBannerText: { fontSize: 12, fontWeight: '700', color: '#1565C0' },
-  empty:     { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  empty:     { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingTop: 80 },
   emptyText: { fontSize: 14, color: '#bbb' },
 
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center', alignItems: 'center', padding: 24,
+  officeDateLabel: { fontSize: 14, fontWeight: '700', color: '#555', textAlign: 'center', marginBottom: 4 },
+
+  officeTeamBlock: {
+    backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden',
+    elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 2 },
   },
+  officeTeamHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#E3F2FD', paddingHorizontal: 14, paddingVertical: 10,
+  },
+  officeTeamName:  { flex: 1, fontSize: 14, fontWeight: '800', color: '#1565C0' },
+  officeTeamCount: { fontSize: 12, color: '#1565C0', fontWeight: '600' },
+
+  officeCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: '#f5f5f5',
+  },
+  officeAvatar: {
+    width: 36, height: 36, borderRadius: 10, backgroundColor: '#388E3C',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  officeAvatarText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  officeEmpName:    { fontSize: 14, fontWeight: '700', color: '#1a1a1a', marginBottom: 3 },
+  officeTypePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#388E3C', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
+    alignSelf: 'flex-start',
+  },
+  officeTypeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+
+  // Detail modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalCard: {
-    backgroundColor: '#fff', borderRadius: 16, width: '100%', maxWidth: 380,
-    overflow: 'hidden', elevation: 8,
-    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+    backgroundColor: '#fff', borderRadius: 16, width: '100%', maxWidth: 380, overflow: 'hidden',
+    elevation: 8, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
   },
-  modalTypeBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 20, paddingVertical: 14,
-  },
+  modalTypeBar:  { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingVertical: 14 },
   modalTypeText: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  modalBody: { padding: 20, gap: 14 },
-  modalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  modalLabel: { fontSize: 13, color: '#888', width: 80, flexShrink: 0 },
-  modalValue: { fontSize: 14, color: '#1a1a1a', fontWeight: '600', flex: 1, textAlign: 'right' },
-  modalClose: {
-    marginHorizontal: 20, marginBottom: 16, backgroundColor: '#F5F5F5',
-    borderRadius: 10, paddingVertical: 10, alignItems: 'center',
-  },
-  modalCloseText: { fontSize: 14, fontWeight: '700', color: '#555' },
+  modalBody:     { padding: 20, gap: 14 },
+  modalRow:      { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  modalLabel:    { fontSize: 13, color: '#888', width: 80, flexShrink: 0 },
+  modalValue:    { fontSize: 14, color: '#1a1a1a', fontWeight: '600', flex: 1, textAlign: 'right' },
+  modalClose:    { marginHorizontal: 20, marginBottom: 16, backgroundColor: '#F5F5F5', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  modalCloseText:{ fontSize: 14, fontWeight: '700', color: '#555' },
 });
