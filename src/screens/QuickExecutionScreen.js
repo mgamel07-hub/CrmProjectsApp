@@ -4,7 +4,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert, Platform,
+  TextInput, ActivityIndicator, Alert, Platform, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -919,6 +919,37 @@ export default function QuickExecutionScreen({ navigation }) {
     } finally { setSaving(false); }
   };
 
+  const sendWhatsApp = useCallback(async () => {
+    const visitTypeLabel = formType === 0 ? 'مكالمة' : formType === 1 ? 'جلسة تدريب' : formType === 2 ? 'انهاء تدريب'
+      : formType === 3 ? 'محاكاة على النظام' : formType === 5 ? 'انهاء التنفيذ' : 'زيارة متابعة';
+    const lines = [
+      `السلام عليكم ورحمة الله وبركاته،`,
+      `نود إبلاغكم بأنه تم إتمام ${visitTypeLabel} بتاريخ ${date || '—'}.`,
+      ``,
+      `📋 المشروع: ${projectName || '—'}`,
+      scopeName ? `🖥️ النظام: ${scopeName}` : null,
+      startTime ? `🕐 من: ${startTime}${endTime ? ` — إلى: ${endTime}` : ''}` : null,
+    ].filter(Boolean).join('\n');
+    const text = lines + '\n\n' + WEB_ORIGIN;
+    const waUrl = Platform.OS === 'web'
+      ? `https://wa.me/?text=${encodeURIComponent(text)}`
+      : `whatsapp://send?text=${encodeURIComponent(text)}`;
+    try {
+      if (Platform.OS === 'web') {
+        window.open(waUrl, '_blank');
+      } else {
+        const ok = await Linking.canOpenURL(waUrl);
+        if (ok) {
+          await Linking.openURL(waUrl);
+        } else {
+          Alert.alert('تنبيه', 'واتساب غير مثبت على الجهاز');
+        }
+      }
+    } catch {
+      Alert.alert('خطأ', 'تعذر فتح واتساب');
+    }
+  }, [formType, date, projectName, scopeName, startTime, endTime]);
+
   const handleGeneratePdf = async () => {
     setGeneratingPdf(true);
     try {
@@ -1370,6 +1401,11 @@ export default function QuickExecutionScreen({ navigation }) {
           <Text style={s.pdfBtnText}>{formTypeLabel}</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity style={s.waBtn} onPress={sendWhatsApp}>
+          <Ionicons name="logo-whatsapp" size={20} color="#fff" />
+          <Text style={s.waBtnText}>واتساب</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={[s.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>
           {saving
             ? <ActivityIndicator color="#fff" />
@@ -1501,6 +1537,11 @@ const s = StyleSheet.create({
     borderWidth: 1.5, borderColor: '#1565C0',
   },
   pdfBtnText: { color: '#1565C0', fontSize: 13, fontWeight: '700' },
+  waBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#25D366', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14,
+  },
+  waBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   saveBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: '#1565C0', borderRadius: 12, padding: 14,
