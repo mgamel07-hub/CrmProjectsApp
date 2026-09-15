@@ -609,6 +609,7 @@ export default function QuickExecutionScreen({ navigation }) {
   const [emailBody,     setEmailBody]     = useState('');
   const [emailModified, setEmailModified] = useState(false);
   const [emailExpanded, setEmailExpanded] = useState(false);
+  const [skipEmail,     setSkipEmail]     = useState(false);
 
   // Loading flags
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -937,7 +938,7 @@ export default function QuickExecutionScreen({ navigation }) {
         description: finalDesc,
         projectPlanItemIds: selectedItems,
         hideItemsInEmail: false,
-        skipEmailNotification: false,
+        skipEmailNotification: skipEmail,
       });
       const raw = res?.data;
       const executionId = typeof raw?.data === 'object' ? raw?.data?.id : (raw?.data ?? raw?.id ?? raw);
@@ -1462,8 +1463,27 @@ export default function QuickExecutionScreen({ navigation }) {
         </View>
       </Field>
 
+      {/* Email toggle */}
+      <TouchableOpacity
+        style={[s.emailToggleBtn, skipEmail && s.emailToggleBtnOff]}
+        onPress={() => setSkipEmail(v => !v)}
+        activeOpacity={0.8}
+      >
+        <Ionicons
+          name={skipEmail ? 'mail-unread-outline' : 'mail-outline'}
+          size={18}
+          color={skipEmail ? '#888' : '#1565C0'}
+        />
+        <Text style={[s.emailToggleText, skipEmail && s.emailToggleTextOff]}>
+          {skipEmail ? 'لن يُرسل بريد إلكتروني' : 'إرسال بريد إلكتروني'}
+        </Text>
+        <View style={[s.emailToggleSwitch, skipEmail && s.emailToggleSwitchOff]}>
+          <View style={[s.emailToggleThumb, skipEmail && s.emailToggleThumbOff]} />
+        </View>
+      </TouchableOpacity>
+
       {/* Email Preview */}
-      <View style={s.emailSection}>
+      <View style={[s.emailSection, skipEmail && { opacity: 0.4 }]}>
         <TouchableOpacity
           style={s.emailHeader}
           onPress={() => setEmailExpanded(v => !v)}
@@ -1676,6 +1696,25 @@ const s = StyleSheet.create({
   policyDot: {
     width: 10, height: 10, borderRadius: 5, backgroundColor: '#4CAF50',
   },
+
+  emailToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#E3F2FD', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    marginBottom: 6, borderWidth: 1.5, borderColor: '#1565C0',
+  },
+  emailToggleBtnOff: { backgroundColor: '#F5F5F5', borderColor: '#CCC' },
+  emailToggleText:    { flex: 1, fontSize: 14, fontWeight: '700', color: '#1565C0' },
+  emailToggleTextOff: { color: '#888' },
+  emailToggleSwitch: {
+    width: 40, height: 22, borderRadius: 11, backgroundColor: '#1565C0',
+    justifyContent: 'center', paddingHorizontal: 2,
+  },
+  emailToggleSwitchOff: { backgroundColor: '#CCC' },
+  emailToggleThumb: {
+    width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff',
+    alignSelf: 'flex-end',
+  },
+  emailToggleThumbOff: { alignSelf: 'flex-start' },
 
   emailSection: {
     borderWidth: 1.5, borderColor: '#1565C0', borderRadius: 12,
