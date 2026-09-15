@@ -665,7 +665,7 @@ export default function ManageTasksScreen({ route, navigation }) {
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                     <Text style={[styles.label, { marginBottom: 0 }]}>ما الذي تم إنجازه؟ (نقاط) *</Text>
-                    {form.taskDate && (form.assignedTo?.key || userId) === userId && (() => {
+                    {form.taskDate && (() => {
                       const selectedDateStr = form.taskDate.toISOString().split('T')[0];
                       return (
                         <TouchableOpacity
