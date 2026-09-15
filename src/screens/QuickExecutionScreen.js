@@ -826,29 +826,6 @@ export default function QuickExecutionScreen({ navigation }) {
     } catch { }
   };
 
-  const saveTrainee = useCallback((name, job) => {
-    if (!name.trim()) return;
-    setSavedTrainees(prev => {
-      const exists = prev.find(t => t.name === name.trim());
-      const updated = exists
-        ? prev.map(t => t.name === name.trim() ? { name: name.trim(), job: job.trim() } : t)
-        : [...prev, { name: name.trim(), job: job.trim() }];
-      AsyncStorage.setItem(SAVED_TRAINEES_KEY, JSON.stringify(updated)).catch(() => {});
-      return updated;
-    });
-  }, []);
-
-  const addSavedTrainee = useCallback((t) => {
-    setTrainees(prev => {
-      const exists = prev.find(x => x.name === t.name);
-      if (exists) return prev;
-      const blank = prev.find(x => !x.name.trim());
-      if (blank) return prev.map(x => !x.name.trim() ? t : x);
-      return [...prev, t];
-    });
-    setShowSavedList(false);
-  }, []);
-
   const buildDescription = useCallback(() => {
     const parts = [];
 
