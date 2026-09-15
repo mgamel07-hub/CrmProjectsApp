@@ -667,29 +667,7 @@ export default function ManageTasksScreen({ route, navigation }) {
               {/* Description: bullet points for office, textarea for general */}
               {form.taskType === 'office' ? (
                 <>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <Text style={[styles.label, { marginBottom: 0 }]}>ما الذي تم إنجازه؟ (نقاط) *</Text>
-                    {inlineFinalizeDate ? (
-                      <TouchableOpacity
-                        style={styles.inlineFinalizeBtn}
-                        onPress={() => Alert.alert(
-                          'إنهاء مهام اليوم',
-                          `سيتم قفل ${new Date(inlineFinalizeDate + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' })} ولن تتمكن من إضافة مهام جديدة عليه. هل تريد المتابعة؟`,
-                          [
-                            { text: 'إلغاء', style: 'cancel' },
-                            { text: 'إنهاء اليوم', style: 'destructive', onPress: () => {
-                              finalizeDay(inlineFinalizeDate);
-                              setForm(f => ({ ...f, taskDate: null }));
-                              setModal(false);
-                            }},
-                          ]
-                        )}
-                      >
-                        <Ionicons name="lock-closed-outline" size={12} color="#fff" />
-                        <Text style={styles.inlineFinalizeBtnText}>إنهاء اليوم</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
+                  <Text style={styles.label}>ما الذي تم إنجازه؟ (نقاط) *</Text>
                   {bullets.map((b, i) => (
                     <View key={i} style={styles.bulletRow}>
                       <Text style={styles.bulletDot}>•</Text>
@@ -714,6 +692,27 @@ export default function ManageTasksScreen({ route, navigation }) {
                     <Ionicons name="add-circle-outline" size={16} color="#00695C" />
                     <Text style={styles.addBulletText}>إضافة نقطة</Text>
                   </TouchableOpacity>
+
+                  {inlineFinalizeDate ? (
+                    <TouchableOpacity
+                      style={styles.finalizeBtn}
+                      onPress={() => Alert.alert(
+                        'إنهاء مهام اليوم',
+                        `سيتم قفل ${new Date(inlineFinalizeDate + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' })} ولن تتمكن من إضافة مهام جديدة عليه. هل تريد المتابعة؟`,
+                        [
+                          { text: 'إلغاء', style: 'cancel' },
+                          { text: 'إنهاء اليوم', style: 'destructive', onPress: () => {
+                            finalizeDay(inlineFinalizeDate);
+                            setForm(f => ({ ...f, taskDate: null }));
+                            setModal(false);
+                          }},
+                        ]
+                      )}
+                    >
+                      <Ionicons name="lock-closed-outline" size={15} color="#fff" />
+                      <Text style={styles.finalizeBtnText}>إنهاء مهام اليوم</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </>
               ) : (
                 <>
