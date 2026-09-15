@@ -44,8 +44,9 @@ function CustomerPicker({ customers, value, onChange }) {
       </TouchableOpacity>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setOpen(false)}>
-          <View style={styles.pickerModal} onStartShouldSetResponder={() => true}>
+        <View style={styles.pickerOverlay}>
+          <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => setOpen(false)} />
+          <View style={styles.pickerModal}>
             <TextInput
               style={styles.pickerSearch}
               placeholder="ابحث بالاسم أو الكود..."
@@ -77,7 +78,7 @@ function CustomerPicker({ customers, value, onChange }) {
               )}
             </ScrollView>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
     </View>
   );
