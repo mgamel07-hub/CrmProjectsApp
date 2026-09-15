@@ -663,7 +663,32 @@ export default function ManageTasksScreen({ route, navigation }) {
               {/* Description: bullet points for office, textarea for general */}
               {form.taskType === 'office' ? (
                 <>
-                  <Text style={styles.label}>ما الذي تم إنجازه؟ (نقاط) *</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <Text style={[styles.label, { marginBottom: 0 }]}>ما الذي تم إنجازه؟ (نقاط) *</Text>
+                    {form.taskDate && (form.assignedTo?.key || userId) === userId && (() => {
+                      const selectedDateStr = form.taskDate.toISOString().split('T')[0];
+                      return (
+                        <TouchableOpacity
+                          style={styles.inlineFinalizeBtn}
+                          onPress={() => Alert.alert(
+                            'إنهاء مهام اليوم',
+                            `سيتم قفل ${new Date(selectedDateStr + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' })} ولن تتمكن من إضافة مهام جديدة عليه. هل تريد المتابعة؟`,
+                            [
+                              { text: 'إلغاء', style: 'cancel' },
+                              { text: 'إنهاء اليوم', style: 'destructive', onPress: () => {
+                                finalizeDay(selectedDateStr);
+                                setForm(f => ({ ...f, taskDate: null }));
+                                setModal(false);
+                              }},
+                            ]
+                          )}
+                        >
+                          <Ionicons name="lock-closed-outline" size={12} color="#fff" />
+                          <Text style={styles.inlineFinalizeBtnText}>إنهاء اليوم</Text>
+                        </TouchableOpacity>
+                      );
+                    })()}
+                  </View>
                   {bullets.map((b, i) => (
                     <View key={i} style={styles.bulletRow}>
                       <Text style={styles.bulletDot}>•</Text>
@@ -988,4 +1013,10 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   cardFinalizeBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  inlineFinalizeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#B71C1C', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 5,
+  },
+  inlineFinalizeBtnText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 });
