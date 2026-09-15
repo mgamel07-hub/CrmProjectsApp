@@ -4,6 +4,7 @@ import {
   Modal, TextInput, RefreshControl, ActivityIndicator, ScrollView, Platform,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import {
   getTeamTasks, createTask, updateTask, deleteTask,
@@ -69,6 +70,9 @@ export default function ManageTasksScreen({ route, navigation }) {
   // Bullet points for office task description
   const [bullets, setBullets] = useState(['']);
 
+  // Finalized office days — user explicitly sealed the day (stored in AsyncStorage)
+  const [finalizedDays, setFinalizedDays] = useState(new Set());
+
   // Completion notes modal
   const [doneModal, setDoneModal] = useState({ visible: false, task: null, notes: '' });
 
@@ -107,6 +111,32 @@ export default function ManageTasksScreen({ route, navigation }) {
   }, [userId, user?.fullName]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load finalized days from AsyncStorage
+  useEffect(() => {
+    if (!userId) return;
+    AsyncStorage.getItem(`office_finalized_${userId}`).then(raw => {
+      if (raw) {
+        try { setFinalizedDays(new Set(JSON.parse(raw))); } catch { }
+      }
+    }).catch(() => {});
+  }, [userId]);
+
+  const finalizeDay = useCallback((dateStr) => {
+    setFinalizedDays(prev => {
+      const updated = new Set([...prev, dateStr]);
+      AsyncStorage.setItem(`office_finalized_${userId}`, JSON.stringify([...updated])).catch(() => {});
+      return updated;
+    });
+  }, [userId]);
+
+  const unfinalizeDay = useCallback((dateStr) => {
+    setFinalizedDays(prev => {
+      const updated = new Set([...prev].filter(d => d !== dateStr));
+      AsyncStorage.setItem(`office_finalized_${userId}`, JSON.stringify([...updated])).catch(() => {});
+      return updated;
+    });
+  }, [userId]);
 
   // Fetch approved office schedule days for a user (last 30 days only)
   const loadOfficeDays = useCallback(async (targetUserId) => {
@@ -660,47 +690,85 @@ export default function ManageTasksScreen({ route, navigation }) {
                   {officeDaysLoading ? (
                     <ActivityIndicator color="#00695C" style={{ marginBottom: 14 }} />
                   ) : (() => {
-                    // Dates already used by existing office tasks for this assignee (exclude current editing task)
+                    // Only hide finalized days — days with tasks but not finalized stay available
                     const assigneeId = form.assignedTo?.key || userId;
-                    const usedDates = new Set(
-                      tasks
-                        .filter(t =>
+                    const isSelf = assigneeId === userId;
+                    const availableDays = officeDays.filter(d => !finalizedDays.has(d));
+
+                    // Check how many tasks exist on the currently selected day
+                    const selectedDateStr = form.taskDate ? form.taskDate.toISOString().split('T')[0] : null;
+                    const tasksOnSelected = selectedDateStr
+                      ? tasks.filter(t =>
                           t.task_type === 'office' &&
                           String(t.assigned_to) === assigneeId &&
+                          String(t.task_date || '').slice(0, 10) === selectedDateStr &&
                           t.id !== editingTaskId
-                        )
-                        .map(t => String(t.task_date || '').slice(0, 10))
-                        .filter(Boolean)
-                    );
-                    const availableDays = officeDays.filter(d => !usedDates.has(d));
+                        ).length
+                      : 0;
+
                     if (availableDays.length === 0) return (
                       <View style={{ backgroundColor: '#FFF8E1', borderRadius: 8, padding: 10, marginBottom: 14 }}>
                         <Text style={{ fontSize: 12, color: '#F57F17' }}>
                           {officeDays.length === 0
                             ? 'لا توجد أيام مكتب معتمدة في الجدول الأسبوعي لهذا الموظف'
-                            : 'جميع أيام المكتب المعتمدة تم تسجيل مهام عليها'}
+                            : 'جميع أيام المكتب تم إنهاؤها'}
                         </Text>
                       </View>
                     );
                     return (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={{ gap: 8, paddingVertical: 6, marginBottom: 14 }}>
-                        {availableDays.map(date => {
-                          const dateObj  = new Date(date.slice(0, 10) + 'T12:00:00');
-                          const isSelected = form.taskDate
-                            ? form.taskDate.toISOString().split('T')[0] === date
-                            : false;
-                          return (
-                            <TouchableOpacity key={date}
-                              style={[styles.dayChip, isSelected && styles.dayChipSelected]}
-                              onPress={() => setForm(f => ({ ...f, taskDate: dateObj }))}>
-                              <Text style={[styles.dayChipText, isSelected && styles.dayChipTextSelected]}>
-                                {dateObj.toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
+                      <>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={{ gap: 8, paddingVertical: 6, marginBottom: 8 }}>
+                          {availableDays.map(date => {
+                            const dateObj  = new Date(date.slice(0, 10) + 'T12:00:00');
+                            const isSelected = form.taskDate
+                              ? form.taskDate.toISOString().split('T')[0] === date
+                              : false;
+                            const hasTask = tasks.some(t =>
+                              t.task_type === 'office' &&
+                              String(t.assigned_to) === assigneeId &&
+                              String(t.task_date || '').slice(0, 10) === date
+                            );
+                            return (
+                              <TouchableOpacity key={date}
+                                style={[styles.dayChip, isSelected && styles.dayChipSelected]}
+                                onPress={() => setForm(f => ({ ...f, taskDate: dateObj }))}>
+                                {hasTask && (
+                                  <Ionicons name="layers-outline" size={11}
+                                    color={isSelected ? '#fff' : '#00695C'}
+                                    style={{ marginLeft: 3 }} />
+                                )}
+                                <Text style={[styles.dayChipText, isSelected && styles.dayChipTextSelected]}>
+                                  {dateObj.toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+
+                        {/* Finalize button — shown when selected day has ≥1 tasks and user is self */}
+                        {isSelf && selectedDateStr && tasksOnSelected > 0 && (
+                          <TouchableOpacity
+                            style={styles.finalizeBtn}
+                            onPress={() => Alert.alert(
+                              'إنهاء مهام اليوم',
+                              `سيتم قفل ${new Date(selectedDateStr + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' })} ولن تتمكن من إضافة مهام جديدة عليه. هل تريد المتابعة؟`,
+                              [
+                                { text: 'إلغاء', style: 'cancel' },
+                                { text: 'إنهاء اليوم', style: 'destructive', onPress: () => {
+                                  finalizeDay(selectedDateStr);
+                                  setForm(f => ({ ...f, taskDate: null }));
+                                  setModal(false);
+                                }},
+                              ]
+                            )}
+                          >
+                            <Ionicons name="lock-closed-outline" size={15} color="#fff" />
+                            <Text style={styles.finalizeBtnText}>إنهاء مهام اليوم</Text>
+                            <Text style={styles.finalizeBtnSub}>({tasksOnSelected} مهمة مسجلة)</Text>
+                          </TouchableOpacity>
+                        )}
+                      </>
                     );
                   })()}
                 </>
@@ -868,8 +936,18 @@ const styles = StyleSheet.create({
   addBulletText: { fontSize: 13, color: '#00695C', fontWeight: '600' },
 
   // Office day chips (inside modal)
-  dayChip: { paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#f0f0f0', borderRadius: 20, borderWidth: 1.5, borderColor: '#e0e0e0' },
+  dayChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#f0f0f0', borderRadius: 20, borderWidth: 1.5, borderColor: '#e0e0e0' },
   dayChipSelected: { backgroundColor: '#00695C', borderColor: '#00695C' },
   dayChipText: { fontSize: 13, color: '#444', fontWeight: '600' },
   dayChipTextSelected: { color: '#fff' },
+
+  // Finalize day button
+  finalizeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#C62828', borderRadius: 10,
+    paddingHorizontal: 16, paddingVertical: 12, marginBottom: 14,
+    justifyContent: 'center',
+  },
+  finalizeBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  finalizeBtnSub:  { fontSize: 11, color: 'rgba(255,255,255,0.8)' },
 });
