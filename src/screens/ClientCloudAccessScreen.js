@@ -45,7 +45,7 @@ function CustomerPicker({ customers, value, onChange }) {
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setOpen(false)}>
-          <View style={styles.pickerModal}>
+          <View style={styles.pickerModal} onStartShouldSetResponder={() => true}>
             <TextInput
               style={styles.pickerSearch}
               placeholder="ابحث بالاسم أو الكود..."
