@@ -651,42 +651,44 @@ export default function DashboardScreen({ navigation }) {
         onRequestClose={closeModal}
       >
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={closeModal}>
-          <Animated.View style={[styles.modalSheet, { transform: [{ translateY: slideAnim }] }]}>
-            <TouchableOpacity activeOpacity={1}>
-              <View style={styles.modalHandle} />
-              {selectedCard && (() => {
-                const color = cardColor(selectedCard.sortOrder, selectedCard.stageName);
-                const displayName = (selectedCard.stageName || '').replace(/ (Call|✅|⛔|👤)$/i, '').trim();
-                return (
-                  <>
-                    <View style={[styles.modalHeader, { borderBottomColor: color }]}>
-                      <View style={[styles.modalIconWrap, { backgroundColor: color + '1A' }]}>
-                        <Ionicons name={cardIcon(selectedCard.stageName)} size={22} color={color} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.modalTitle, { color }]}>{displayName}</Text>
-                        <Text style={styles.modalCount}>{selectedCard.count} {selectedCard.count === 1 ? 'نظام' : 'أنظمة'}</Text>
-                      </View>
-                      <TouchableOpacity onPress={closeModal} style={styles.modalClose}>
-                        <Ionicons name="close" size={22} color="#666" />
-                      </TouchableOpacity>
+          <Animated.View
+            style={[styles.modalSheet, { transform: [{ translateY: slideAnim }] }]}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={styles.modalHandle} />
+            {selectedCard && (() => {
+              const color = cardColor(selectedCard.sortOrder, selectedCard.stageName);
+              const displayName = (selectedCard.stageName || '').replace(/ (Call|✅|⛔|👤)$/i, '').trim();
+              return (
+                <>
+                  <View style={[styles.modalHeader, { borderBottomColor: color }]}>
+                    <View style={[styles.modalIconWrap, { backgroundColor: color + '1A' }]}>
+                      <Ionicons name={cardIcon(selectedCard.stageName)} size={22} color={color} />
                     </View>
-                    <FlatList
-                      data={selectedCard.systems}
-                      keyExtractor={(_, i) => i.toString()}
-                      renderItem={({ item }) => <SystemRow item={item} />}
-                      contentContainerStyle={{ paddingBottom: 32 }}
-                      showsVerticalScrollIndicator={false}
-                      ListEmptyComponent={
-                        <View style={styles.modalEmpty}>
-                          <Text style={styles.modalEmptyText}>لا توجد أنظمة</Text>
-                        </View>
-                      }
-                    />
-                  </>
-                );
-              })()}
-            </TouchableOpacity>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.modalTitle, { color }]}>{displayName}</Text>
+                      <Text style={styles.modalCount}>{selectedCard.count} {selectedCard.count === 1 ? 'نظام' : 'أنظمة'}</Text>
+                    </View>
+                    <TouchableOpacity onPress={closeModal} style={styles.modalClose}>
+                      <Ionicons name="close" size={22} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+                  <FlatList
+                    data={selectedCard.systems}
+                    keyExtractor={(_, i) => i.toString()}
+                    renderItem={({ item }) => <SystemRow item={item} />}
+                    contentContainerStyle={{ paddingBottom: 32 }}
+                    showsVerticalScrollIndicator={false}
+                    nestedScrollEnabled
+                    ListEmptyComponent={
+                      <View style={styles.modalEmpty}>
+                        <Text style={styles.modalEmptyText}>لا توجد أنظمة</Text>
+                      </View>
+                    }
+                  />
+                </>
+              );
+            })()}
           </Animated.View>
         </TouchableOpacity>
       </Modal>
