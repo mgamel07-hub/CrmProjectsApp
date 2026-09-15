@@ -112,14 +112,14 @@ export default function WeeklyScheduleScreen({ route }) {
   };
 
   const save = async () => {
-    if (form.type === 'visit' && !form.client_name.trim()) {
-      Alert.alert('', 'اختر أو اكتب اسم العميل');
-      return;
-    }
-    setSaving(true);
     try {
+      if (form.type === 'visit' && !form.client_name?.trim()) {
+        Alert.alert('', 'اختر أو اكتب اسم العميل');
+        return;
+      }
+      setSaving(true);
       const autoApprove = myRole === 'admin' || myRole === 'manager';
-      const isEditingApproved = modal.entry?.status === 'approved';
+      const isEditingApproved = modal?.entry?.status === 'approved';
 
       if (!autoApprove && isEditingApproved) {
         // Employee modifying approved entry → create modification request
@@ -129,18 +129,18 @@ export default function WeeklyScheduleScreen({ route }) {
           employeeName: user?.fullName || userId,
           date: modal.date,
           type: form.type,
-          client_name: form.type === 'visit' ? form.client_name.trim() : null,
+          client_name: form.type === 'visit' ? form.client_name?.trim() : null,
           vacation_type: form.type === 'vacation' ? form.vacation_type : null,
           notes: form.notes || null,
         });
         Alert.alert('تم الإرسال', 'تم إرسال طلب التعديل للمدير للاعتماد');
       } else {
         await upsertScheduleEntry({
-          ...(modal.entry ? { id: modal.entry.id } : {}),
+          ...(modal?.entry ? { id: modal.entry.id } : {}),
           crm_user_id: userId,
           date: modal.date,
           type: form.type,
-          client_name: form.type === 'visit' ? form.client_name.trim() : null,
+          client_name: form.type === 'visit' ? form.client_name?.trim() : null,
           vacation_type: form.type === 'vacation' ? form.vacation_type : null,
           notes: form.notes || null,
         }, autoApprove);
@@ -148,7 +148,7 @@ export default function WeeklyScheduleScreen({ route }) {
       setModal(null);
       load();
     } catch (e) {
-      Alert.alert('خطأ', e.message);
+      Alert.alert('خطأ', e?.message || String(e) || 'تعذرت العملية');
     } finally {
       setSaving(false);
     }

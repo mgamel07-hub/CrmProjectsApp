@@ -377,7 +377,7 @@ export default function ClientCloudAccessScreen() {
       )}
 
       {/* Add/Edit modal */}
-      <Modal visible={modalOpen} animationType="slide" transparent onRequestClose={() => setModalOpen(false)}>
+      <Modal visible={modalOpen} animationType="slide" transparent onRequestClose={() => {}}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalBox}>

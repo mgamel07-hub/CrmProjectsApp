@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, Alert,
   Modal, TextInput, RefreshControl, ActivityIndicator, ScrollView, Platform,
@@ -205,6 +205,18 @@ export default function ManageTasksScreen({ route, navigation }) {
       return da.localeCompare(db);
     });
 
+  // Last office task per unfinalized day — these cards get the finalize button
+  const lastOfficeTaskPerDayIds = useMemo(() => {
+    const map = {};
+    for (const t of filtered) {
+      if (t.task_type === 'office' && t.task_date) {
+        const d = String(t.task_date).slice(0, 10);
+        if (!finalizedDays.has(d)) map[d] = t.id;
+      }
+    }
+    return new Set(Object.values(map));
+  }, [filtered, finalizedDays]);
+
   // ── Toggle done/pending ───────────────────────────────────────────────────────
 
   const toggle = (task) => {
@@ -349,69 +361,89 @@ export default function ManageTasksScreen({ route, navigation }) {
     const isSoon    = !isDone && !isOverdue && item.due_date && item.due_date <= tomorrow;
     const prio      = PRIORITY[item.priority] || PRIORITY.normal;
     const showPrio  = item.priority && item.priority !== 'normal';
+    const showFinalizeBtn = lastOfficeTaskPerDayIds.has(item.id) && String(item.assigned_to) === userId;
+    const taskDateStr = item.task_date ? String(item.task_date).slice(0, 10) : null;
     return (
-      <View style={[styles.card, showPrio && { borderRightColor: prio.color, borderRightWidth: 3 }]}>
-        <TouchableOpacity style={styles.checkBtn} onPress={() => toggle(item)}>
-          <View style={[styles.check, isDone && styles.checked]}>
-            {isDone && <Ionicons name="checkmark" size={14} color="#fff" />}
-          </View>
-        </TouchableOpacity>
-        <View style={styles.taskBody}>
-          <Text style={[styles.taskTitle, isDone && styles.doneTitle]} numberOfLines={2}>{item.title}</Text>
-          {item.description ? (
-            item.task_type === 'office'
-              ? item.description.split('\n').filter(Boolean).map((line, i) => (
-                  <Text key={i} style={styles.taskDesc}>{line}</Text>
-                ))
-              : <Text style={styles.taskDesc} numberOfLines={1}>{item.description}</Text>
-          ) : null}
-          {item.completion_notes ? (
-            <Text style={styles.completionNote} numberOfLines={1}>💬 {item.completion_notes}</Text>
-          ) : null}
-          <View style={styles.metaRow}>
-            {item.task_type === 'office' && (
-              <View style={[styles.prioBadge, { backgroundColor: '#E0F2F1' }]}>
-                <Ionicons name="business-outline" size={9} color="#00695C" />
-                <Text style={[styles.prioBadgeText, { color: '#00695C' }]}>
-                  مكتبي{item.task_date ? ` · ${item.task_date}` : ''}
+      <View>
+        <View style={[styles.card, showPrio && { borderRightColor: prio.color, borderRightWidth: 3 }, showFinalizeBtn && { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, marginBottom: 0 }]}>
+          <TouchableOpacity style={styles.checkBtn} onPress={() => toggle(item)}>
+            <View style={[styles.check, isDone && styles.checked]}>
+              {isDone && <Ionicons name="checkmark" size={14} color="#fff" />}
+            </View>
+          </TouchableOpacity>
+          <View style={styles.taskBody}>
+            <Text style={[styles.taskTitle, isDone && styles.doneTitle]} numberOfLines={2}>{item.title}</Text>
+            {item.description ? (
+              item.task_type === 'office'
+                ? item.description.split('\n').filter(Boolean).map((line, i) => (
+                    <Text key={i} style={styles.taskDesc}>{line}</Text>
+                  ))
+                : <Text style={styles.taskDesc} numberOfLines={1}>{item.description}</Text>
+            ) : null}
+            {item.completion_notes ? (
+              <Text style={styles.completionNote} numberOfLines={1}>💬 {item.completion_notes}</Text>
+            ) : null}
+            <View style={styles.metaRow}>
+              {item.task_type === 'office' && (
+                <View style={[styles.prioBadge, { backgroundColor: '#E0F2F1' }]}>
+                  <Ionicons name="business-outline" size={9} color="#00695C" />
+                  <Text style={[styles.prioBadgeText, { color: '#00695C' }]}>
+                    مكتبي{item.task_date ? ` · ${item.task_date}` : ''}
+                  </Text>
+                </View>
+              )}
+              {showPrio && (
+                <View style={[styles.prioBadge, { backgroundColor: prio.bg }]}>
+                  <Ionicons name={prio.icon} size={9} color={prio.color} />
+                  <Text style={[styles.prioBadgeText, { color: prio.color }]}>{prio.label}</Text>
+                </View>
+              )}
+              <View style={styles.metaChip}>
+                <Ionicons name="person-outline" size={10} color="#888" />
+                <Text style={styles.metaText}>{nameOf(item.assigned_to)}</Text>
+              </View>
+              {item.due_date && (
+                <View style={[styles.metaChip, isOverdue && styles.metaChipRed, isSoon && styles.metaChipOrange]}>
+                  <Ionicons name="calendar-outline" size={10}
+                    color={isOverdue ? '#C62828' : isSoon ? '#E65100' : '#888'} />
+                  <Text style={[styles.metaText,
+                    isOverdue && { color: '#C62828' },
+                    isSoon    && { color: '#E65100' }]}>{item.due_date}</Text>
+                </View>
+              )}
+              <View style={[styles.statusBadge, isDone ? styles.badgeDone : styles.badgePending]}>
+                <Text style={[styles.badgeText, { color: isDone ? '#388E3C' : '#E65100' }]}>
+                  {isDone ? 'منجزة' : 'معلقة'}
                 </Text>
               </View>
-            )}
-            {showPrio && (
-              <View style={[styles.prioBadge, { backgroundColor: prio.bg }]}>
-                <Ionicons name={prio.icon} size={9} color={prio.color} />
-                <Text style={[styles.prioBadgeText, { color: prio.color }]}>{prio.label}</Text>
-              </View>
-            )}
-            <View style={styles.metaChip}>
-              <Ionicons name="person-outline" size={10} color="#888" />
-              <Text style={styles.metaText}>{nameOf(item.assigned_to)}</Text>
-            </View>
-            {item.due_date && (
-              <View style={[styles.metaChip, isOverdue && styles.metaChipRed, isSoon && styles.metaChipOrange]}>
-                <Ionicons name="calendar-outline" size={10}
-                  color={isOverdue ? '#C62828' : isSoon ? '#E65100' : '#888'} />
-                <Text style={[styles.metaText,
-                  isOverdue && { color: '#C62828' },
-                  isSoon    && { color: '#E65100' }]}>{item.due_date}</Text>
-              </View>
-            )}
-            <View style={[styles.statusBadge, isDone ? styles.badgeDone : styles.badgePending]}>
-              <Text style={[styles.badgeText, { color: isDone ? '#388E3C' : '#E65100' }]}>
-                {isDone ? 'منجزة' : 'معلقة'}
-              </Text>
             </View>
           </View>
+          {/* Edit button */}
+          {!isDone && (
+            <TouchableOpacity onPress={() => openEdit(item)} style={styles.editBtn}>
+              <Ionicons name="create-outline" size={16} color="#bbb" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={() => del(item)} style={styles.delBtn}>
+            <Ionicons name="trash-outline" size={17} color="#ddd" />
+          </TouchableOpacity>
         </View>
-        {/* Edit button */}
-        {!isDone && (
-          <TouchableOpacity onPress={() => openEdit(item)} style={styles.editBtn}>
-            <Ionicons name="create-outline" size={16} color="#bbb" />
+        {showFinalizeBtn && taskDateStr && (
+          <TouchableOpacity
+            style={styles.cardFinalizeBtn}
+            onPress={() => Alert.alert(
+              'إنهاء مهام اليوم',
+              `سيتم قفل ${new Date(taskDateStr + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' })} ولن تتمكن من إضافة مهام جديدة عليه. هل تريد المتابعة؟`,
+              [
+                { text: 'إلغاء', style: 'cancel' },
+                { text: 'إنهاء اليوم', style: 'destructive', onPress: () => finalizeDay(taskDateStr) },
+              ]
+            )}
+          >
+            <Ionicons name="lock-closed-outline" size={13} color="#fff" />
+            <Text style={styles.cardFinalizeBtnText}>إنهاء مهام اليوم</Text>
           </TouchableOpacity>
         )}
-        <TouchableOpacity onPress={() => del(item)} style={styles.delBtn}>
-          <Ionicons name="trash-outline" size={17} color="#ddd" />
-        </TouchableOpacity>
       </View>
     );
   };
@@ -950,4 +982,10 @@ const styles = StyleSheet.create({
   },
   finalizeBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
   finalizeBtnSub:  { fontSize: 11, color: 'rgba(255,255,255,0.8)' },
+  cardFinalizeBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: '#B71C1C', borderBottomLeftRadius: 10, borderBottomRightRadius: 10,
+    paddingVertical: 9,
+  },
+  cardFinalizeBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 });
