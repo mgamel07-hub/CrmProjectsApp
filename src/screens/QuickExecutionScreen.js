@@ -620,6 +620,37 @@ export default function QuickExecutionScreen({ navigation }) {
   const [saving,          setSaving]           = useState(false);
   const [generatingPdf,   setGeneratingPdf]   = useState(false);
 
+  const saveTrainee = useCallback((name, job) => {
+    if (!name.trim()) return;
+    setSavedTrainees(prev => {
+      const exists = prev.find(t => t.name === name.trim());
+      const updated = exists
+        ? prev.map(t => t.name === name.trim() ? { name: name.trim(), job: (job || '').trim() } : t)
+        : [...prev, { name: name.trim(), job: (job || '').trim() }];
+      AsyncStorage.setItem(SAVED_TRAINEES_KEY, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  }, []);
+
+  const addSavedTrainee = useCallback((t) => {
+    setTrainees(prev => {
+      const exists = prev.find(x => x.name === t.name);
+      if (exists) return prev;
+      const blankIdx = prev.findIndex(x => !x.name.trim());
+      if (blankIdx !== -1) return prev.map((x, i) => i === blankIdx ? t : x);
+      return [...prev, t];
+    });
+    setShowSavedList(false);
+  }, []);
+
+  const removeSavedTrainee = useCallback((name) => {
+    setSavedTrainees(prev => {
+      const updated = prev.filter(t => t.name !== name);
+      AsyncStorage.setItem(SAVED_TRAINEES_KEY, JSON.stringify(updated)).catch(() => {});
+      return updated;
+    });
+  }, []);
+
   useEffect(() => {
     // Load projects + restore last-used selection + load saved trainees
     setLoadingProjects(true);
@@ -1312,13 +1343,18 @@ export default function QuickExecutionScreen({ navigation }) {
           {showSavedList && (
             <View style={s.savedList}>
               {savedTrainees.map((t, i) => (
-                <TouchableOpacity key={i} style={s.savedItem} onPress={() => addSavedTrainee(t)}>
-                  <Ionicons name="person-add-outline" size={15} color="#1565C0" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.savedItemName}>{t.name}</Text>
-                    {!!t.job && <Text style={s.savedItemJob}>{t.job}</Text>}
-                  </View>
-                </TouchableOpacity>
+                <View key={i} style={s.savedItem}>
+                  <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }} onPress={() => addSavedTrainee(t)}>
+                    <Ionicons name="person-add-outline" size={15} color="#1565C0" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.savedItemName}>{t.name}</Text>
+                      {!!t.job && <Text style={s.savedItemJob}>{t.job}</Text>}
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => removeSavedTrainee(t.name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="trash-outline" size={16} color="#E53935" />
+                  </TouchableOpacity>
+                </View>
               ))}
             </View>
           )}
