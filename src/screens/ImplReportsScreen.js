@@ -519,11 +519,6 @@ export default function ImplReportsScreen() {
       if (stageFilter  && s.stageName  !== stageFilter)  return false;
       if (clientFilter && s.clientName !== clientFilter)  return false;
       if (empFilter    && !(s.employees ?? []).includes(empFilter)) return false;
-      if (filterFrom || filterTo) {
-        const dateRef = s.currentStage?.startedOn
-          || (s.allStages ?? []).find(st => st.startedOn)?.startedOn;
-        if (!inDateRange(dateRef, filterFrom, filterTo)) return false;
-      }
       if (search) {
         const q = search.trim().toLowerCase();
         if (!q) return true;
