@@ -133,7 +133,12 @@ export default function WeeklyScheduleScreen({ route }) {
           vacation_type: form.type === 'vacation' ? form.vacation_type : null,
           notes: form.notes || null,
         });
-        Alert.alert('تم الإرسال', 'تم إرسال طلب التعديل للمدير للاعتماد');
+        // Close modal only after user acknowledges success
+        Alert.alert(
+          'تم الإرسال',
+          'تم إرسال طلب التعديل للمدير للاعتماد',
+          [{ text: 'حسناً', onPress: () => { setModal(null); load(); } }],
+        );
       } else {
         await upsertScheduleEntry({
           ...(modal?.entry ? { id: modal.entry.id } : {}),
@@ -144,9 +149,9 @@ export default function WeeklyScheduleScreen({ route }) {
           vacation_type: form.type === 'vacation' ? form.vacation_type : null,
           notes: form.notes || null,
         }, autoApprove);
+        setModal(null);
+        load();
       }
-      setModal(null);
-      load();
     } catch (e) {
       Alert.alert('خطأ', e?.message || String(e) || 'تعذرت العملية');
     } finally {
