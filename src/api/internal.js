@@ -108,11 +108,12 @@ export async function rejectModificationRequest(id, reason) {
 }
 
 export async function createModificationRequest({ entryId, crm_user_id, employeeName, date, type, client_name, vacation_type, notes }) {
-  const { error } = await supabase.from('schedule_modification_requests').insert({
+  const { data, error } = await supabase.from('schedule_modification_requests').insert({
     entry_id: entryId, crm_user_id: String(crm_user_id), employee_name: employeeName || null,
     date, type, client_name: client_name || null, vacation_type: vacation_type || null, notes: notes || null,
-  });
+  }).select();
   if (error) throw error;
+  if (!data?.length) throw new Error('لم يتم حفظ طلب التعديل — تحقق من صلاحيات جدول schedule_modification_requests في Supabase');
 }
 
 // ── Office Reports ────────────────────────────────────────────────────────────
