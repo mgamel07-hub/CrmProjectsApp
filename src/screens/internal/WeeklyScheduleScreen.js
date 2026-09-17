@@ -112,17 +112,18 @@ export default function WeeklyScheduleScreen({ route }) {
   };
 
   const save = async () => {
+    if (form.type === 'visit' && !form.client_name?.trim()) {
+      Alert.alert('', 'اختر أو اكتب اسم العميل');
+      return;
+    }
+    setSaving(true);
+    let pendingError = null;
+    let isMod = false;
     try {
-      if (form.type === 'visit' && !form.client_name?.trim()) {
-        Alert.alert('', 'اختر أو اكتب اسم العميل');
-        return;
-      }
-      setSaving(true);
       const autoApprove = myRole === 'admin' || myRole === 'manager';
       const isEditingApproved = modal?.entry?.status === 'approved';
-
-      if (!autoApprove && isEditingApproved) {
-        // Employee modifying approved entry → create modification request
+      isMod = !autoApprove && isEditingApproved;
+      if (isMod) {
         await createModificationRequest({
           entryId: modal.entry.id,
           crm_user_id: userId,
@@ -133,12 +134,6 @@ export default function WeeklyScheduleScreen({ route }) {
           vacation_type: form.type === 'vacation' ? form.vacation_type : null,
           notes: form.notes || null,
         });
-        // Close modal only after user acknowledges success
-        Alert.alert(
-          'تم الإرسال',
-          'تم إرسال طلب التعديل للمدير للاعتماد',
-          [{ text: 'حسناً', onPress: () => { setModal(null); load(); } }],
-        );
       } else {
         await upsertScheduleEntry({
           ...(modal?.entry ? { id: modal.entry.id } : {}),
@@ -149,13 +144,21 @@ export default function WeeklyScheduleScreen({ route }) {
           vacation_type: form.type === 'vacation' ? form.vacation_type : null,
           notes: form.notes || null,
         }, autoApprove);
-        setModal(null);
-        load();
       }
     } catch (e) {
-      Alert.alert('خطأ', e?.message || String(e) || 'تعذرت العملية');
+      pendingError = e?.message || String(e) || 'تعذرت العملية';
     } finally {
       setSaving(false);
+    }
+    // Close modal first — alerts shown while a Modal is open may be swallowed on Android
+    setModal(null);
+    if (pendingError) {
+      Alert.alert('خطأ', pendingError);
+    } else if (isMod) {
+      load();
+      Alert.alert('تم الإرسال', 'تم إرسال طلب التعديل للمدير للاعتماد');
+    } else {
+      load();
     }
   };
 
