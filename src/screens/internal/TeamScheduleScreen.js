@@ -40,12 +40,20 @@ export default function TeamScheduleScreen({ route }) {
   const [activeTab,   setActiveTab]   = useState('schedule'); // 'schedule' | 'office'
   const [weekOffset,  setWeekOffset]  = useState(0);
   const [days,        setDays]        = useState([]);
-  const [users,       setUsers]       = useState([]);   // [{ id, fullName, teamId, teamName }]
+  const [users,       setUsers]       = useState([]);     // schedule tab — team-filtered
+  const [allUsers,    setAllUsers]    = useState([]);     // office tab — all teams (for managers)
   const [entries,     setEntries]     = useState([]);
   const [tasks,       setTasks]       = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [myRole,      setMyRole]      = useState('employee');
   const [detailModal, setDetailModal] = useState(null); // { entry, name } | null
+
+  const toRow = useCallback((m) => ({
+    id:       m.crm_user_id,
+    fullName: m.display_name || String(m.crm_user_id),
+    teamId:   m.team_id || 'noTeam',
+    teamName: m.teams?.name || (m.team_id ? `فريق ${m.team_id}` : 'بدون فريق'),
+  }), []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,55 +68,66 @@ export default function TeamScheduleScreen({ route }) {
       const teamId = myRec?.team_id;
       setMyRole(role);
 
-      let filtered;
+      // Schedule tab: managers see own team only, admins see all
+      let schedFiltered;
       if (role === 'admin') {
-        filtered = members;
+        schedFiltered = members;
       } else if (role === 'manager') {
-        filtered = teamId ? members.filter(m => m.team_id === teamId) : members;
+        schedFiltered = teamId ? members.filter(m => m.team_id === teamId) : members;
       } else {
         const self = members.find(m => String(m.crm_user_id) === userId);
-        filtered = self ? [self] : [];
+        schedFiltered = self ? [self] : [];
       }
 
-      let userList = filtered.map(m => ({
-        id:       m.crm_user_id,
-        fullName: m.display_name || String(m.crm_user_id),
-        teamId:   m.team_id || 'noTeam',
-        teamName: m.teams?.name || (m.team_id ? `فريق ${m.team_id}` : 'بدون فريق'),
-      }));
+      // Office tab: managers and admins see ALL teams
+      const officeFiltered = (role === 'employee')
+        ? schedFiltered
+        : members;
+
+      let userList    = schedFiltered.map(toRow);
+      let allUserList = officeFiltered.map(toRow);
 
       if (userId && !userList.some(u => String(u.id) === userId)) {
-        userList = [{ id: userId, fullName: user?.fullName || userId, teamId: 'noTeam', teamName: 'بدون فريق' }, ...userList];
+        const selfRow = { id: userId, fullName: user?.fullName || userId, teamId: 'noTeam', teamName: 'بدون فريق' };
+        userList    = [selfRow, ...userList];
+        allUserList = [selfRow, ...allUserList];
       }
 
-      if (userList.length) {
-        const ids     = userList.map(u => String(u.id));
+      // Load entries for the union of both lists
+      const allIds = [...new Set([
+        ...userList.map(u => String(u.id)),
+        ...allUserList.map(u => String(u.id)),
+      ])];
+
+      if (allIds.length) {
         const [rawData, taskData] = await Promise.all([
-          getTeamWeekSchedule(ids, fmt(week[0]), fmt(week[6])),
-          getTeamTasks(ids),
+          getTeamWeekSchedule(allIds, fmt(week[0]), fmt(week[6])),
+          getTeamTasks(allIds),
         ]);
-        const data    = role === 'employee'
+        const data = role === 'employee'
           ? rawData
           : rawData.filter(e => !e.status || e.status === 'approved');
         setEntries(data);
         setTasks(taskData || []);
 
-        // Hide rows with no entries this week (unless nobody has entries)
+        // Schedule tab: hide rows with no entries this week
         const visible = role === 'employee'
           ? userList
           : data.length > 0
             ? userList.filter(u => data.some(e => String(e.crm_user_id) === String(u.id)))
             : userList;
         setUsers(visible);
+        setAllUsers(allUserList);
       } else {
         setUsers([]);
+        setAllUsers([]);
       }
     } catch (e) {
       Alert.alert('خطأ', e.message || 'حدث خطأ');
     } finally {
       setLoading(false);
     }
-  }, [weekOffset, userId]);
+  }, [weekOffset, userId, toRow]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -140,7 +159,7 @@ export default function TeamScheduleScreen({ route }) {
   });
 
   // Office today list (Tab 2) — grouped by team
-  const officeToday = users.filter(u => getEntry(u.id, todayStr)?.type === 'office');
+  const officeToday = allUsers.filter(u => getEntry(u.id, todayStr)?.type === 'office');
   const officeTodayByTeam = [];
   const seenOT = {};
   officeToday.forEach(u => {
