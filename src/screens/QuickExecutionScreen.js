@@ -25,7 +25,7 @@ function nowTimeStr() {
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 import {
-  getProjects, getScopesDropdown, getStagesDropdown, getStagesByScope,
+  getProjects, getScopesByProject, getScopesDropdown, getStagesDropdown, getStagesByScope,
   getPlansDropDown, getPlanItems,
   createProjectVisit, uploadPlanExecutionAttachment,
 } from '../api/projects';
@@ -683,8 +683,12 @@ export default function QuickExecutionScreen({ navigation }) {
             setProjectId(last.projectId);
             setProjectName(last.projectName || '');
             setLoadingScopes(true);
-            const scopeRes = await getScopesDropdown(last.projectId).catch(() => null);
-            const scopeList = extractList(scopeRes) || [];
+            const scopeRes = await getScopesByProject(last.projectId).catch(() => null);
+            const rawScopes = extractList(scopeRes) || [];
+            const scopeList = rawScopes.map(s => ({
+              ...s,
+              value: s.productName || s.product?.name || s.product?.localName || s.title || `#${s.id}`,
+            }));
             setScopes(scopeList);
             setLoadingScopes(false);
 
@@ -724,8 +728,13 @@ export default function QuickExecutionScreen({ navigation }) {
     setScopes([]); setStages([]); setPlans([]); setPlanItems([]); setSelectedItems([]);
     saveLastUsed({ projectId: id, projectName: name, scopeId: null, scopeName: '', stageId: null });
     setLoadingScopes(true);
-    try { setScopes(extractList(await getScopesDropdown(id)) || []); }
-    catch { setScopes([]); }
+    try {
+      const rawScopes = extractList(await getScopesByProject(id)) || [];
+      setScopes(rawScopes.map(s => ({
+        ...s,
+        value: s.productName || s.product?.name || s.product?.localName || s.title || `#${s.id}`,
+      })));
+    } catch { setScopes([]); }
     finally { setLoadingScopes(false); }
   }, [saveLastUsed]);
 
