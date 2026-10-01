@@ -949,6 +949,8 @@ export default function QuickExecutionScreen({ navigation }) {
       }
       const res = await createProjectVisit({
         projectPlanId: planId,
+        projectScopeId: scopeId || null,
+        projectScopeStageId: stageId || null,
         executionDate: date,
         startTime: startTime || null,
         endTime: endTime || null,
@@ -958,6 +960,10 @@ export default function QuickExecutionScreen({ navigation }) {
         skipEmailNotification: skipEmail,
       });
       const raw = res?.data;
+      // Catch API-level errors returned with HTTP 200 (isSuccess: false pattern)
+      if (raw && (raw.isSuccess === false || raw.success === false)) {
+        throw new Error(raw.message || raw.errors?.join(', ') || 'فشل حفظ الإجراء');
+      }
       const executionId = typeof raw?.data === 'object' ? raw?.data?.id : (raw?.data ?? raw?.id ?? raw);
 
       if (attachments.length > 0 && executionId) {

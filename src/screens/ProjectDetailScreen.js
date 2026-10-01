@@ -267,6 +267,8 @@ export default function ProjectDetailScreen({ navigation, route }) {
     try {
       const res = await createProjectVisit({
         projectPlanId: visitForm.planId,
+        projectScopeId: visitForm.scopeId || null,
+        projectScopeStageId: visitForm.stageId || null,
         executionDate: visitForm.date,
         startTime: visitForm.startTime || null,
         endTime: visitForm.endTime || null,
@@ -276,6 +278,10 @@ export default function ProjectDetailScreen({ navigation, route }) {
       });
       // Extract the numeric/string execution ID from whatever shape the API returns
       const raw = res?.data;
+      // Catch API-level errors returned with HTTP 200 (isSuccess: false pattern)
+      if (raw && (raw.isSuccess === false || raw.success === false)) {
+        throw new Error(raw.message || raw.errors?.join(', ') || 'فشل حفظ الإجراء');
+      }
       const executionId = typeof raw?.data === 'object' ? raw?.data?.id : (raw?.data ?? raw?.id ?? raw);
       // Upload attachments
       if (visitAttachments.length > 0 && executionId) {
