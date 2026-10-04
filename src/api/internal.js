@@ -107,10 +107,11 @@ export async function rejectModificationRequest(id, reason) {
   if (error) throw error;
 }
 
-export async function createModificationRequest({ entryId, crm_user_id, employeeName, date, type, client_name, vacation_type, notes }) {
+export async function createModificationRequest({ entryId, crm_user_id, employeeName, date, old_type, old_client_name, type, client_name, vacation_type, notes }) {
   const { data, error } = await supabase.from('schedule_modification_requests').insert({
     entry_id: entryId, crm_user_id: String(crm_user_id), employee_name: employeeName || null,
-    date, type, client_name: client_name || null, vacation_type: vacation_type || null, notes: notes || null,
+    date, old_type: old_type || null, old_client_name: old_client_name || null,
+    type, client_name: client_name || null, vacation_type: vacation_type || null, notes: notes || null,
   }).select();
   if (error) throw error;
   if (!data?.length) throw new Error('لم يتم حفظ طلب التعديل — تحقق من صلاحيات جدول schedule_modification_requests في Supabase');

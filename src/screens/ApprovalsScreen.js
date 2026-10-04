@@ -935,22 +935,44 @@ function ScheduleModTab({ userId }) {
       }
       renderItem={({ item }) => {
         const dayName = DAYS_AR[new Date(item.date).getDay()];
-        const emp = item.employee_name || nameMap[String(item.crm_user_id)] || item.crm_user_id;
+        const emp = item.employee_name || nameMap[String(item.crm_user_id)] || String(item.crm_user_id);
+        const hasOld = !!item.old_type;
         return (
           <Card style={styles.reqCard}>
             <View style={styles.reqHeader}>
               <View style={styles.reqLeft}>
                 <Text style={styles.reqTitle}>{emp}</Text>
-                <Text style={styles.reqSub}>{dayName} {item.date}</Text>
+                <Text style={styles.reqSub}>{dayName} — {item.date}</Text>
               </View>
+            </View>
+
+            {/* Old → New type row */}
+            <View style={styles.changeRow}>
+              {hasOld ? (
+                <>
+                  <View style={[styles.typePill, { backgroundColor: TYPE_COLORS[item.old_type] ?? '#999' }]}>
+                    <Text style={styles.typePillText}>{TYPE_LABELS[item.old_type] ?? item.old_type}</Text>
+                  </View>
+                  <Ionicons name="arrow-forward-outline" size={14} color="#888" style={{ marginHorizontal: 4 }} />
+                </>
+              ) : null}
               <View style={[styles.typePill, { backgroundColor: TYPE_COLORS[item.type] }]}>
                 <Text style={styles.typePillText}>{TYPE_LABELS[item.type]}</Text>
               </View>
             </View>
-            {item.client_name ? (
+
+            {/* Client name change */}
+            {(item.old_client_name || item.client_name) ? (
               <View style={styles.detailRow}>
                 <Ionicons name="location-outline" size={13} color="#888" />
-                <Text style={styles.detailText}>{item.client_name}</Text>
+                {item.old_client_name && item.old_client_name !== item.client_name ? (
+                  <Text style={styles.detailText}>
+                    <Text style={{ textDecorationLine: 'line-through', color: '#aaa' }}>{item.old_client_name}</Text>
+                    {'  →  '}{item.client_name || '—'}
+                  </Text>
+                ) : (
+                  <Text style={styles.detailText}>{item.client_name || item.old_client_name}</Text>
+                )}
               </View>
             ) : null}
             <View style={styles.actions}>
@@ -1032,6 +1054,7 @@ const styles = StyleSheet.create({
   tabBtnActive: { borderBottomColor: '#1565C0' },
   tabBtnText: { fontSize: 13, color: '#888', fontWeight: '500' },
   tabBtnTextActive: { color: '#1565C0', fontWeight: '700' },
+  changeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 4 },
   typePill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   typePillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },

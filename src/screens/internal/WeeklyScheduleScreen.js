@@ -47,7 +47,8 @@ export default function WeeklyScheduleScreen({ route }) {
   const { user } = useAuth();
   const authUserId = user?.userId != null ? String(user.userId) : String(user?.id ?? '');
   const userId = authUserId || route?.params?.userId || '';
-  const [myRole, setMyRole] = useState('employee');
+  const [myRole, setMyRole]     = useState('employee');
+  const [myRecord, setMyRecord] = useState(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [days, setDays] = useState([]);
   const [entries, setEntries] = useState({});
@@ -66,7 +67,7 @@ export default function WeeklyScheduleScreen({ route }) {
   // Load role once
   useEffect(() => {
     if (!userId) return;
-    getMyTeamRecord(userId).then(rec => setMyRole(rec?.role || 'employee')).catch(() => {});
+    getMyTeamRecord(userId).then(rec => { setMyRole(rec?.role || 'employee'); setMyRecord(rec); }).catch(() => {});
   }, [userId]);
 
   // Load customers once on mount
@@ -127,8 +128,10 @@ export default function WeeklyScheduleScreen({ route }) {
         await createModificationRequest({
           entryId: modal.entry.id,
           crm_user_id: userId,
-          employeeName: user?.fullName || userId,
+          employeeName: myRecord?.display_name || user?.fullName || String(userId),
           date: modal.date,
+          old_type: modal.entry.type,
+          old_client_name: modal.entry.client_name || null,
           type: form.type,
           client_name: form.type === 'visit' ? form.client_name?.trim() : null,
           vacation_type: form.type === 'vacation' ? form.vacation_type : null,
