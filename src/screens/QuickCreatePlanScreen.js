@@ -10,7 +10,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  getProjectsDropdown, getScopesDropdown, getStagesDropdown,
+  getProjects, getScopesByProject, getStagesByScope,
   getPlansByScope, createPlan, updatePlan, getPlanItems,
   getAvailableStageDefItems, createPlanItem, createPlanItemFromCatalog,
   submitPlan,
@@ -224,12 +224,15 @@ export default function QuickCreatePlanScreen({ navigation }) {
   const [loadingScopes,   setLoadingScopes]   = useState(false);
   const [loadingStages,   setLoadingStages]   = useState(false);
 
-  // Load projects via dropdown endpoint, filtered by role
+  // Load projects, filtered by role
   useEffect(() => {
     setLoadingProjects(true);
-    getProjectsDropdown()
+    getProjects({ pageNo: 1, pageSize: 500 })
       .then(res => {
-        const all = extractList(res) || [];
+        const all = (res?.data?.data ?? []).map(p => ({
+          ...p,
+          value: p.customerName || p.name || String(p.id),
+        }));
         const filtered = visibleCrmIds
           ? all.filter(p => projectMatchesRole(p, visibleCrmIds))
           : all;
@@ -245,7 +248,13 @@ export default function QuickCreatePlanScreen({ navigation }) {
     setScopes([]); setStages([]);
     resetPlan();
     setLoadingScopes(true);
-    try { setScopes(extractList(await getScopesDropdown(id)) || []); }
+    try {
+      const raw = extractList(await getScopesByProject(id)) || [];
+      setScopes(raw.map(s => ({
+        ...s,
+        value: s.productName || s.product?.name || s.product?.localName || s.title || `#${s.id}`,
+      })));
+    }
     catch { setScopes([]); }
     finally { setLoadingScopes(false); }
   }, []);
@@ -256,7 +265,13 @@ export default function QuickCreatePlanScreen({ navigation }) {
     setStages([]);
     resetPlan();
     setLoadingStages(true);
-    try { setStages(extractList(await getStagesDropdown(id)) || []); }
+    try {
+      const raw = extractList(await getStagesByScope(id)) || [];
+      setStages(raw.map(st => ({
+        ...st,
+        value: st.stageDef?.name || st.stageDef?.localName || st.stageName || st.name || `#${st.id}`,
+      })));
+    }
     catch { setStages([]); }
     finally { setLoadingStages(false); }
   }, []);

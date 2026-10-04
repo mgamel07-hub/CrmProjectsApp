@@ -4,7 +4,7 @@ import {
   TextInput, RefreshControl, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getProjects, getProjectsDropdown, deleteProject } from '../api/projects';
+import { getProjects, deleteProject } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { useAuth } from '../context/AuthContext';
@@ -57,14 +57,8 @@ export default function ProjectsScreen({ navigation, route }) {
           includeClosed: true,
         });
         all = extractList(res) || [];
-      } catch {
-        // Fallback for ANY error (HTTP 4xx/5xx or network timeout)
-        try {
-          const res2 = await getProjectsDropdown();
-          all = extractList(res2) || [];
-        } catch (fallbackErr) {
-          throw fallbackErr; // both failed
-        }
+      } catch (e) {
+        throw e;
       }
       const filtered = visibleCrmIds
         ? all.filter(p => projectMatchesRole(p, visibleCrmIds))

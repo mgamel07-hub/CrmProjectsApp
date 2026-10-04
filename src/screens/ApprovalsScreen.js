@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   getUnitsRequests, approveUnitsRequest, rejectUnitsRequest,
   getPendingPlans, approvePlan, rejectPlan, submitPlan, getPlanByIdForView,
-  getProjectsDropdown, getScopesByProject, getStagesByScope, getPlansByScope,
+  getProjects, getScopesByProject, getStagesByScope, getPlansByScope,
   getPlanItems,
 } from '../api/projects';
 import {
@@ -245,8 +245,8 @@ function PlansTab({ lang, navigation }) {
   const fetchAllSubmittedPlans = useCallback(async () => {
     const collected = [];
     try {
-      const projRes = await getProjectsDropdown();
-      const projects = extractList(projRes) || extractData(projRes) || [];
+      const projRes = await getProjects({ pageNo: 1, pageSize: 500 });
+      const projects = projRes?.data?.data ?? extractList(projRes) ?? [];
       await Promise.allSettled(projects.map(async (proj) => {
         const projId = proj.id ?? proj.key;
         if (!projId) return;
