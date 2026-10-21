@@ -12,7 +12,7 @@ const BASE_URL_ROOT = `${HOST}`;
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 15000,
+  timeout: 20000,
   headers: { 'Content-Type': 'application/json' },
 });
 

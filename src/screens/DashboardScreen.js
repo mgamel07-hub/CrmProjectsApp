@@ -444,29 +444,33 @@ export default function DashboardScreen({ navigation }) {
       setRefreshing(false);
       return;
     }
-    try {
-      // Load basic stats quickly
-      const statsRes = await getDashboardStats();
-      setStats(extractData(statsRes));
-      setError(null);
-    } catch (e) {
+
+    setError(null);
+
+    // Run stats + stage cards in parallel; both are best-effort
+    setStagesLoading(true);
+    const [statsResult, stageResult] = await Promise.allSettled([
+      getDashboardStats(),
+      fetchStageCards(visibleCrmIds),
+    ]);
+
+    if (statsResult.status === 'fulfilled') {
+      setStats(extractData(statsResult.value));
+    }
+    // If stats failed, stats stays null — stage cards provide project counts
+
+    if (stageResult.status === 'fulfilled') {
+      setStages(stageResult.value.cards);
+      setComputedStats(stageResult.value.computedStats);
+    } else if (statsResult.status === 'rejected') {
+      // Both failed → show error
+      const e = statsResult.reason;
       setError(e?.response?.data?.message || t('networkError'));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
 
-    // Load stage cards + computed stats in background
-    setStagesLoading(true);
-    try {
-      const { cards, computedStats: cs } = await fetchStageCards(visibleCrmIds);
-      setStages(cards);
-      setComputedStats(cs);
-    } catch (_) {
-      // Stage cards are best-effort; don't surface error
-    } finally {
-      setStagesLoading(false);
-    }
+    setLoading(false);
+    setRefreshing(false);
+    setStagesLoading(false);
   }, [isDemo, visibleCrmIds]);
 
   useEffect(() => { load(); }, [load]);
