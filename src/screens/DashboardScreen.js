@@ -53,11 +53,16 @@ function cardIcon(name = '') {
 
 // ─── Build stage cards from projects data ────────────────────────────────────
 
-// returns { cards, computedStats }
+// returns { cards, computedStats } — never throws; returns empty on network failure
 async function fetchStageCards(visibleCrmIds) {
   // 1. Fetch all projects (with embedded scopes)
-  const projRes = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 200 });
-  const allProjects = projRes?.data?.data ?? [];
+  let allProjects = [];
+  try {
+    const projRes = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 200 });
+    allProjects = projRes?.data?.data ?? [];
+  } catch {
+    return { cards: [], computedStats: { totalProjects: 0, activeProjects: 0, completedProjects: 0, onHoldProjects: 0 } };
+  }
 
   // Role filter: non-admins only see their assigned projects (unassigned → hidden)
   const projects = visibleCrmIds
@@ -462,10 +467,15 @@ export default function DashboardScreen({ navigation }) {
     if (stageResult.status === 'fulfilled') {
       setStages(stageResult.value.cards);
       setComputedStats(stageResult.value.computedStats);
-    } else if (statsResult.status === 'rejected') {
-      // Both failed → show error
+    }
+
+    // Show inline banner only when the project fetch itself still failed
+    // (fetchStageCards returns empty gracefully for network issues, so this
+    // only fires if getDashboardStats also rejected AND stageResult rejected)
+    if (statsResult.status === 'rejected' && stageResult.status === 'rejected') {
       const e = statsResult.reason;
-      setError(e?.response?.data?.message || t('networkError'));
+      const is401 = e?.response?.status === 401;
+      setError(is401 ? 'انتهت الجلسة — الرجاء إعادة تسجيل الدخول' : (e?.response?.data?.message || t('networkError')));
     }
 
     setLoading(false);
@@ -488,7 +498,6 @@ export default function DashboardScreen({ navigation }) {
       }).filter(card => card.count > 0);
 
   if (loading) return <LoadingScreen />;
-  if (error && !stats) return <ErrorMessage message={error} onRetry={load} />;
 
   const greeting = lang === 'ar'
     ? `مرحباً، ${user?.fullName || user?.userName || 'مستخدم'}`
@@ -511,6 +520,17 @@ export default function DashboardScreen({ navigation }) {
             <Ionicons name="speedometer-outline" size={32} color="#fff" />
           </View>
         </View>
+
+        {/* Inline error banner (never blocks the page) */}
+        {error && (
+          <View style={styles.errorBanner}>
+            <Ionicons name="wifi-outline" size={16} color="#C62828" />
+            <Text style={styles.errorBannerText} numberOfLines={2}>{error}</Text>
+            <TouchableOpacity onPress={load} style={styles.errorBannerBtn}>
+              <Text style={styles.errorBannerBtnText}>إعادة</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* ── إحصائيات المشاريع — 2×2 compact ───────────────────────── */}
         <View style={styles.statsGrid2x2}>
@@ -845,6 +865,15 @@ const styles = StyleSheet.create({
   modalClose:    { padding: 6 },
   modalEmpty:    { alignItems: 'center', padding: 32 },
   modalEmptyText: { color: '#aaa', fontSize: 14 },
+
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FFEBEE', borderRadius: 10, padding: 10, marginBottom: 12,
+    borderLeftWidth: 3, borderLeftColor: '#C62828',
+  },
+  errorBannerText: { flex: 1, fontSize: 12, color: '#C62828' },
+  errorBannerBtn:  { paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#C62828', borderRadius: 6 },
+  errorBannerBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
   sysRow:  { padding: 14, borderBottomWidth: 1, borderBottomColor: '#F0F0F0', flexDirection: 'row', alignItems: 'center' },
   sysMain: { flex: 1 },
