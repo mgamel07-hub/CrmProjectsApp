@@ -350,9 +350,19 @@ export default function ManageTasksScreen({ route, navigation }) {
     ? form.dueDate.toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })
     : 'اختر تاريخ...';
 
-  const inlineFinalizeDate = form.taskType === 'office' && form.taskDate
-    ? form.taskDate.toISOString().split('T')[0]
-    : null;
+  // Cross-platform confirmation for finalize action (Alert.alert blocks in web modals)
+  const confirmFinalize = useCallback((dateStr, onConfirm) => {
+    const label = new Date(dateStr + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' });
+    const msg = `سيتم قفل ${label} ولن تتمكن من إضافة مهام جديدة عليه. هل تريد المتابعة؟`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(`إنهاء مهام اليوم\n\n${msg}`)) onConfirm();
+    } else {
+      Alert.alert('إنهاء مهام اليوم', msg, [
+        { text: 'إلغاء', style: 'cancel' },
+        { text: 'إنهاء اليوم', style: 'destructive', onPress: onConfirm },
+      ]);
+    }
+  }, []);
 
   const roleInfo = myRecord ? ROLE_LABELS[myRecord.role] : ROLE_LABELS['admin'];
   const teamName = myRecord?.teams?.name;
@@ -435,14 +445,7 @@ export default function ManageTasksScreen({ route, navigation }) {
         {showFinalizeBtn && taskDateStr && (
           <TouchableOpacity
             style={styles.cardFinalizeBtn}
-            onPress={() => Alert.alert(
-              'إنهاء مهام اليوم',
-              `سيتم قفل ${new Date(taskDateStr + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' })} ولن تتمكن من إضافة مهام جديدة عليه. هل تريد المتابعة؟`,
-              [
-                { text: 'إلغاء', style: 'cancel' },
-                { text: 'إنهاء اليوم', style: 'destructive', onPress: () => finalizeDay(taskDateStr) },
-              ]
-            )}
+            onPress={() => confirmFinalize(taskDateStr, () => finalizeDay(taskDateStr))}
           >
             <Ionicons name="lock-closed-outline" size={13} color="#fff" />
             <Text style={styles.cardFinalizeBtnText}>إنهاء مهام اليوم</Text>
@@ -692,27 +695,6 @@ export default function ManageTasksScreen({ route, navigation }) {
                     <Ionicons name="add-circle-outline" size={16} color="#00695C" />
                     <Text style={styles.addBulletText}>إضافة نقطة</Text>
                   </TouchableOpacity>
-
-                  {inlineFinalizeDate ? (
-                    <TouchableOpacity
-                      style={styles.finalizeBtn}
-                      onPress={() => Alert.alert(
-                        'إنهاء مهام اليوم',
-                        `سيتم قفل ${new Date(inlineFinalizeDate + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' })} ولن تتمكن من إضافة مهام جديدة عليه. هل تريد المتابعة؟`,
-                        [
-                          { text: 'إلغاء', style: 'cancel' },
-                          { text: 'إنهاء اليوم', style: 'destructive', onPress: () => {
-                            finalizeDay(inlineFinalizeDate);
-                            setForm(f => ({ ...f, taskDate: null }));
-                            setModal(false);
-                          }},
-                        ]
-                      )}
-                    >
-                      <Ionicons name="lock-closed-outline" size={15} color="#fff" />
-                      <Text style={styles.finalizeBtnText}>إنهاء مهام اليوم</Text>
-                    </TouchableOpacity>
-                  ) : null}
                 </>
               ) : (
                 <>
@@ -807,18 +789,11 @@ export default function ManageTasksScreen({ route, navigation }) {
                         {isSelf && selectedDateStr && tasksOnSelected > 0 && (
                           <TouchableOpacity
                             style={styles.finalizeBtn}
-                            onPress={() => Alert.alert(
-                              'إنهاء مهام اليوم',
-                              `سيتم قفل ${new Date(selectedDateStr + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'long', month: 'long', day: 'numeric' })} ولن تتمكن من إضافة مهام جديدة عليه. هل تريد المتابعة؟`,
-                              [
-                                { text: 'إلغاء', style: 'cancel' },
-                                { text: 'إنهاء اليوم', style: 'destructive', onPress: () => {
-                                  finalizeDay(selectedDateStr);
-                                  setForm(f => ({ ...f, taskDate: null }));
-                                  setModal(false);
-                                }},
-                              ]
-                            )}
+                            onPress={() => confirmFinalize(selectedDateStr, () => {
+                              finalizeDay(selectedDateStr);
+                              setForm(f => ({ ...f, taskDate: null }));
+                              setModal(false);
+                            })}
                           >
                             <Ionicons name="lock-closed-outline" size={15} color="#fff" />
                             <Text style={styles.finalizeBtnText}>إنهاء مهام اليوم</Text>
