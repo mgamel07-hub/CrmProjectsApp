@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 
 // On web (Vercel), use relative paths so the proxy handles CORS.
 // On native, hit the CRM server directly.
-const HOST = Platform.OS === 'web' ? '' : 'https://crm.yemensoft.net:3346';
+const HOST = Platform.OS === 'web' ? '' : 'https://api.crm-ultimate.com';
 
 const BASE_URL      = `${HOST}/api/v1`;
 const BASE_URL_V2   = `${HOST}/api/v2`;
