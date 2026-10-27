@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRole, projectMatchesRole } from '../context/RoleContext';
 import { DEMO_PROJECTS } from '../api/demoData';
 import { extractList, getProjectStatusLabel, getProjectStatusColor, formatDate } from '../utils/helpers';
+import { isMainProjectType } from '../utils/projectTypeHelper';
 import LoadingScreen from '../components/LoadingScreen';
 import ErrorMessage from '../components/ErrorMessage';
 import StatusBadge from '../components/StatusBadge';
@@ -60,9 +61,11 @@ export default function ProjectsScreen({ navigation, route }) {
       } catch (e) {
         throw e;
       }
-      const filtered = visibleCrmIds
+      const roleFiltered = visibleCrmIds
         ? all.filter(p => projectMatchesRole(p, visibleCrmIds))
         : all;
+      // Only show Implementation-type projects; unknown type → show (for backward compat)
+      const filtered = roleFiltered.filter(isMainProjectType);
       setProjects(filtered);
       setError(null);
     } catch (e) {

@@ -9,6 +9,7 @@ import api from '../api/client';
 import { getDashboardStats } from '../api/projects';
 import { useAuth } from '../context/AuthContext';
 import { useRole, projectMatchesRole } from '../context/RoleContext';
+import { isMainProjectType, isInstallationType } from '../utils/projectTypeHelper';
 import { DEMO_STATS } from '../api/demoData';
 import { useLang } from '../context/LangContext';
 import { t } from '../i18n';
@@ -65,16 +66,25 @@ async function fetchStageCards(visibleCrmIds) {
   }
 
   // Role filter: non-admins only see their assigned projects (unassigned → hidden)
-  const projects = visibleCrmIds
+  const roleFiltered = visibleCrmIds
     ? allProjects.filter(p => projectMatchesRole(p, visibleCrmIds))
     : allProjects;
 
-  // Compute stats directly from (role-filtered) projects
+  // Count completed Installation projects for the alert badge (before type filter)
+  const installationAlertCount = roleFiltered.filter(
+    p => isInstallationType(p) && p.statusId === 3
+  ).length;
+
+  // Only show Implementation-type projects in stage cards & stats
+  const projects = roleFiltered.filter(isMainProjectType);
+
+  // Compute stats directly from (role-filtered, type-filtered) projects
   const computedStats = {
     totalProjects:      projects.length,
     activeProjects:     projects.filter(p => p.statusId === 1 && !p.stopped).length,
     completedProjects:  projects.filter(p => p.statusId === 3).length,
     onHoldProjects:     projects.filter(p => p.statusId === 2 || p.stopped).length,
+    installationAlertCount,
   };
 
   // 2. Collect all scopes with project user IDs (for client-side role filtering)
@@ -184,7 +194,7 @@ async function fetchStageCards(visibleCrmIds) {
     .map(card => ({ ...card, count: card.systems.length }))
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
-  return { cards, computedStats };
+  return { cards, computedStats, installationAlertCount };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -425,6 +435,7 @@ export default function DashboardScreen({ navigation }) {
   const [error, setError]         = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCard, setSelectedCard] = useState(null);
+  const [installAlertCount, setInstallAlertCount] = useState(0);
 
   const slideAnim = useRef(new Animated.Value(600)).current;
 
@@ -467,6 +478,7 @@ export default function DashboardScreen({ navigation }) {
     if (stageResult.status === 'fulfilled') {
       setStages(stageResult.value.cards);
       setComputedStats(stageResult.value.computedStats);
+      setInstallAlertCount(stageResult.value.installationAlertCount ?? 0);
     }
 
     // Show inline banner only when the project fetch itself still failed
@@ -589,6 +601,31 @@ export default function DashboardScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ── Installation Alerts banner ──────────────────────────────── */}
+        {installAlertCount > 0 && (
+          <TouchableOpacity
+            style={styles.installAlertCard}
+            onPress={() => navigation.navigate('InstallationAlerts')}
+            activeOpacity={0.8}
+          >
+            <View style={styles.installAlertLeft}>
+              <View style={styles.installAlertIconWrap}>
+                <Ionicons name="alert-circle" size={22} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.installAlertTitle}>مشاريع توريد منتهية تحتاج إجراء</Text>
+                <Text style={styles.installAlertSub}>
+                  {installAlertCount} مشروع{installAlertCount === 1 ? '' : 'اً'} اكتمل ويحتاج متابعة
+                </Text>
+              </View>
+            </View>
+            <View style={styles.installAlertChevron}>
+              <Text style={styles.installAlertCount}>{installAlertCount}</Text>
+              <Ionicons name="chevron-forward" size={18} color="#E65100" />
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* ── Donut: project status distribution ─────────────────────── */}
         {computedStats && <DonutChart cs={computedStats} />}
@@ -749,6 +786,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#1565C0', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
   },
   quickCardBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // Installation alerts banner
+  installAlertCard: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    borderRadius: 12, padding: 14, marginBottom: 12,
+    borderWidth: 1.5, borderColor: '#E65100',
+  },
+  installAlertLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  installAlertIconWrap: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: '#E65100', alignItems: 'center', justifyContent: 'center',
+  },
+  installAlertTitle: { fontSize: 14, fontWeight: '700', color: '#7B3F00' },
+  installAlertSub:   { fontSize: 12, color: '#B45309', marginTop: 2 },
+  installAlertChevron: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  installAlertCount: { fontSize: 22, fontWeight: '900', color: '#E65100' },
 
   sectionTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 10 },
   sectionRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },

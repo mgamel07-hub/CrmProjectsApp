@@ -48,6 +48,7 @@ import QuickExecutionScreen        from './src/screens/QuickExecutionScreen';
 import QuickCreatePlanScreen      from './src/screens/QuickCreatePlanScreen';
 import PlanPrintScreen            from './src/screens/PlanPrintScreen';
 import ClientCloudAccessScreen    from './src/screens/ClientCloudAccessScreen';
+import InstallationAlertsScreen   from './src/screens/InstallationAlertsScreen';
 import { InternalNotifProvider }   from './src/context/InternalNotifContext';
 import InstallBanner               from './src/components/InstallBanner';
 
@@ -278,6 +279,11 @@ function AppNavigator() {
               name="ClientCloudAccess"
               component={ClientCloudAccessScreen}
               options={{ title: 'وصول عملاء الكلاود' }}
+            />
+            <Stack.Screen
+              name="InstallationAlerts"
+              component={InstallationAlertsScreen}
+              options={{ title: 'مشاريع التوريد المنتهية' }}
             />
           </>
         )}
