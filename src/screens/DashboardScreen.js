@@ -9,7 +9,7 @@ import api from '../api/client';
 import { getDashboardStats } from '../api/projects';
 import { useAuth } from '../context/AuthContext';
 import { useRole, projectMatchesRole } from '../context/RoleContext';
-import { isMainProjectType, isInstallationType } from '../utils/projectTypeHelper';
+import { isMainProjectType, isInstallationType, buildFlagsMap } from '../utils/projectTypeHelper';
 import { DEMO_STATS } from '../api/demoData';
 import { useLang } from '../context/LangContext';
 import { t } from '../i18n';
@@ -54,15 +54,26 @@ function cardIcon(name = '') {
 
 // ─── Build stage cards from projects data ────────────────────────────────────
 
-// returns { cards, computedStats } — never throws; returns empty on network failure
+// returns { cards, computedStats, installationAlertCount } — never throws; returns empty on network failure
 async function fetchStageCards(visibleCrmIds) {
-  // 1. Fetch all projects (with embedded scopes)
+  // 1. Fetch all projects (with embedded scopes) + flags map in parallel
   let allProjects = [];
+  let flagsMap = {};
   try {
-    const projRes = await api.post('/Project/GetAll', { pageNo: 1, pageSize: 200 });
-    allProjects = projRes?.data?.data ?? [];
+    const [projRes, relRes] = await Promise.allSettled([
+      api.post('/Project/GetAll', { pageNo: 1, pageSize: 200 }),
+      api.get('/Project/GetRelatedObjectsForFilter'),
+    ]);
+    if (projRes.status === 'fulfilled') {
+      allProjects = projRes.value?.data?.data ?? [];
+    } else {
+      return { cards: [], computedStats: { totalProjects: 0, activeProjects: 0, completedProjects: 0, onHoldProjects: 0 }, installationAlertCount: 0 };
+    }
+    if (relRes.status === 'fulfilled') {
+      flagsMap = buildFlagsMap(relRes.value?.data?.data || relRes.value?.data || {});
+    }
   } catch {
-    return { cards: [], computedStats: { totalProjects: 0, activeProjects: 0, completedProjects: 0, onHoldProjects: 0 } };
+    return { cards: [], computedStats: { totalProjects: 0, activeProjects: 0, completedProjects: 0, onHoldProjects: 0 }, installationAlertCount: 0 };
   }
 
   // Role filter: non-admins only see their assigned projects (unassigned → hidden)
@@ -72,11 +83,11 @@ async function fetchStageCards(visibleCrmIds) {
 
   // Count completed Installation projects for the alert badge (before type filter)
   const installationAlertCount = roleFiltered.filter(
-    p => isInstallationType(p) && p.statusId === 3
+    p => isInstallationType(p, flagsMap) && p.statusId === 3
   ).length;
 
   // Only show Implementation-type projects in stage cards & stats
-  const projects = roleFiltered.filter(isMainProjectType);
+  const projects = roleFiltered.filter(p => isMainProjectType(p, flagsMap));
 
   // Compute stats directly from (role-filtered, type-filtered) projects
   const computedStats = {

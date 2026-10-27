@@ -4,14 +4,14 @@ import {
   TextInput, RefreshControl, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getProjects, deleteProject } from '../api/projects';
+import { getProjects, deleteProject, getProjectRelatedObjects } from '../api/projects';
 import { t } from '../i18n';
 import { useLang } from '../context/LangContext';
 import { useAuth } from '../context/AuthContext';
 import { useRole, projectMatchesRole } from '../context/RoleContext';
 import { DEMO_PROJECTS } from '../api/demoData';
 import { extractList, getProjectStatusLabel, getProjectStatusColor, formatDate } from '../utils/helpers';
-import { isMainProjectType } from '../utils/projectTypeHelper';
+import { isMainProjectType, buildFlagsMap } from '../utils/projectTypeHelper';
 import LoadingScreen from '../components/LoadingScreen';
 import ErrorMessage from '../components/ErrorMessage';
 import StatusBadge from '../components/StatusBadge';
@@ -49,23 +49,25 @@ export default function ProjectsScreen({ navigation, route }) {
       return;
     }
     try {
-      let all = [];
-      try {
-        const res = await getProjects({
+      const [projRes, relRes] = await Promise.allSettled([
+        getProjects({
           pageNumber: 1, pageSize: 100,
           searchText: search || undefined,
           statusId: statusFilter || undefined,
           includeClosed: true,
-        });
-        all = extractList(res) || [];
-      } catch (e) {
-        throw e;
-      }
+        }),
+        getProjectRelatedObjects(),
+      ]);
+      if (projRes.status === 'rejected') throw projRes.reason;
+      const all = extractList(projRes.value) || [];
+      const flagsMap = relRes.status === 'fulfilled'
+        ? buildFlagsMap(relRes.value?.data?.data || relRes.value?.data || {})
+        : {};
       const roleFiltered = visibleCrmIds
         ? all.filter(p => projectMatchesRole(p, visibleCrmIds))
         : all;
       // Only show Implementation-type projects; unknown type → show (for backward compat)
-      const filtered = roleFiltered.filter(isMainProjectType);
+      const filtered = roleFiltered.filter(p => isMainProjectType(p, flagsMap));
       setProjects(filtered);
       setError(null);
     } catch (e) {

@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../api/client';
 import { useRole, projectMatchesRole } from '../context/RoleContext';
 import { formatDate } from '../utils/helpers';
-import { isInstallationType } from '../utils/projectTypeHelper';
+import { isInstallationType, buildFlagsMap } from '../utils/projectTypeHelper';
 
 export default function InstallationAlertsScreen({ navigation }) {
   const { visibleCrmIds } = useRole();
@@ -18,16 +18,21 @@ export default function InstallationAlertsScreen({ navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await api.post('/Project/GetAll', {
-        pageNo: 1, pageSize: 200, includeClosed: true,
-      });
-      const all = res?.data?.data ?? [];
+      const [projRes, relRes] = await Promise.allSettled([
+        api.post('/Project/GetAll', { pageNo: 1, pageSize: 200, includeClosed: true }),
+        api.get('/Project/GetRelatedObjectsForFilter'),
+      ]);
+      if (projRes.status === 'rejected') throw projRes.reason;
+      const all = projRes.value?.data?.data ?? [];
+      const flagsMap = relRes.status === 'fulfilled'
+        ? buildFlagsMap(relRes.value?.data?.data || relRes.value?.data || {})
+        : {};
       const roleFiltered = visibleCrmIds
         ? all.filter(p => projectMatchesRole(p, visibleCrmIds))
         : all;
       // Only Installation projects that are completed (statusId=3)
       const alerts = roleFiltered.filter(
-        p => isInstallationType(p) && p.statusId === 3
+        p => isInstallationType(p, flagsMap) && p.statusId === 3
       );
       setProjects(alerts);
       setError(null);
