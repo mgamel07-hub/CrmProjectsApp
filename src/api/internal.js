@@ -73,14 +73,15 @@ export async function rejectScheduleEntry(id, reason) {
 
 export async function getPendingModifications(userIds) {
   if (!userIds.length) return [];
-  const { data, error } = await supabase
-    .from('schedule_modification_requests')
-    .select('*')
-    .in('crm_user_id', userIds)
-    .eq('status', 'pending')
-    .order('date');
-  if (error) throw new Error(error.message || 'فشل تحميل طلبات التعديل');
-  return data || [];
+  // Use individual .eq() calls instead of .in() to avoid type-casting issues (same as getPendingScheduleEntries)
+  const results = await Promise.all(
+    userIds.map(id =>
+      supabase.from('schedule_modification_requests').select('*')
+        .eq('crm_user_id', id).eq('status', 'pending')
+        .order('date').then(({ data }) => data || [])
+    )
+  );
+  return results.flat().sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export async function getMyModifications(userId) {
