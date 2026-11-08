@@ -122,20 +122,33 @@ export function AuthProvider({ children }) {
     // Try V1 first
     try {
       const res = await apiLogin(userId, password);
-      jwtToken = extractToken(res.data);
+      // API returns HTTP 200 even on failure with isSuccess:false
+      if (res.data?.isSuccess === false) {
+        const msg = res.data?.message || '';
+        // Only fall through to V2 if user not found on V1
+        if (!msg.toLowerCase().includes('usernotfound') && !msg.toLowerCase().includes('notfound')) {
+          throw new Error(msg || 'فشل تسجيل الدخول');
+        }
+      } else {
+        jwtToken = extractToken(res.data);
+      }
     } catch (e) {
-      const msg = e?.response?.data?.message || '';
+      // Re-throw errors that aren't "user not found" (don't fall through to V2)
+      const msg = e?.response?.data?.message || e?.message || '';
       if (!msg.toLowerCase().includes('usernotfound') && !msg.toLowerCase().includes('notfound')) {
         throw e;
       }
     }
 
-    // Fall back to V2
+    // Fall back to V2 only if V1 said user not found
     if (!jwtToken) {
       const res2 = await apiLoginV2(userId, password);
+      if (res2.data?.isSuccess === false) {
+        throw new Error(res2.data?.message || 'فشل تسجيل الدخول');
+      }
       jwtToken = extractToken(res2.data);
       if (!jwtToken) {
-        throw new Error(`Login failed: no token\nResponse: ${JSON.stringify(res2.data)}`);
+        throw new Error(res2.data?.message || 'فشل تسجيل الدخول: لم يتم استلام رمز الدخول');
       }
     }
 
