@@ -94,7 +94,7 @@ export async function getMyModifications(userId) {
 
 export async function approveModificationRequest(req) {
   const { error: e1 } = await supabase.from('schedule_entries')
-    .update({ type: req.type, client_name: req.client_name || null, vacation_type: req.vacation_type || null, notes: req.notes || null })
+    .update({ type: req.type, client_name: req.client_name || null, vacation_type: req.vacation_type || null, notes: req.notes || null, status: 'approved' })
     .eq('id', req.entry_id);
   if (e1) throw e1;
   const { error: e2 } = await supabase.from('schedule_modification_requests')

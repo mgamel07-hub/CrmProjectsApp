@@ -122,8 +122,8 @@ export default function WeeklyScheduleScreen({ route }) {
     let isMod = false;
     try {
       const autoApprove = myRole === 'admin' || myRole === 'manager';
-      const isEditingApproved = modal?.entry?.status === 'approved';
-      isMod = !autoApprove && isEditingApproved;
+      const isExistingEntry = !!modal?.entry;   // any edit to an existing entry (not just approved)
+      isMod = !autoApprove && isExistingEntry;
       if (isMod) {
         await createModificationRequest({
           entryId: modal.entry.id,
